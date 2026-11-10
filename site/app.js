@@ -1,5 +1,14 @@
 const cfg = window.SITE_CONFIG || {};
-const repo = cfg.repo || "OWNER/REPO";
+
+function detectRepo() {
+  if (cfg.repo && !cfg.repo.startsWith("OWNER/")) return cfg.repo;
+  const host = location.hostname;
+  const first = location.pathname.split("/").filter(Boolean)[0];
+  if (host.endsWith(".github.io") && first) return `${host.split(".")[0]}/${first}`;
+  return cfg.repo || "OWNER/REPO";
+}
+
+const repo = detectRepo();
 
 const repoUrl = `https://github.com/${repo}`;
 const releasesUrl = `${repoUrl}/releases`;
