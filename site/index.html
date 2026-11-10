@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SwitchYard — 切換 AI CLI 供應商，不動其他一行設定</title>
+<meta name="description" content="Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH 等 10 種 AI CLI 的供應商切換器。只改寫該改的鍵，套用前先看 diff，每次寫入自動備份。" />
+<meta property="og:title" content="SwitchYard — AI CLI 供應商切換器" />
+<meta property="og:description" content="非破壞性寫入。套用前逐行 diff，寫入前自動備份，隨時一鍵還原。" />
+<meta property="og:image" content="assets/screenshot-panel.png" />
+<link rel="icon" href="assets/icon.png" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M7 12h11M14 8l4 4-4 4" stroke="url(#g)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <path d="M25 20H14M18 16l-4 4 4 4" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs>
+      </svg>
+      <span>SwitchYard</span>
+    </a>
+    <nav class="links">
+      <a href="#why">為什麼</a>
+      <a href="#tools">支援工具</a>
+      <a href="#compare">對照</a>
+      <a href="#dl">下載</a>
+      <a class="gh" id="repoLink" href="#" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero wrap">
+    <div class="hero-copy">
+      <span class="pill"><i></i> Windows · 單一執行檔 · 零依賴</span>
+      <h1>切換 AI CLI 供應商<br/><em>不動其他一行設定</em></h1>
+      <p>
+        Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH⋯⋯10 種工具的供應商設定，
+        集中一個視窗管理。SwitchYard 只定點改寫供應商相關的那幾個鍵，
+        你的註解、外掛、MCP、主題全部原樣保留。
+      </p>
+      <div class="cta">
+        <a class="btn primary" id="dlSetup" href="#">下載 Windows 安裝檔</a>
+        <a class="btn ghost" id="dlPortable" href="#">可攜版 .exe</a>
+      </div>
+      <p class="fineprint" id="releaseNote">正在取得最新版本…</p>
+      <ul class="bullets">
+        <li>套用前逐行 diff 預覽</li>
+        <li>寫入前自動時間戳備份</li>
+        <li>金鑰只留在本機</li>
+      </ul>
+    </div>
+    <div class="hero-shot">
+      <div class="glow"></div>
+      <img src="assets/screenshot-panel.png" alt="SwitchYard 主介面：左側工具清單，右側供應商表格" />
+    </div>
+  </section>
+
+  <section class="section wrap" id="why">
+    <h2 class="section-title">為什麼還要多做一個？</h2>
+    <p class="section-sub">
+      cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常常整份重寫設定檔——
+      註解消失、外掛設定被清掉、自訂的 MCP 伺服器不見了。SwitchYard 從設計上就不允許這件事發生。
+    </p>
+    <div class="cards">
+      <article class="card">
+        <div class="ico">◇</div>
+        <h3>非破壞性寫入</h3>
+        <p>
+          不用序列化器重寫整份檔案。JSON 用語法樹定位位元組區間、TOML 用 <code>toml_edit</code> 保留格式，
+          只把目標值那段文字換掉。沒被列進 diff 的內容，一個位元組都不會變。
+        </p>
+      </article>
+      <article class="card">
+        <div class="ico">±</div>
+        <h3>套用前先看 diff</h3>
+        <p>
+          按下套用不會立刻寫檔，而是先算出「目前 → 套用後」的逐行差異，標出新增與刪除行數。
+          看清楚再確認，不確定就取消。
+        </p>
+      </article>
+      <article class="card">
+        <div class="ico">⏱</div>
+        <h3>備份與一鍵還原</h3>
+        <p>
+          每次寫入前自動把要動的檔案複製到時間戳快照。列表看得到每次改了哪些檔，
+          任何一次都能用一個按鈕還原回當時狀態。
+        </p>
+      </article>
+      <article class="card">
+        <div class="ico">⇄</div>
+        <h3>供應商集中管理</h3>
+        <p>
+          同一組 Base URL／Key／模型可以橫跨多個工具重複使用。清單支援打字即篩，
+          不用在下拉選單裡翻找。
+        </p>
+      </article>
+      <article class="card">
+        <div class="ico">⌁</div>
+        <h3>接管狀態偵測</h3>
+        <p>
+          若偵測到 cc-switch 正以代理模式接管同一套設定，會直接在上方提示，
+          避免兩個工具互相覆蓋後你找不到原因。
+        </p>
+      </article>
+      <article class="card">
+        <div class="ico">◎</div>
+        <h3>本機優先</h3>
+        <p>
+          沒有帳號、沒有雲端同步、沒有遙測。設定與備份都放在你自己的
+          <code>%APPDATA%\SwitchYard</code> 裡。
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section wrap" id="tools">
+    <h2 class="section-title">支援的 10 種工具</h2>
+    <p class="section-sub">自動偵測安裝位置，開啟即知道哪些工具已就緒。格式未實測的會標記提醒先看 diff。</p>
+    <div class="tools-grid">
+      <div class="tool"><b>Codex</b><span>~/.codex/config.toml</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>Claude Code</b><span>~/.claude/settings.json</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>Gemini CLI</b><span>~/.gemini/settings.json</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>Grok Build</b><span>~/.grok/config.toml</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>OpenCode</b><span>~/.config/opencode/opencode.json</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>Qoder</b><span>~/.qoder/settings.json</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>DSH</b><span>~/.dsh/settings.yaml</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>ZCode</b><span>~/.zcode/v2/config.json</span><em>待實測</em></div>
+      <div class="tool"><b>Hermes</b><span>~/.hermes/config.yaml</span><em>待實測</em></div>
+      <div class="tool"><b>Command Code</b><span>~/.commandcode/providers.json</span><em>待實測</em></div>
+    </div>
+    <div class="shot-row">
+      <img src="assets/screenshot-diff.png" alt="套用前的逐行 diff 預覽" />
+      <div class="shot-copy">
+        <h3>每個工具各懂各的格式</h3>
+        <p>
+          Codex 要 <code>model_provider</code> 加 <code>[model_providers.*]</code>；
+          Claude Code 要 <code>env.ANTHROPIC_BASE_URL</code>；
+          Qoder 要在 <code>providers</code> 底下建一個 <code>qoder-custom-*</code> 物件；
+          DSH 是 YAML 的 <code>llm-pi-ai.providers</code> 加 <code>agent-default-model</code>。
+        </p>
+        <p>
+          這些差異都寫在各自的轉接器裡，你只需要填名稱、Base URL、API Key 和模型。
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section wrap" id="compare">
+    <h2 class="section-title">和現有工具比</h2>
+    <div class="table-scroll">
+      <table class="compare">
+        <thead>
+          <tr><th></th><th class="hl">SwitchYard</th><th>cc-switch</th><th>Codex++</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>供應商切換</td><td class="hl">✓</td><td>✓</td><td>✓</td></tr>
+          <tr><td>寫入方式</td><td class="hl">定點補丁</td><td>整份重寫</td><td>整份重寫*</td></tr>
+          <tr><td>保留註解與格式</td><td class="hl">✓</td><td>—</td><td>—</td></tr>
+          <tr><td>套用前 diff</td><td class="hl">✓</td><td>—</td><td>—</td></tr>
+          <tr><td>備份與還原</td><td class="hl">✓</td><td>✓</td><td>✓</td></tr>
+          <tr><td>支援工具數</td><td class="hl">10</td><td>12+</td><td>Codex 為主</td></tr>
+          <tr><td>代理／負載均衡</td><td class="hl">—</td><td>✓</td><td>✓</td></tr>
+          <tr><td>安裝體積</td><td class="hl">單檔 .exe</td><td>桌面安裝包</td><td>桌面安裝包</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="fineprint">
+      * 依 Codex++ 專案 issue #1563「供應商切換破壞性重寫 config.toml」的描述。
+      SwitchYard 刻意不做代理與負載均衡，只做「把設定改對」這件事。
+    </p>
+  </section>
+
+  <section class="section wrap" id="dl">
+    <div class="dl-card">
+      <div>
+        <h2>下載</h2>
+        <p class="section-sub">Windows 10／11 64 位元。安裝檔建議一般使用者；可攜版解壓即用、不寫註冊表。</p>
+        <div class="cta">
+          <a class="btn primary big" id="dlSetup2" href="#">Windows 安裝檔</a>
+          <a class="btn ghost big" id="dlPortable2" href="#">可攜版 .exe</a>
+          <a class="btn ghost big" id="allReleases" href="#" target="_blank" rel="noopener">所有版本</a>
+        </div>
+        <p class="fineprint" id="releaseNote2"></p>
+      </div>
+      <ol class="steps">
+        <li><b>下載並執行</b><span>SmartScreen 可能提示未知發行者，選擇「仍要執行」。</span></li>
+        <li><b>新增供應商</b><span>填入 Base URL、API Key、模型名稱，儲存。</span></li>
+        <li><b>按「套用」</b><span>看過 diff 再確認，之後重開該工具的終端即可。</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="section wrap" id="faq">
+    <h2 class="section-title">常見問題</h2>
+    <details><summary>會不會把我的設定改壞？</summary>
+      <p>寫入是定點替換：只改供應商相關的鍵。套用前你會看到逐行 diff，寫入前會自動備份，壞了也能一鍵還原。專案內也附了直接對真實設定檔執行的唯讀測試，驗證其他區塊零改動。</p>
+    </details>
+    <details><summary>API Key 存在哪裡？</summary>
+      <p>存在你本機的 <code>%APPDATA%\SwitchYard\providers.json</code>，以及各工具原本就該存金鑰的位置。沒有雲端、沒有上傳、沒有遙測。</p>
+    </details>
+    <details><summary>需要關掉 cc-switch 嗎？</summary>
+      <p>不需要關，但若 cc-switch 正以代理模式接管同一個工具，SwitchYard 會在上方提示。兩者同時寫同一份設定時，後寫的會蓋掉先寫的，這是設計上的必然。</p>
+    </details>
+    <details><summary>套用後為什麼沒生效？</summary>
+      <p>多數 CLI 在啟動時讀取設定，需要重開終端。Claude Code 支援熱切換，新開的 session 就會套用。每個工具的畫面會標明要怎麼重啟。</p>
+    </details>
+    <details><summary>支援 macOS／Linux 嗎？</summary>
+      <p>程式碼是跨平台的，但目前的發佈流程只打包 Windows。用 Rust 自行編譯即可在其他平台執行。</p>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot-inner">
+    <span>SwitchYard · MIT License</span>
+    <span class="dot">·</span>
+    <a id="repoLink2" href="#" target="_blank" rel="noopener">GitHub</a>
+    <span class="dot">·</span>
+    <span>與 OpenAI、Anthropic、Google、xAI 等公司無關</span>
+  </div>
+</footer>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

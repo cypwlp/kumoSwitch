@@ -1,0 +1,15 @@
+# Rust
+src-tauri/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Local scratch
+.shots/
+.DS_Store
+Thumbs.db
+
+# Tauri generated
+src-tauri/gen/

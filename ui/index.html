@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SwitchYard</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M7 12h11M14 8l4 4-4 4" stroke="url(#g)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <path d="M25 20H14M18 16l-4 4 4 4" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs>
+      </svg>
+      <div>
+        <h1>SwitchYard</h1>
+        <p>AI CLI 供應商切換</p>
+      </div>
+    </div>
+    <input id="toolFilter" class="rail-search" type="search" placeholder="篩選工具…" autocomplete="off" />
+    <nav id="toolList" class="tools"></nav>
+    <div class="rail-foot">
+      <span id="version" class="muted"></span>
+      <button id="rescan" class="ghost small" title="重新掃描設定檔">重新掃描</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="welcome" class="welcome">
+      <div class="welcome-card">
+        <h2>選擇左側的工具開始</h2>
+        <p>SwitchYard 只改寫供應商相關的那幾個鍵，<br/>你的註解、外掛、MCP 與其他設定原樣保留。</p>
+        <ul>
+          <li>套用前一定顯示逐行 diff</li>
+          <li>每次寫入自動建立時間戳備份，可一鍵還原</li>
+          <li>所有資料只留在本機</li>
+        </ul>
+      </div>
+    </div>
+
+    <section id="panel" class="panel hidden">
+      <header class="panel-head">
+        <div class="title-row">
+          <h2 id="toolName"></h2>
+          <span id="toolBlurb" class="muted"></span>
+          <span id="verifyBadge" class="badge"></span>
+        </div>
+        <div class="path-row">
+          <code id="configPath" title="設定檔路徑"></code>
+          <button id="revealBtn" class="ghost small">開啟資料夾</button>
+          <span id="formatBadge" class="badge subtle"></span>
+        </div>
+      </header>
+
+      <div id="takeoverBanner" class="banner warn hidden">
+        <strong>cc-switch 正在接管這個工具</strong>
+        <span>偵測到代理模式啟用中，套用後可能被 cc-switch 覆蓋。建議先切回直連模式。</span>
+      </div>
+
+      <div id="stateCard" class="state-card">
+        <div class="state-item"><span class="k">目前 Base URL</span><span id="curBase" class="v mono">—</span></div>
+        <div class="state-item"><span class="k">目前模型</span><span id="curModel" class="v mono">—</span></div>
+        <div class="state-item"><span class="k">目前金鑰</span><span id="curKey" class="v mono">—</span></div>
+        <div class="state-item"><span class="k">重啟</span><span id="curRestart" class="v small"></span></div>
+      </div>
+
+      <div class="toolbar">
+        <input id="providerFilter" class="search" type="search" placeholder="輸入即篩：名稱、URL、模型…" autocomplete="off" />
+        <span id="count" class="muted"></span>
+        <div class="spacer"></div>
+        <button id="backupBtn" class="ghost">備份紀錄</button>
+        <button id="addBtn" class="primary">＋ 新增供應商</button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th class="c-name">名稱</th>
+              <th class="c-url">Base URL</th>
+              <th class="c-model">模型</th>
+              <th class="c-state">狀態</th>
+              <th class="c-act">動作</th>
+            </tr>
+          </thead>
+          <tbody id="providerBody"></tbody>
+        </table>
+        <div id="emptyHint" class="empty hidden"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modal" class="modal hidden">
+  <div class="sheet" id="sheet"></div>
+</div>
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
