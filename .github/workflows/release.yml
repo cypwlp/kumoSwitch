@@ -36,6 +36,8 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: SwitchYard ${{ github.ref_name }}
@@ -46,6 +48,7 @@ jobs:
             - `SwitchYard-portable.exe`：可攜版，免安裝不寫註冊表
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
           args: --target x86_64-pc-windows-msvc
 
       - name: Upload portable exe

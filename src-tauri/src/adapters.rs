@@ -287,6 +287,74 @@ pub static TOOLS: &[ToolSpec] = &[
         kind_choices: OPENCODE_API,
     },
     ToolSpec {
+        id: "crush",
+        name: "Crush",
+        blurb: "Charmbracelet Crush",
+        dir: ".config/crush",
+        default_file: "crush.json",
+        alt_files: &[],
+        env_override: None,
+        verified: true,
+        restart: "需要重開終端",
+        steps: &[
+            Step { file: "crush.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "type"], val: s("openai-compat"), when: When::IfMissing },
+            Step { file: "crush.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "base_url"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "crush.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "api_key"], val: s("{{api_key}}"), when: When::Always },
+            Step {
+                file: "crush.json",
+                fmt: Fmt::Json,
+                path: &["providers", "{{config_id}}", "models"],
+                val: Val::Json(r#"[{"id":"{{model}}","name":"{{model}}"}]"#),
+                when: When::IfMissing,
+            },
+        ],
+        kind_choices: EMPTY,
+    },
+    ToolSpec {
+        id: "qwen",
+        name: "Qwen Code",
+        blurb: "QwenLM qwen-code",
+        dir: ".qwen",
+        default_file: "settings.json",
+        alt_files: &[],
+        env_override: None,
+        verified: false,
+        restart: "需要重開終端",
+        steps: &[
+            Step {
+                file: "settings.json",
+                fmt: Fmt::Json,
+                path: &["modelProviders", "{{config_id}}"],
+                val: Val::Json(r#"[{"id":"{{model}}","baseUrl":"{{base_url}}","envKey":"OPENAI_API_KEY"}]"#),
+                when: When::IfMissing,
+            },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["model", "name"], val: s("{{model}}"), when: When::HasModel },
+            Step { file: ".env", fmt: Fmt::Env, path: &["OPENAI_BASE_URL"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: ".env", fmt: Fmt::Env, path: &["OPENAI_API_KEY"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: ".env", fmt: Fmt::Env, path: &["OPENAI_MODEL"], val: s("{{model}}"), when: When::HasModel },
+        ],
+        kind_choices: EMPTY,
+    },
+    ToolSpec {
+        id: "kilo",
+        name: "Kilo Code",
+        blurb: "Kilo-Org kilocode CLI",
+        dir: ".config/kilo",
+        default_file: "kilo.jsonc",
+        alt_files: &["kilo.json"],
+        env_override: None,
+        verified: false,
+        restart: "需要重開終端",
+        steps: &[
+            Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
+            Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "options", "baseURL"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "options", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "models", "{{model}}", "name"], val: s("{{model}}"), when: When::IfMissing },
+            Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["model"], val: s("{{config_id}}/{{model}}"), when: When::HasModel },
+        ],
+        kind_choices: EMPTY,
+    },
+    ToolSpec {
         id: "dsh",
         name: "DSH",
         blurb: "DeepSeek Harness",
@@ -855,6 +923,57 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                     key,
                     if active == id { active_model.clone() } else { String::new() },
                     rd("settings.yaml", Fmt::Yaml, &["llm-pi-ai", "providers", &id, "api"]),
+                ));
+            }
+        }
+        "crush" => {
+            for id in map_keys(spec, "crush.json", Fmt::Json, &["providers"]) {
+                let base = rd("crush.json", Fmt::Json, &["providers", &id, "base_url"]);
+                if base.is_empty() {
+                    continue;
+                }
+                out.push(imported(
+                    &id,
+                    id.clone(),
+                    base,
+                    rd("crush.json", Fmt::Json, &["providers", &id, "api_key"]),
+                    String::new(),
+                    String::new(),
+                ));
+            }
+        }
+        "kilo" => {
+            let active = rd("kilo.jsonc", Fmt::Json, &["model"]);
+            for id in map_keys(spec, "kilo.jsonc", Fmt::Json, &["provider"]) {
+                let base = rd("kilo.jsonc", Fmt::Json, &["provider", &id, "options", "baseURL"]);
+                if base.is_empty() {
+                    continue;
+                }
+                let model = active
+                    .split_once('/')
+                    .filter(|(pid, _)| *pid == id)
+                    .map(|(_, m)| m.to_string())
+                    .unwrap_or_default();
+                out.push(imported(
+                    &id,
+                    rd("kilo.jsonc", Fmt::Json, &["provider", &id, "name"]),
+                    base,
+                    rd("kilo.jsonc", Fmt::Json, &["provider", &id, "options", "apiKey"]),
+                    model,
+                    String::new(),
+                ));
+            }
+        }
+        "qwen" => {
+            let base = rd(".env", Fmt::Env, &["OPENAI_BASE_URL"]);
+            if !base.is_empty() {
+                out.push(imported(
+                    "current",
+                    "目前設定".into(),
+                    base,
+                    rd(".env", Fmt::Env, &["OPENAI_API_KEY"]),
+                    rd(".env", Fmt::Env, &["OPENAI_MODEL"]),
+                    String::new(),
                 ));
             }
         }

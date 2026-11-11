@@ -2,7 +2,7 @@
 
 > 切換 AI CLI 供應商，不動其他一行設定。
 
-一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code 的供應商設定集中管理。
+一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code、Crush、Qwen Code、Kilo Code 共 13 種工具的供應商設定集中管理。
 
 ![主介面](site/assets/screenshot-panel.png)
 
@@ -28,6 +28,7 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **Ctrl+K 命令面板** —— 跨 10 個工具搜尋供應商，Enter 直接看 diff。
 - **首次啟動引導** —— 自動偵測既有設定並一鍵導入，不必從零輸入。
 - **診斷匯出** —— 一鍵產生環境與設定摘要（金鑰只留末四碼）。
+- **自動更新** —— 啟動後檢查新版本，下載後驗簽再安裝；更新包以 minisign 簽章，CI 產出 `latest.json`。
 
 ## 支援的工具
 
@@ -43,6 +44,9 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 | ZCode | `~/.zcode/v2/config.json` | `providers.*.options` | 待實測（UI 會提醒） |
 | Hermes | `~/.hermes/config.yaml` | `model.*` | 待實測（UI 會提醒） |
 | Command Code | `~/.commandcode/providers.json` | `providers.*` | 待實測（UI 會提醒） |
+| Crush | `~/.config/crush/crush.json` | `providers.*` | 依官方文件 |
+| Qwen Code | `~/.qwen/settings.json` + `.env` | `modelProviders.*`、`OPENAI_*` | 待實測（UI 會提醒） |
+| Kilo Code | `~/.config/kilo/kilo.jsonc` | `provider.*.options` | 待實測（UI 會提醒） |
 
 「待實測」表示該工具的設定格式來自公開文件或第三方整理，尚未在真實安裝上驗證。畫面會標記提醒，套用前請務必看過 diff。
 

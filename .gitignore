@@ -14,3 +14,6 @@ Thumbs.db
 # Tauri generated
 src-tauri/gen/
 ui/dist/
+
+# signing keys
+.secrets/

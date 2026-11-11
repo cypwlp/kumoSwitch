@@ -24,6 +24,7 @@ interface PanelProps {
   onClone: (provider: Provider) => void;
   onPalette: () => void;
   onDiagnostics: () => void;
+  onCheckUpdate: () => void;
   sort: "manual" | "name" | "recent";
   onSort: (value: "manual" | "name" | "recent") => void;
 }
@@ -49,6 +50,7 @@ export function ToolPanel({
   onClone,
   onPalette,
   onDiagnostics,
+  onCheckUpdate,
   sort,
   onSort,
 }: PanelProps) {
@@ -151,6 +153,7 @@ export function ToolPanel({
             <button onClick={onPalette}>快速切換 <kbd>Ctrl</kbd><kbd>K</kbd></button>
             <button onClick={onBackups}>備份紀錄</button>
             <button onClick={onDiagnostics}>匯出診斷摘要</button>
+            <button onClick={onCheckUpdate}>檢查更新</button>
           </div>
         </details>
         <button className="primary" onClick={onAdd} title="新增供應商 (Ctrl+N)">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText, MOCK } from "./api";
 import { hasLayer } from "./focus";
 import { useTheme } from "./theme";
+import { checkForUpdate, installUpdate, type UpdateCheck } from "./updater";
 import type {
   AppInfo,
   BackupInfo,
@@ -56,6 +57,9 @@ export default function App() {
   const [modal, setModal] = useState<ModalState>(null);
   const [palette, setPalette] = useState(false);
   const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
+  const [update, setUpdate] = useState<UpdateCheck>({ kind: "idle" });
+  const [updating, setUpdating] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [onboarded, setOnboarded] = useState<boolean>(() => {
     if (MOCK) return false;
     try {
@@ -238,6 +242,24 @@ export default function App() {
   useEffect(() => {
     if (MOCK && hashTokens().includes("palette")) setPalette(true);
   }, []);
+
+  const runUpdateCheck = useCallback(
+    async (manual: boolean) => {
+      const result = await checkForUpdate();
+      setUpdate(result);
+      if (manual) {
+        if (result.kind === "none") push("已是最新版本", "ok");
+        else if (result.kind === "available") push(`有新版本 ${result.version}`, "ok");
+        else if (result.kind === "error") push(result.message, "err");
+      }
+    },
+    [push],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void runUpdateCheck(false), 2500);
+    return () => window.clearTimeout(timer);
+  }, [runUpdateCheck]);
 
   /* ------------------------------------------- tray / cross-window events */
 
@@ -514,6 +536,17 @@ export default function App() {
     }
   };
 
+  const startUpdate = async () => {
+    setUpdating(true);
+    setProgress(0);
+    try {
+      await installUpdate(setProgress);
+    } catch (err) {
+      push(errorText(err), "err");
+      setUpdating(false);
+    }
+  };
+
   /* ------------------------------------------------------------- render */
 
   const showOnboarding =
@@ -538,6 +571,31 @@ export default function App() {
         />
 
         <main className="main">
+          {update.kind === "available" ? (
+            <div className="update-bar">
+              <span className="dot" />
+              <span>
+                有新版本 <strong>{update.version}</strong>
+                {updating ? ` · 下載中 ${progress}%` : ""}
+              </span>
+              <div className="spacer" />
+              {updating ? (
+                <div className="progress">
+                  <i style={{ width: `${progress}%` }} />
+                </div>
+              ) : (
+                <>
+                  <button className="ghost small" onClick={() => setUpdate({ kind: "idle" })}>
+                    稍後
+                  </button>
+                  <button className="primary small" onClick={() => void startUpdate()}>
+                    立即更新
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
+
           {selected ? (
             <ToolPanel
               key={selected.id}
@@ -558,6 +616,7 @@ export default function App() {
               onClone={(p) => void cloneProvider(p)}
               onPalette={() => setPalette(true)}
               onDiagnostics={() => void diagnostics()}
+              onCheckUpdate={() => void runUpdateCheck(true)}
               onApply={(p) => void openDiff(selected.id, p)}
               onEdit={(p) => openEditor(p)}
               onDelete={askDelete}

@@ -25,6 +25,11 @@
 - Windows DPAPI 金鑰加密，舊明文檔啟動時自動遷移
 - 備份保留上限 20 份
 
+**擴充**
+- 新增 3 個工具：Crush、Qwen Code、Kilo Code（共 13 個）
+- 自動更新：`tauri-plugin-updater`，minisign 簽章、CI 產出 `latest.json`，
+  啟動後自動檢查並可一鍵下載安裝後重啟
+
 **前端**
 - 重寫為 React 18 + Vite + TypeScript
 - 亮色／暗色／跟隨系統主題，diff 語法高亮，焦點鎖與鍵盤操作，表格行內編輯
