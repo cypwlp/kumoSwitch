@@ -459,7 +459,7 @@ fn proxy_save(config: proxy::ProxyConfig) -> Result<proxy::ProxyConfig, String> 
     let mut data = store::load();
     data.proxy = config.clone();
     store::save(&data)?;
-    proxy::start();
+    proxy::start().map_err(|error| format!("代理啟動失敗：{error}"))?;
     Ok(config)
 }
 
@@ -598,7 +598,7 @@ fn main() {
         .setup(|app| {
             tray::install(app.handle())?;
             spawn_health_loop(app.handle().clone());
-            proxy::start();
+            let _ = proxy::start();
             Ok(())
         })
         .on_window_event(|window, event| {

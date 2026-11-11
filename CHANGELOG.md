@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- 代理相容性：轉發客戶端 headers（含 `anthropic-beta`）、保留任意 HTTP method、修改連接埠即時重載、長串流改為 30 分鐘 idle timeout。
+
 ## 0.6.2 — 2026-11-11
 - 修跨平台打包：圖示轉為真 RGBA8（macOS/Linux 拒收調色板 PNG）
 

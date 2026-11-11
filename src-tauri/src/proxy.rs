@@ -4,10 +4,19 @@
 //! to the configured stack of providers in order, failing over on connection
 //! errors, 429 and 5xx. Responses stream straight through.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
-static RUNNING: AtomicBool = AtomicBool::new(false);
+struct Runtime {
+    server: Option<Arc<tiny_http::Server>>,
+    port: u16,
+}
+
+static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime { server: None, port: 0 });
+
+fn runtime() -> MutexGuard<'static, Runtime> {
+    RUNTIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
@@ -66,15 +75,46 @@ fn resolve_stack(config: &ProxyConfig) -> Vec<Target> {
     out
 }
 
-fn header_map(response: &reqwest::blocking::Response) -> Vec<(String, String)> {
+fn is_hop_by_hop(name: &str) -> bool {
+    matches!(
+        name,
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    )
+}
+
+fn request_headers(headers: &[tiny_http::Header]) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .filter_map(|header| {
+            let name = header.field.as_str().as_str().to_ascii_lowercase();
+            if is_hop_by_hop(&name)
+                || matches!(name.as_str(), "host" | "content-length" | "authorization" | "x-api-key")
+            {
+                return None;
+            }
+            Some((name, header.value.as_str().to_string()))
+        })
+        .collect()
+}
+
+fn response_headers(response: &reqwest::blocking::Response) -> Vec<(String, String)> {
     response
         .headers()
         .iter()
-        .filter(|(k, _)| {
-            let k = k.as_str().to_lowercase();
-            !matches!(k.as_str(), "transfer-encoding" | "connection" | "content-length")
+        .filter_map(|(name, value)| {
+            let name = name.as_str().to_ascii_lowercase();
+            if is_hop_by_hop(&name) || name == "content-length" {
+                return None;
+            }
+            Some((name, value.to_str().unwrap_or("").to_string()))
         })
-        .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect()
 }
 
@@ -84,7 +124,8 @@ fn handle(request: tiny_http::Request, config: ProxyConfig) {
 }
 
 fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: Vec<Target>) {
-    let method = request.method().clone();
+    let method = request.method().as_str().to_string();
+    let forwarded_headers = request_headers(request.headers());
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or("/").to_string();
     let query = url.split_once('?').map(|(_, q)| format!("?{q}")).unwrap_or_default();
@@ -101,8 +142,11 @@ fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: 
         return;
     }
 
+    // Keep a generous idle timeout for long SSE streams, but fail fast when
+    // connecting to an unreachable provider.
     let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(30 * 60))
         .build();
     let client = match client {
         Ok(c) => c,
@@ -112,20 +156,31 @@ fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: 
         }
     };
 
+    let reqwest_method = reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::POST);
+    let has_content_type = forwarded_headers.iter().any(|(name, _)| name == "content-type");
+    let has_anthropic_version = forwarded_headers.iter().any(|(name, _)| name == "anthropic-version");
+
     let mut last_status = 502u16;
     for target in &targets {
         let upstream = format!("{}{}", upstream_url(&target.base_url, &path), query);
-        let mut req = match method {
-            tiny_http::Method::Post => client.post(&upstream),
-            tiny_http::Method::Get => client.get(&upstream),
-            _ => client.post(&upstream),
-        };
+        let mut req = client.request(reqwest_method.clone(), &upstream);
+        for (name, value) in &forwarded_headers {
+            req = req.header(name, value);
+        }
         if target.anthropic {
-            req = req.header("x-api-key", &target.api_key).header("anthropic-version", "2023-06-01");
+            req = req.header("x-api-key", &target.api_key);
+            if !has_anthropic_version {
+                req = req.header("anthropic-version", "2023-06-01");
+            }
         } else {
             req = req.header("Authorization", format!("Bearer {}", target.api_key));
         }
-        req = req.header("Content-Type", "application/json").body(body.clone());
+        if !has_content_type && !body.is_empty() {
+            req = req.header("Content-Type", "application/json");
+        }
+        if !body.is_empty() {
+            req = req.body(body.clone());
+        }
 
         let sent = req.send();
         let resp = match sent {
@@ -137,7 +192,7 @@ fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: 
             last_status = status;
             continue; // fail over to the next provider
         }
-        let headers = header_map(&resp);
+        let headers = response_headers(&resp);
         let mut builder = tiny_http::Response::new(
             tiny_http::StatusCode(status),
             headers
@@ -159,47 +214,74 @@ fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: 
     let _ = request.respond(resp);
 }
 
-/// Start the proxy listener once; it reads fresh config on every request.
-pub fn start() {
-    if RUNNING.swap(true, Ordering::SeqCst) {
-        return;
+/// Start or restart the proxy listener so a changed port takes effect immediately.
+fn start_listener(port: u16) -> Result<(), String> {
+    let mut state = runtime();
+    if state.server.is_some() && state.port == port {
+        return Ok(());
     }
-    std::thread::spawn(|| {
-        let config = crate::store::load().proxy;
-        let addr = format!("127.0.0.1:{}", config.port);
-        let server = match tiny_http::Server::http(&addr) {
-            Ok(s) => Arc::new(s),
-            Err(_) => { RUNNING.store(false, Ordering::SeqCst); return; }
-        };
+
+    if let Some(previous) = state.server.take() {
+        previous.unblock();
+    }
+    state.port = 0;
+
+    let addr = format!("127.0.0.1:{port}");
+    let server = tiny_http::Server::http(&addr)
+        .map_err(|error| format!("無法在 {addr} 啟動代理：{error}"))?;
+    let server = Arc::new(server);
+    state.server = Some(Arc::clone(&server));
+    state.port = port;
+
+    std::thread::spawn(move || {
         for request in server.incoming_requests() {
             let config = crate::store::load().proxy;
-            let server = server.clone();
-            std::thread::spawn(move || {
-                handle(request, config);
-                let _ = server; // keep alive
-            });
+            std::thread::spawn(move || handle(request, config));
         }
     });
+    Ok(())
+}
+
+pub fn start() -> Result<(), String> {
+    start_listener(crate::store::load().proxy.port)
+}
+
+#[cfg(test)]
+fn stop_listener() {
+    let mut state = runtime();
+    if let Some(server) = state.server.take() {
+        server.unblock();
+    }
+    state.port = 0;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::TcpListener;
+    use std::net::{SocketAddr, TcpListener, TcpStream};
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     #[derive(Debug)]
     struct CapturedRequest {
+        method: String,
         url: String,
-        authorization: String,
+        headers: Vec<(String, String)>,
         body: String,
     }
 
     fn local_url(server: &tiny_http::Server) -> String {
         let addr = server.server_addr().to_ip().expect("local TCP listener");
         format!("http://{addr}")
+    }
+
+    fn header<'a>(request: &'a CapturedRequest, name: &str) -> Option<&'a str> {
+        request
+            .headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
     }
 
     fn spawn_upstream(
@@ -215,16 +297,21 @@ mod tests {
                 .recv_timeout(Duration::from_secs(10))
                 .expect("upstream receive")
                 .expect("upstream request");
-            let authorization = request
+            let method = request.method().as_str().to_string();
+            let headers = request
                 .headers()
                 .iter()
-                .find(|h| h.field.equiv("Authorization"))
-                .map(|h| h.value.as_str().to_string())
-                .unwrap_or_default();
+                .map(|h| {
+                    (
+                        h.field.as_str().as_str().to_ascii_lowercase(),
+                        h.value.as_str().to_string(),
+                    )
+                })
+                .collect();
             let url = request.url().to_string();
             let mut body = String::new();
             request.as_reader().read_to_string(&mut body).unwrap();
-            seen.lock().unwrap().push(CapturedRequest { url, authorization, body });
+            seen.lock().unwrap().push(CapturedRequest { method, url, headers, body });
 
             let payload = format!(r#"{{"mock":"{tag}"}}"#);
             let response = tiny_http::Response::from_string(payload)
@@ -252,6 +339,10 @@ mod tests {
         Target { base_url, api_key: api_key.into(), anthropic: false }
     }
 
+    fn anthropic_target(base_url: String, api_key: &str) -> Target {
+        Target { base_url, api_key: api_key.into(), anthropic: true }
+    }
+
     fn send_through_proxy(proxy_url: &str) -> reqwest::blocking::Response {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(10))
@@ -260,15 +351,42 @@ mod tests {
         client
             .post(format!("{proxy_url}/v1/chat/completions?trace=1"))
             .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer client-fake")
+            .header("x-api-key", "client-fake")
             .body(r#"{"model":"e2e-model","messages":[]}"#)
             .send()
             .expect("proxy response")
     }
 
     fn assert_forwarded(request: &CapturedRequest, api_key: &str) {
+        let expected_auth = format!("Bearer {api_key}");
+        assert_eq!(request.method, "POST");
         assert_eq!(request.url, "/v1/chat/completions?trace=1");
-        assert_eq!(request.authorization, format!("Bearer {api_key}"));
+        assert_eq!(header(request, "authorization"), Some(expected_auth.as_str()));
+        assert_eq!(header(request, "x-api-key"), None);
+        assert_eq!(header(request, "content-type"), Some("application/json"));
         assert!(request.body.contains(r#""model":"e2e-model""#), "body was {}", request.body);
+    }
+
+    fn free_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
+    }
+
+    fn port_open(port: u16) -> bool {
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_ok()
+    }
+
+    fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(3) {
+            if condition() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        false
     }
 
     #[test]
@@ -307,10 +425,7 @@ mod tests {
 
     #[test]
     fn proxy_fails_over_from_connection_error_to_200() {
-        let dead_port = {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            listener.local_addr().unwrap().port()
-        };
+        let dead_port = free_port();
         let (good_url, good_seen, good_join) = spawn_upstream(200, "good");
         let (proxy_url, proxy_join) = spawn_proxy(vec![
             target(format!("http://127.0.0.1:{dead_port}"), "dead-key"),
@@ -328,5 +443,61 @@ mod tests {
         let good = good_seen.lock().unwrap();
         assert_eq!(good.len(), 1, "healthy upstream should receive one request");
         assert_forwarded(&good[0], "good-key");
+    }
+
+    #[test]
+    fn proxy_forwards_method_and_anthropic_headers() {
+        let (upstream_url, seen, upstream_join) = spawn_upstream(200, "good");
+        let (proxy_url, proxy_join) = spawn_proxy(vec![anthropic_target(upstream_url, "anthropic-key")]);
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        let response = client
+            .patch(format!("{proxy_url}/v1/messages?beta=1"))
+            .header("Content-Type", "application/json")
+            .header("anthropic-beta", "tools-2024-04-04")
+            .header("anthropic-version", "2024-06-01")
+            .header("x-client-trace", "trace-123")
+            .header("Authorization", "Bearer client-fake")
+            .header("x-api-key", "client-fake")
+            .body(r#"{"model":"e2e-model","messages":[]}"#)
+            .send()
+            .expect("proxy response");
+        assert_eq!(response.status().as_u16(), 200);
+
+        proxy_join.join().unwrap();
+        upstream_join.join().unwrap();
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].method, "PATCH");
+        assert_eq!(seen[0].url, "/v1/messages?beta=1");
+        assert_eq!(header(&seen[0], "x-api-key"), Some("anthropic-key"));
+        assert_eq!(header(&seen[0], "anthropic-beta"), Some("tools-2024-04-04"));
+        assert_eq!(header(&seen[0], "anthropic-version"), Some("2024-06-01"));
+        assert_eq!(header(&seen[0], "x-client-trace"), Some("trace-123"));
+        assert_eq!(header(&seen[0], "authorization"), None);
+        assert_eq!(header(&seen[0], "content-type"), Some("application/json"));
+    }
+
+    #[test]
+    fn listener_restarts_when_port_changes() {
+        let first = free_port();
+        let mut second = free_port();
+        while second == first {
+            second = free_port();
+        }
+
+        start_listener(first).unwrap();
+        assert!(port_open(first), "first listener should accept connections");
+        start_listener(second).unwrap();
+        assert!(port_open(second), "second listener should accept connections");
+        assert!(
+            wait_until(|| !port_open(first)),
+            "old listener should close after the port changes"
+        );
+        stop_listener();
     }
 }
