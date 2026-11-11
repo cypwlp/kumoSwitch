@@ -3,6 +3,7 @@
 mod adapters;
 mod backup;
 mod crypto;
+mod history;
 #[cfg(test)]
 mod e2e_tests;
 mod jsonc;
@@ -344,7 +345,14 @@ fn import_from_config(tool: String, app: tauri::AppHandle) -> Result<ImportResul
 #[tauri::command]
 fn test_provider(tool: String, provider_id: String) -> Result<net::TestResult, String> {
     let (_, provider) = load_provider(&tool, &provider_id)?;
-    Ok(net::probe(&provider.base_url, &provider.api_key, tool == "claude"))
+    let result = net::probe(&provider.base_url, &provider.api_key, tool == "claude");
+    let _ = history::record(&tool, &provider_id, result.ok, result.ms as u64, result.status);
+    Ok(result)
+}
+
+#[tauri::command]
+fn test_history(tool: String) -> std::collections::BTreeMap<String, history::Summary> {
+    history::summaries(&tool)
 }
 
 #[tauri::command]
@@ -516,6 +524,7 @@ fn main() {
             apply_provider,
             import_from_config,
             test_provider,
+            test_history,
             export_providers,
             export_diagnostics,
             import_providers_json,

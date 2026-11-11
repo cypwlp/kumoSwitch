@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Provider, TestResult, ToolView } from "../types";
+import type { HistoryMap, HistorySummary, Provider, TestResult, ToolView } from "../types";
 
 export type EditField = "name" | "base_url" | "model";
 export type TestState = TestResult | "pending";
@@ -104,7 +104,7 @@ interface TableProps {
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
   onTest: (provider: Provider) => void;
-  onClone: (provider: Provider) => void;
+  history: HistoryMap;
   onInlineSave: (provider: Provider, field: EditField, value: string) => void;
 }
 
@@ -117,7 +117,7 @@ export function ProviderTable({
   onEdit,
   onDelete,
   onTest,
-  onClone,
+  history,
   onInlineSave,
 }: TableProps) {
   const [editing, setEditing] = useState<{ id: string; field: EditField } | null>(null);
@@ -144,7 +144,8 @@ export function ProviderTable({
             <th className="c-name">名稱</th>
             <th className="c-url">Base URL</th>
             <th className="c-model">模型</th>
-            <th className="c-state">狀態</th>
+            <th className="c-health">健康度</th>
+              <th className="c-state">狀態</th>
             <th className="c-act">動作</th>
           </tr>
         </thead>
@@ -216,6 +217,9 @@ export function ProviderTable({
                     onCancel={() => setEditing(null)}
                   />
                 </td>
+                <td className="c-health">
+                  <HealthCell summary={history[p.id]} />
+                </td>
                 <td className="c-state">
                   {active ? (
                     <span className="badge ok">使用中</span>
@@ -236,9 +240,6 @@ export function ProviderTable({
                     </button>
                     <button className="small primary" onClick={() => onApply(p)} title="先看 diff 再套用">
                       套用
-                    </button>
-                    <button className="small ghost" onClick={() => onClone(p)} title="複製成新供應商">
-                      複製
                     </button>
                     <button className="small ghost" onClick={() => onEdit(p)}>
                       編輯
@@ -270,6 +271,32 @@ export function ProviderTable({
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+function HealthCell({ summary }: { summary?: HistorySummary }) {
+  if (!summary || summary.total === 0) {
+    return <span className="muted small">未測試</span>;
+  }
+  const bars = summary.samples.slice(-12);
+  const max = Math.max(...bars.map((s) => s.ms), 1);
+  const pct = Math.round(summary.success_rate * 100);
+  const tone = pct >= 95 ? "ok" : pct >= 70 ? "warn" : "bad";
+  const when = new Date(summary.last_ts).toLocaleString();
+  return (
+    <div className={`health ${tone}`} title={`最近 ${summary.total} 筆 · 平均 ${summary.avg_ms}ms · ${when}`}>
+      <span className="spark">
+        {bars.map((s, i) => (
+          <i
+            key={i}
+            className={s.ok ? "ok" : "bad"}
+            style={{ height: `${s.ok ? Math.max(20, Math.round((s.ms / max) * 100)) : 100}%` }}
+          />
+        ))}
+      </span>
+      <span className="health-text">
+        {pct}% · {summary.avg_ms}ms
+      </span>
     </div>
   );
 }

@@ -1,4 +1,6 @@
 import type {
+  Sample,
+  HistoryMap,
   AppInfo,
   ApplyResult,
   BackupInfo,
@@ -304,6 +306,31 @@ const BACKUPS: Record<string, BackupInfo[]> = {
 
 function displayPath(rel: string): string {
   return `~/${rel}`;
+}
+
+function fakeSummary(seed: string): HistoryMap[string] {
+  const now = Date.now();
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) % 997;
+  const bad = /ollama|command-code/i.test(seed);
+  const samples: Sample[] = [];
+  for (let i = 11; i >= 0; i -= 1) {
+    const fail = bad ? i % 3 === 0 : i === 4;
+    samples.push({
+      ts: now - i * 3600_000,
+      ok: !fail,
+      ms: fail ? 0 : 80 + ((h + i * 37) % 180),
+      status: fail ? 500 : 200,
+    });
+  }
+  const ok = samples.filter((s) => s.ok);
+  return {
+    samples,
+    success_rate: ok.length / samples.length,
+    avg_ms: ok.length ? Math.round(ok.reduce((n, s) => n + s.ms, 0) / ok.length) : 0,
+    last_ts: now,
+    total: samples.length,
+  };
 }
 
 function toolViews(): ToolView[] {
@@ -626,6 +653,14 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         imported.push(candidate);
       }
       return { imported, skipped: seed.importable > 0 ? 1 : 0 } satisfies ImportResult;
+    }
+
+    case "test_history": {
+      const out: HistoryMap = {};
+      for (const list of Object.values(PROVIDERS)) {
+        for (const prov of list) out[prov.id] = fakeSummary(prov.id);
+      }
+      return out;
     }
 
     case "test_provider": {

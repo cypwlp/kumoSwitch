@@ -8,6 +8,7 @@ interface EditorProps {
   busy: boolean;
   onCancel: () => void;
   onSave: (payload: Provider) => void;
+  onClone?: (payload: Provider) => void;
 }
 
 const EMPTY: Provider = {
@@ -21,7 +22,7 @@ const EMPTY: Provider = {
   note: "",
 };
 
-export function EditorModal({ tool, provider, busy, onCancel, onSave }: EditorProps) {
+export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }: EditorProps) {
   const [form, setForm] = useState<Provider>(() => ({ ...EMPTY, ...(provider ?? {}) }));
   const [showKey, setShowKey] = useState(false);
 
@@ -47,6 +48,17 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave }: EditorPr
       onClose={onCancel}
       footer={
         <>
+          {provider && onClone ? (
+            <button
+              className="ghost"
+              onClick={() => onClone(form)}
+              disabled={busy}
+              title="用目前欄位內容建立一個新供應商"
+            >
+              另存為副本
+            </button>
+          ) : null}
+          <span className="spacer" />
           <button className="ghost" onClick={onCancel} disabled={busy}>
             取消
           </button>

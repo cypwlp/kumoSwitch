@@ -11,6 +11,7 @@ import type {
   Provider,
   TestResult,
   ToolView,
+  HistoryMap,
 } from "./types";
 
 /** `?mock=1` runs the whole UI against the in-browser fake backend. */
@@ -34,6 +35,7 @@ export const api = {
   revealConfig: (tool: string) => call<void>("reveal_config", { tool }),
   importFromConfig: (tool: string) => call<ImportResult>("import_from_config", { tool }),
   testProvider: (tool: string, providerId: string) => call<TestResult>("test_provider", { tool, providerId }),
+  testHistory: (tool: string) => call<HistoryMap>("test_history", { tool }),
   exportProviders: () => call<ExportResult>("export_providers"),
   exportDiagnostics: () => call<ExportResult>("export_diagnostics"),
   importProvidersJson: (text: string) => call<JsonImportResult>("import_providers_json", { text }),

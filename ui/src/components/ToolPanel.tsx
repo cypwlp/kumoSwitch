@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { Provider, ToolView } from "../types";
+import type { HistoryMap, Provider, ToolView } from "../types";
 import { ProviderTable, type EditField, type TestState } from "./ProviderTable";
 import { WarnIcon } from "./Icons";
 
@@ -10,6 +10,7 @@ interface PanelProps {
   filter: string;
   busy: boolean;
   tests: Record<string, TestState>;
+  history: HistoryMap;
   searchRef: RefObject<HTMLInputElement>;
   onFilter: (value: string) => void;
   onReveal: () => void;
@@ -21,7 +22,6 @@ interface PanelProps {
   onDelete: (provider: Provider) => void;
   onTest: (provider: Provider) => void;
   onInlineSave: (provider: Provider, field: EditField, value: string) => void;
-  onClone: (provider: Provider) => void;
   onPalette: () => void;
   onDiagnostics: () => void;
   onCheckUpdate: () => void;
@@ -36,6 +36,7 @@ export function ToolPanel({
   filter,
   busy,
   tests,
+  history,
   searchRef,
   onFilter,
   onReveal,
@@ -47,7 +48,6 @@ export function ToolPanel({
   onDelete,
   onTest,
   onInlineSave,
-  onClone,
   onPalette,
   onDiagnostics,
   onCheckUpdate,
@@ -166,12 +166,12 @@ export function ToolPanel({
         rows={rows}
         total={total}
         tests={tests}
+        history={history}
         onApply={onApply}
         onEdit={onEdit}
         onDelete={onDelete}
         onTest={onTest}
         onInlineSave={onInlineSave}
-        onClone={onClone}
       />
     </section>
   );

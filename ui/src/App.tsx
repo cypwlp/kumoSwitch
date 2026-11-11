@@ -9,6 +9,7 @@ import type {
   ExportResult,
   Preview,
   Provider,
+  HistoryMap,
   ToolView,
 } from "./types";
 import { Rail } from "./components/Rail";
@@ -54,6 +55,7 @@ export default function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [tests, setTests] = useState<Record<string, TestState>>({});
+  const [history, setHistory] = useState<HistoryMap>({});
   const [modal, setModal] = useState<ModalState>(null);
   const [palette, setPalette] = useState(false);
   const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
@@ -101,6 +103,11 @@ export default function App() {
   const loadProviders = useCallback(async (toolId: string) => {
     const list = await api.providerList(toolId);
     setProviders(list);
+    try {
+      setHistory(await api.testHistory(toolId));
+    } catch {
+      setHistory({});
+    }
     return list;
   }, []);
 
@@ -183,9 +190,8 @@ export default function App() {
       setSelectedId(codex.id);
       let seeded: Provider[] = [];
       try {
-        seeded = await api.providerList(codex.id);
+        seeded = await loadProviders(codex.id);
         if (!alive) return;
-        setProviders(seeded);
       } catch {
         return;
       }
@@ -605,6 +611,7 @@ export default function App() {
               filter={filter}
               busy={busy}
               tests={tests}
+              history={history}
               searchRef={searchRef}
               onFilter={setFilter}
               onReveal={() => void reveal(selected.id)}
@@ -613,7 +620,6 @@ export default function App() {
               onImportConfig={() => void importConfig()}
               sort={sort}
               onSort={setSort}
-              onClone={(p) => void cloneProvider(p)}
               onPalette={() => setPalette(true)}
               onDiagnostics={() => void diagnostics()}
               onCheckUpdate={() => void runUpdateCheck(true)}
@@ -687,6 +693,7 @@ export default function App() {
           busy={busy}
           onCancel={() => setModal(null)}
           onSave={(payload) => void saveProvider(payload)}
+          onClone={(payload) => void cloneProvider(payload)}
         />
       ) : null}
 

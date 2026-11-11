@@ -91,3 +91,19 @@ export interface JsonImportResult {
   imported: number;
   skipped: number;
 }
+export interface Sample {
+  ts: number;
+  ok: boolean;
+  ms: number;
+  status: number;
+}
+
+export interface HistorySummary {
+  samples: Sample[];
+  success_rate: number;
+  avg_ms: number;
+  last_ts: number;
+  total: number;
+}
+
+export type HistoryMap = Record<string, HistorySummary>;
