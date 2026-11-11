@@ -5,7 +5,9 @@
   "description": "Switch AI CLI providers without rewriting your config",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "ui:dev": "npm run dev --prefix ui",
+    "ui:build": "npm run build --prefix ui"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

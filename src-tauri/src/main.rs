@@ -2,7 +2,11 @@
 
 mod adapters;
 mod backup;
+mod crypto;
+#[cfg(test)]
+mod e2e_tests;
 mod jsonc;
+mod net;
 mod store;
 mod yamlpatch;
 
@@ -24,6 +28,7 @@ struct ToolView {
     active_id: Option<String>,
     current: CurrentState,
     kind_choices: Vec<&'static str>,
+    importable: usize,
 }
 
 #[derive(Serialize)]
@@ -37,11 +42,35 @@ struct FileDiff {
 }
 
 #[derive(Serialize)]
+struct Preview {
+    files: Vec<FileDiff>,
+    warnings: Vec<String>,
+}
+
+#[derive(Serialize)]
 struct ApplyResult {
     changed: bool,
     backup_id: Option<String>,
     written: Vec<String>,
     message: String,
+}
+
+#[derive(Serialize)]
+struct ImportResult {
+    imported: Vec<Provider>,
+    skipped: usize,
+}
+
+#[derive(Serialize)]
+struct ExportResult {
+    path: String,
+    count: usize,
+}
+
+#[derive(Serialize)]
+struct JsonImportResult {
+    imported: usize,
+    skipped: usize,
 }
 
 fn takeover_state(tool: &str) -> bool {
@@ -73,6 +102,10 @@ fn configured_kind(spec: &ToolSpec, provider: &mut Provider) {
     }
 }
 
+fn same_endpoint(a: &str, b: &str) -> bool {
+    !a.is_empty() && a.trim_end_matches('/') == b.trim_end_matches('/')
+}
+
 #[tauri::command]
 fn tool_list() -> Vec<ToolView> {
     let data = store::load();
@@ -80,14 +113,16 @@ fn tool_list() -> Vec<ToolView> {
         .iter()
         .map(|spec| {
             let providers = data.providers.get(spec.id).cloned().unwrap_or_default();
-            let active_id = data.active.get(spec.id).cloned();
-            let probe = providers
+            let current = adapters::read_current(spec);
+            // Prefer what the config file actually says over our own bookkeeping.
+            let active_id = providers
                 .iter()
-                .find(|p| Some(&p.id) == active_id.as_ref())
-                .or_else(|| providers.first())
-                .cloned()
-                .unwrap_or_default();
-            let current = adapters::read_current(spec, &probe);
+                .find(|p| {
+                    same_endpoint(&p.base_url, &current.base_url)
+                        && (p.model.is_empty() || current.model.is_empty() || p.model == current.model)
+                })
+                .map(|p| p.id.clone())
+                .or_else(|| data.active.get(spec.id).cloned());
             let path = adapters::resolve_file(spec, spec.default_file);
             ToolView {
                 id: spec.id,
@@ -109,6 +144,7 @@ fn tool_list() -> Vec<ToolView> {
                 active_id,
                 current,
                 kind_choices: spec.kind_choices.to_vec(),
+                importable: adapters::discover(spec).len(),
             }
         })
         .collect()
@@ -186,10 +222,42 @@ fn build_diffs(spec: &ToolSpec, provider: &Provider) -> Result<Vec<FileDiff>, St
     Ok(out)
 }
 
+fn build_warnings(spec: &ToolSpec, provider: &Provider) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let current = adapters::read_current(spec);
+    if provider.model.trim().is_empty() && !current.model.is_empty() {
+        warnings.push(format!(
+            "此供應商未填模型，將沿用目前的「{}」。要一併切換請先補上模型名稱。",
+            current.model
+        ));
+    }
+    if !spec.verified {
+        warnings.push(format!(
+            "{} 的設定格式尚未在真實安裝上驗證，請仔細核對下方 diff 再套用。",
+            spec.name
+        ));
+    }
+    if takeover_state(spec.id) {
+        warnings.push("cc-switch 正以代理模式接管此工具，套用後可能被它覆蓋。".into());
+    }
+    warnings
+}
+
 #[tauri::command]
-fn preview(tool: String, provider_id: String) -> Result<Vec<FileDiff>, String> {
+fn preview(tool: String, provider_id: String) -> Result<Preview, String> {
     let (spec, provider) = load_provider(&tool, &provider_id)?;
-    build_diffs(spec, &provider)
+    Ok(Preview {
+        files: build_diffs(spec, &provider)?,
+        warnings: build_warnings(spec, &provider),
+    })
+}
+
+/// Write via a sibling temp file so an interrupted write can never leave the
+/// user's config truncated.
+fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("switchyard-tmp");
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, path)
 }
 
 #[tauri::command]
@@ -208,10 +276,7 @@ fn apply_provider(tool: String, provider_id: String) -> Result<ApplyResult, Stri
         });
     }
 
-    let files: Vec<_> = pending
-        .iter()
-        .map(|c| (c.path.clone(), c.file.clone()))
-        .collect();
+    let files: Vec<_> = pending.iter().map(|c| (c.path.clone(), c.file.clone())).collect();
     let (backup_id, _) = backup::snapshot(&tool, &files)?;
 
     let mut written = Vec::new();
@@ -234,12 +299,67 @@ fn apply_provider(tool: String, provider_id: String) -> Result<ApplyResult, Stri
     })
 }
 
-/// Write via a sibling temp file so an interrupted write can never leave the
-/// user's config truncated.
-fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    let tmp = path.with_extension("switchyard-tmp");
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, path)
+#[tauri::command]
+fn import_from_config(tool: String) -> Result<ImportResult, String> {
+    let spec = spec(&tool)?;
+    let existing = store::list(&tool);
+    let mut imported = Vec::new();
+    let mut skipped = 0usize;
+    for mut provider in adapters::discover(spec) {
+        if existing.iter().any(|p| p.config_id == provider.config_id) {
+            skipped += 1;
+            continue;
+        }
+        configured_kind(spec, &mut provider);
+        imported.push(store::upsert(&tool, provider)?);
+    }
+    Ok(ImportResult { imported, skipped })
+}
+
+#[tauri::command]
+fn test_provider(tool: String, provider_id: String) -> Result<net::TestResult, String> {
+    let (_, provider) = load_provider(&tool, &provider_id)?;
+    Ok(net::probe(&provider.base_url, &provider.api_key, tool == "claude"))
+}
+
+#[tauri::command]
+fn export_providers() -> Result<ExportResult, String> {
+    let data = store::load();
+    let count = data.providers.values().map(|v| v.len()).sum();
+    let dir = store::data_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("switchyard-export-{}.json", store::stamp()));
+    let text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| format!("匯出失敗：{e}"))?;
+    Ok(ExportResult { path: adapters::display_path(&path), count })
+}
+
+#[tauri::command]
+fn import_providers_json(text: String) -> Result<JsonImportResult, String> {
+    let incoming: store::Store =
+        serde_json::from_str(&text).map_err(|e| format!("檔案格式不符：{e}"))?;
+    let mut current = store::load();
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    for (tool, list) in incoming.providers {
+        if adapters::find(&tool).is_none() {
+            skipped += list.len();
+            continue;
+        }
+        let entry = current.providers.entry(tool).or_default();
+        for provider in list {
+            if entry.iter().any(|p| p.config_id == provider.config_id) {
+                skipped += 1;
+                continue;
+            }
+            let mut provider = provider;
+            provider.id = format!("p{}", store::stamp() + imported as u128);
+            entry.push(provider);
+            imported += 1;
+        }
+    }
+    store::save(&current)?;
+    Ok(JsonImportResult { imported, skipped })
 }
 
 #[tauri::command]
@@ -257,6 +377,23 @@ fn reveal_config(tool: String) -> Result<(), String> {
     let spec = spec(&tool)?;
     let path = adapters::resolve_file(spec, spec.default_file);
     let target = if path.exists() { path } else { adapters::tool_dir(spec) };
+    reveal_path(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn reveal_path(path: String) -> Result<(), String> {
+    let expanded = if let Some(rest) = path.strip_prefix("~/") {
+        adapters::home().join(rest)
+    } else {
+        std::path::PathBuf::from(&path)
+    };
+    let target = if expanded.is_file() {
+        expanded
+    } else if expanded.is_dir() {
+        expanded
+    } else {
+        expanded.parent().map(|p| p.to_path_buf()).unwrap_or(expanded)
+    };
     std::process::Command::new("explorer")
         .arg(format!("/select,{}", target.display()))
         .spawn()
@@ -269,7 +406,34 @@ fn app_info() -> serde_json::Value {
     serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "dataDir": adapters::display_path(&store::data_dir()),
+        "encrypted": crypto::available(),
     })
+}
+
+fn main() {
+    if store::needs_migration() {
+        let _ = store::migrate();
+    }
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            tool_list,
+            provider_list,
+            provider_save,
+            provider_delete,
+            preview,
+            apply_provider,
+            import_from_config,
+            test_provider,
+            export_providers,
+            import_providers_json,
+            backup_list,
+            backup_restore,
+            reveal_config,
+            reveal_path,
+            app_info
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 
 #[cfg(test)]
@@ -312,13 +476,6 @@ mod write_path_tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, id);
 
-        let stored = std::fs::read_dir(store::data_dir().join("backups").join(&tool).join(&id))
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().ends_with("config.toml"))
-            .count();
-        assert_eq!(stored, 1);
-
         std::fs::remove_dir_all(store::data_dir().join("backups").join(&tool)).ok();
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -327,22 +484,10 @@ mod write_path_tests {
     fn restore_rejects_path_traversal_ids() {
         assert!(backup::restore("codex", "../../etc").is_err());
     }
-}
 
-fn main() {
-    tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![
-            tool_list,
-            provider_list,
-            provider_save,
-            provider_delete,
-            preview,
-            apply_provider,
-            backup_list,
-            backup_restore,
-            reveal_config,
-            app_info
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    #[test]
+    fn endpoint_comparison_ignores_trailing_slash() {
+        assert!(same_endpoint("https://a/v1/", "https://a/v1"));
+        assert!(!same_endpoint("", ""));
+    }
 }

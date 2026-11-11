@@ -1,9 +1,9 @@
 //! Declarative adapter registry.
 //!
 //! Every tool is described as a list of *targeted* edits: (file, format, key path,
-//! value). Applying a provider can therefore never wipe unrelated settings — the
-//! worst case is that a key we intended to touch gets an unexpected value, and the
-//! diff preview shows that before anything is written.
+//! value). Steps are scalar wherever possible so that re-applying a provider never
+//! clobbers sibling keys the user customised. Whole objects/arrays are only ever
+//! written with `When::IfMissing`, i.e. created once and then left alone.
 
 use crate::{jsonc, yamlpatch};
 use serde_json::Value;
@@ -20,8 +20,11 @@ pub struct Provider {
     pub name: String,
     #[serde(default)]
     pub base_url: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub api_key: String,
+    /// DPAPI-protected key, hex encoded. Only present on Windows.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub api_key_enc: String,
     #[serde(default)]
     pub model: String,
     /// wire_api / protocol / api flavour, meaning depends on the tool.
@@ -54,9 +57,9 @@ impl Fmt {
 pub enum Val {
     /// String value; `{{...}}` placeholders are substituted.
     Str(&'static str),
-    /// JSON value built from a template.
+    /// JSON value built from a template. Only used with `When::IfMissing`.
     Json(&'static str),
-    /// YAML mapping built from a JSON template.
+    /// YAML value built from a JSON template. Only used with `When::IfMissing`.
     Yaml(&'static str),
     Bool(bool),
 }
@@ -65,6 +68,8 @@ pub enum Val {
 pub enum When {
     Always,
     HasModel,
+    /// Skip when the key already exists, so user customisations survive.
+    IfMissing,
 }
 
 pub struct Step {
@@ -73,20 +78,6 @@ pub struct Step {
     pub path: &'static [&'static str],
     pub val: Val,
     pub when: When,
-}
-
-#[derive(Copy, Clone)]
-pub enum Role {
-    BaseUrl,
-    Model,
-    ApiKey,
-}
-
-pub struct Probe {
-    pub file: &'static str,
-    pub fmt: Fmt,
-    pub role: Role,
-    pub path: &'static [&'static str],
 }
 
 pub struct ToolSpec {
@@ -101,7 +92,6 @@ pub struct ToolSpec {
     pub verified: bool,
     pub restart: &'static str,
     pub steps: &'static [Step],
-    pub probes: &'static [Probe],
     pub kind_choices: &'static [&'static str],
 }
 
@@ -133,10 +123,7 @@ pub static TOOLS: &[ToolSpec] = &[
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "base_url"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "wire_api"], val: s("{{kind}}"), when: When::Always },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "experimental_bearer_token"], val: s("{{api_key}}"), when: When::Always },
-            Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "requires_openai_auth"], val: Val::Bool(false), when: When::Always },
-        ],
-        probes: &[
-            Probe { file: "config.toml", fmt: Fmt::Toml, role: Role::Model, path: &["model"] },
+            Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "requires_openai_auth"], val: Val::Bool(false), when: When::IfMissing },
         ],
         kind_choices: CODEX_WIRE,
     },
@@ -155,11 +142,6 @@ pub static TOOLS: &[ToolSpec] = &[
             Step { file: "settings.json", fmt: Fmt::Json, path: &["env", "ANTHROPIC_AUTH_TOKEN"], val: s("{{api_key}}"), when: When::Always },
             Step { file: "settings.json", fmt: Fmt::Json, path: &["env", "ANTHROPIC_MODEL"], val: s("{{model}}"), when: When::HasModel },
         ],
-        probes: &[
-            Probe { file: "settings.json", fmt: Fmt::Json, role: Role::BaseUrl, path: &["env", "ANTHROPIC_BASE_URL"] },
-            Probe { file: "settings.json", fmt: Fmt::Json, role: Role::ApiKey, path: &["env", "ANTHROPIC_AUTH_TOKEN"] },
-            Probe { file: "settings.json", fmt: Fmt::Json, role: Role::Model, path: &["env", "ANTHROPIC_MODEL"] },
-        ],
         kind_choices: EMPTY,
     },
     ToolSpec {
@@ -173,15 +155,10 @@ pub static TOOLS: &[ToolSpec] = &[
         verified: true,
         restart: "需要重開終端",
         steps: &[
-            Step { file: "settings.json", fmt: Fmt::Json, path: &["selectedAuthType"], val: Val::Str("gemini-api-key"), when: When::Always },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["selectedAuthType"], val: s("gemini-api-key"), when: When::Always },
             Step { file: "settings.json", fmt: Fmt::Json, path: &["model", "name"], val: s("{{model}}"), when: When::HasModel },
             Step { file: ".env", fmt: Fmt::Env, path: &["GOOGLE_GEMINI_BASE_URL"], val: s("{{base_url}}"), when: When::Always },
             Step { file: ".env", fmt: Fmt::Env, path: &["GEMINI_API_KEY"], val: s("{{api_key}}"), when: When::Always },
-        ],
-        probes: &[
-            Probe { file: ".env", fmt: Fmt::Env, role: Role::BaseUrl, path: &["GOOGLE_GEMINI_BASE_URL"] },
-            Probe { file: ".env", fmt: Fmt::Env, role: Role::ApiKey, path: &["GEMINI_API_KEY"] },
-            Probe { file: "settings.json", fmt: Fmt::Json, role: Role::Model, path: &["model", "name"] },
         ],
         kind_choices: EMPTY,
     },
@@ -201,9 +178,6 @@ pub static TOOLS: &[ToolSpec] = &[
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model", "{{config_id}}", "api_key"], val: s("{{api_key}}"), when: When::Always },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["models", "default"], val: s("{{config_id}}"), when: When::Always },
         ],
-        probes: &[
-            Probe { file: "config.toml", fmt: Fmt::Toml, role: Role::Model, path: &["models", "default"] },
-        ],
         kind_choices: EMPTY,
     },
     ToolSpec {
@@ -217,19 +191,12 @@ pub static TOOLS: &[ToolSpec] = &[
         verified: true,
         restart: "需要重開終端",
         steps: &[
-            Step {
-                file: "opencode.json",
-                fmt: Fmt::Json,
-                path: &["provider", "{{config_id}}"],
-                val: Val::Json(
-                    r#"{"npm":"@ai-sdk/openai-compatible","name":"{{name}}","options":{"baseURL":"{{base_url}}","apiKey":"{{api_key}}"},"models":{"{{model}}":{"name":"{{model}}"}}}"#,
-                ),
-                when: When::Always,
-            },
+            Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "npm"], val: s("@ai-sdk/openai-compatible"), when: When::IfMissing },
+            Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
+            Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "options", "baseURL"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "options", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "models", "{{model}}", "name"], val: s("{{model}}"), when: When::IfMissing },
             Step { file: "opencode.json", fmt: Fmt::Json, path: &["model"], val: s("{{config_id}}/{{model}}"), when: When::HasModel },
-        ],
-        probes: &[
-            Probe { file: "opencode.json", fmt: Fmt::Json, role: Role::BaseUrl, path: &["provider", "{{config_id}}", "options", "baseURL"] },
         ],
         kind_choices: OPENCODE_API,
     },
@@ -244,17 +211,21 @@ pub static TOOLS: &[ToolSpec] = &[
         verified: true,
         restart: "改完在 Qoder 重新載入模型設定",
         steps: &[
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "displayName"], val: s("{{name}}"), when: When::Always },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "baseUrl"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "type"], val: s("openai-compatible"), when: When::IfMissing },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "protocol"], val: s("{{kind}}"), when: When::Always },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "authType"], val: s("bearer"), when: When::IfMissing },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "model"], val: s("{{model}}"), when: When::HasModel },
             Step {
                 file: "settings.json",
                 fmt: Fmt::Json,
-                path: &["providers", "{{config_id}}"],
-                val: Val::Json(
-                    r#"{"displayName":"{{name}}","baseUrl":"{{base_url}}","apiKey":"{{api_key}}","type":"openai-compatible","protocol":"{{kind}}","authType":"bearer","model":"{{model}}","models":[{"model":"{{model}}","displayName":"{{name}}"}]}"#,
-                ),
-                when: When::Always,
+                path: &["providers", "{{config_id}}", "models"],
+                val: Val::Json(r#"[{"model":"{{model}}","displayName":"{{name}}"}]"#),
+                when: When::IfMissing,
             },
         ],
-        probes: &[],
         kind_choices: QODER_PROTOCOLS,
     },
     ToolSpec {
@@ -268,19 +239,10 @@ pub static TOOLS: &[ToolSpec] = &[
         verified: false,
         restart: "需要重開終端",
         steps: &[
-            Step {
-                file: "v2/config.json",
-                fmt: Fmt::Json,
-                path: &["providers", "{{config_id}}", "options"],
-                val: Val::Json(
-                    r#"{"apiKey":"{{api_key}}","baseURL":"{{base_url}}","apiKeyRequired":false}"#,
-                ),
-                when: When::Always,
-            },
             Step { file: "v2/config.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
-        ],
-        probes: &[
-            Probe { file: "v2/config.json", fmt: Fmt::Json, role: Role::BaseUrl, path: &["providers", "{{config_id}}", "options", "baseURL"] },
+            Step { file: "v2/config.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "options", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "v2/config.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "options", "baseURL"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "v2/config.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "options", "apiKeyRequired"], val: Val::Bool(false), when: When::IfMissing },
         ],
         kind_choices: EMPTY,
     },
@@ -300,10 +262,6 @@ pub static TOOLS: &[ToolSpec] = &[
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["model", "base_url"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["model", "api_key"], val: s("{{api_key}}"), when: When::Always },
         ],
-        probes: &[
-            Probe { file: "config.yaml", fmt: Fmt::Yaml, role: Role::BaseUrl, path: &["model", "base_url"] },
-            Probe { file: "config.yaml", fmt: Fmt::Yaml, role: Role::Model, path: &["model", "name"] },
-        ],
         kind_choices: EMPTY,
     },
     ToolSpec {
@@ -317,18 +275,11 @@ pub static TOOLS: &[ToolSpec] = &[
         verified: false,
         restart: "需要重開終端",
         steps: &[
-            Step {
-                file: "providers.json",
-                fmt: Fmt::Json,
-                path: &["providers", "{{config_id}}"],
-                val: Val::Json(
-                    r#"{"name":"{{name}}","baseURL":"{{base_url}}","apiKey":"{{api_key}}","api":"{{kind}}","model":"{{model}}"}"#,
-                ),
-                when: When::Always,
-            },
-        ],
-        probes: &[
-            Probe { file: "providers.json", fmt: Fmt::Json, role: Role::BaseUrl, path: &["providers", "{{config_id}}", "baseURL"] },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "baseURL"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "api"], val: s("{{kind}}"), when: When::Always },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "model"], val: s("{{model}}"), when: When::HasModel },
         ],
         kind_choices: OPENCODE_API,
     },
@@ -343,21 +294,19 @@ pub static TOOLS: &[ToolSpec] = &[
         verified: true,
         restart: "需要重開 DSH 桌面端",
         steps: &[
+            Step { file: "settings.yaml", fmt: Fmt::Yaml, path: &["llm-pi-ai", "providers", "{{config_id}}", "displayName"], val: s("{{name}}"), when: When::Always },
+            Step { file: "settings.yaml", fmt: Fmt::Yaml, path: &["llm-pi-ai", "providers", "{{config_id}}", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "settings.yaml", fmt: Fmt::Yaml, path: &["llm-pi-ai", "providers", "{{config_id}}", "api"], val: s("{{kind}}"), when: When::Always },
+            Step { file: "settings.yaml", fmt: Fmt::Yaml, path: &["llm-pi-ai", "providers", "{{config_id}}", "baseURL"], val: s("{{base_url}}"), when: When::Always },
             Step {
                 file: "settings.yaml",
                 fmt: Fmt::Yaml,
-                path: &["llm-pi-ai", "providers", "{{config_id}}"],
-                val: Val::Yaml(
-                    r#"{"displayName":"{{name}}","apiKey":"{{api_key}}","api":"{{kind}}","baseURL":"{{base_url}}","models":[{"id":"{{model}}","name":"{{model}}"}]}"#,
-                ),
-                when: When::Always,
+                path: &["llm-pi-ai", "providers", "{{config_id}}", "models"],
+                val: Val::Yaml(r#"[{"id":"{{model}}","name":"{{model}}"}]"#),
+                when: When::IfMissing,
             },
             Step { file: "settings.yaml", fmt: Fmt::Yaml, path: &["agent-default-model", "provider"], val: s("{{config_id}}"), when: When::Always },
             Step { file: "settings.yaml", fmt: Fmt::Yaml, path: &["agent-default-model", "model"], val: s("{{model}}"), when: When::HasModel },
-        ],
-        probes: &[
-            Probe { file: "settings.yaml", fmt: Fmt::Yaml, role: Role::BaseUrl, path: &["llm-pi-ai", "providers", "{{config_id}}", "baseURL"] },
-            Probe { file: "settings.yaml", fmt: Fmt::Yaml, role: Role::Model, path: &["agent-default-model", "model"] },
         ],
         kind_choices: DSH_API,
     },
@@ -383,11 +332,11 @@ pub fn home() -> PathBuf {
 
 pub fn tool_dir(spec: &ToolSpec) -> PathBuf {
     if let Some(var) = spec.env_override {
-        if var.contains("FILE") || var.contains("CONFIG") {
-            // Points at a file, not a directory — ignore for directory resolution.
-        } else if let Ok(p) = std::env::var(var) {
-            if !p.is_empty() {
-                return PathBuf::from(p);
+        if !var.contains("FILE") && !var.contains("CONFIG") {
+            if let Ok(p) = std::env::var(var) {
+                if !p.is_empty() {
+                    return PathBuf::from(p);
+                }
             }
         }
     }
@@ -396,7 +345,11 @@ pub fn tool_dir(spec: &ToolSpec) -> PathBuf {
 
 /// Resolve a file mentioned by a step, honouring the tool's alternate filenames.
 pub fn resolve_file(spec: &ToolSpec, file: &str) -> PathBuf {
-    let base = tool_dir(spec);
+    resolve_file_in(spec, file, &tool_dir(spec))
+}
+
+pub fn resolve_file_in(spec: &ToolSpec, file: &str, base: &Path) -> PathBuf {
+    let base = base.to_path_buf();
     let primary = base.join(file);
     if primary.exists() {
         return primary;
@@ -464,6 +417,13 @@ fn read_raw(text: &str, fmt: Fmt, path: &[String]) -> Option<String> {
     }
 }
 
+fn key_exists(text: &str, fmt: Fmt, path: &[String]) -> bool {
+    match fmt {
+        Fmt::Yaml => yamlpatch::exists(text, path),
+        _ => read_raw(text, fmt, path).is_some(),
+    }
+}
+
 fn set_env(text: &str, key: &str, value: &str) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut replaced = false;
@@ -512,14 +472,20 @@ fn set_toml(text: &str, path: &[String], val: Val, provider: &Provider) -> Resul
         }
     }
     let last = path.last().cloned().unwrap_or_default();
-    let item = match val {
-        Val::Bool(b) => toml_edit::value(b),
-        Val::Str(t) => toml_edit::value(subst(t, provider)),
-        Val::Json(_) | Val::Yaml(_) => {
-            return Err("TOML 步驟不支援 JSON/YAML 模板值".into())
-        }
+    let new_value: toml_edit::Value = match val {
+        Val::Bool(b) => b.into(),
+        Val::Str(t) => subst(t, provider).into(),
+        Val::Json(_) | Val::Yaml(_) => return Err("TOML 步驟不支援 JSON/YAML 模板值".into()),
     };
-    tbl.insert(&last, item);
+    // Replacing the whole item would drop its decor, i.e. the comment lines that
+    // sit above the key. Swap the value and carry the decor over instead.
+    if let Some(existing) = tbl.get_mut(&last).and_then(|item| item.as_value_mut()) {
+        let decor = existing.decor().clone();
+        *existing = new_value;
+        *existing.decor_mut() = decor;
+    } else {
+        tbl.insert(&last, toml_edit::Item::Value(new_value));
+    }
     Ok(doc.to_string())
 }
 
@@ -546,11 +512,14 @@ fn set_yaml(text: &str, path: &[String], val: Val, provider: &Provider) -> Resul
     }
 }
 
-pub fn read_value(spec: &ToolSpec, file: &str, fmt: Fmt, path: &[&'static str], provider: &Provider) -> Option<String> {
+pub fn read_value(spec: &ToolSpec, file: &str, fmt: Fmt, path: &[String]) -> Option<String> {
     let full = resolve_file(spec, file);
     let text = std::fs::read_to_string(&full).ok()?;
-    let segs = path_segments(path, provider);
-    read_raw(&text, fmt, &segs)
+    read_raw(&text, fmt, path)
+}
+
+fn p(parts: &[&str]) -> Vec<String> {
+    parts.iter().map(|s| s.to_string()).collect()
 }
 
 #[derive(Default, Clone, Debug, serde::Serialize)]
@@ -558,6 +527,8 @@ pub struct CurrentState {
     pub base_url: String,
     pub model: String,
     pub api_key_tail: String,
+    /// Which key the reading came from, for display in the UI.
+    pub source: String,
 }
 
 fn mask_tail(raw: &str) -> String {
@@ -569,37 +540,72 @@ fn mask_tail(raw: &str) -> String {
     format!("••••{tail}")
 }
 
-pub fn read_current(spec: &ToolSpec, provider: &Provider) -> CurrentState {
-    let mut state = CurrentState::default();
+/// Read what the tool is *actually* configured to use right now.
+pub fn read_current(spec: &ToolSpec) -> CurrentState {
+    let mut st = CurrentState::default();
+    let rd = |file: &str, fmt: Fmt, path: &[&str]| read_value(spec, file, fmt, &p(path));
 
-    // Codex and Grok point at a named provider table, so resolve the pointer first.
-    if spec.id == "codex" {
-        let active = read_value(spec, "config.toml", Fmt::Toml, &["model_provider"], provider);
-        if let Some(id) = active {
-            let full = resolve_file(spec, "config.toml");
-            if let Ok(text) = std::fs::read_to_string(&full) {
-                state.base_url = read_raw(&text, Fmt::Toml, &["model_providers".into(), id.clone(), "base_url".into()])
-                    .unwrap_or_default();
-                state.api_key_tail = mask_tail(
-                    &read_raw(&text, Fmt::Toml, &["model_providers".into(), id.clone(), "experimental_bearer_token".into()])
-                        .unwrap_or_default(),
-                );
+    match spec.id {
+        "codex" => {
+            if let Some(id) = rd("config.toml", Fmt::Toml, &["model_provider"]) {
+                st.base_url = rd("config.toml", Fmt::Toml, &["model_providers", &id, "base_url"]).unwrap_or_default();
+                st.api_key_tail = mask_tail(&rd("config.toml", Fmt::Toml, &["model_providers", &id, "experimental_bearer_token"]).unwrap_or_default());
+                st.source = format!("model_providers.{id}.base_url");
+            }
+            st.model = rd("config.toml", Fmt::Toml, &["model"]).unwrap_or_default();
+        }
+        "grok" => {
+            if let Some(id) = rd("config.toml", Fmt::Toml, &["models", "default"]) {
+                st.base_url = rd("config.toml", Fmt::Toml, &["model", &id, "base_url"]).unwrap_or_default();
+                st.api_key_tail = mask_tail(&rd("config.toml", Fmt::Toml, &["model", &id, "api_key"]).unwrap_or_default());
+                st.model = rd("config.toml", Fmt::Toml, &["model", &id, "model"]).unwrap_or_default();
+                st.source = format!("model.{id}.base_url");
             }
         }
-        state.model = read_value(spec, "config.toml", Fmt::Toml, &["model"], provider).unwrap_or_default();
-        return state;
-    }
-
-    for probe in spec.probes {
-        let value = read_value(spec, probe.file, probe.fmt, probe.path, provider);
-        match (probe.role, value) {
-            (Role::BaseUrl, Some(v)) => state.base_url = v,
-            (Role::Model, Some(v)) => state.model = v,
-            (Role::ApiKey, Some(v)) => state.api_key_tail = mask_tail(&v),
-            _ => {}
+        "opencode" => {
+            if let Some(full) = rd("opencode.json", Fmt::Json, &["model"]) {
+                if let Some((id, model)) = full.split_once('/') {
+                    st.base_url = rd("opencode.json", Fmt::Json, &["provider", id, "options", "baseURL"]).unwrap_or_default();
+                    st.api_key_tail = mask_tail(&rd("opencode.json", Fmt::Json, &["provider", id, "options", "apiKey"]).unwrap_or_default());
+                    st.model = model.to_string();
+                    st.source = format!("provider.{id}.options.baseURL");
+                }
+            }
+        }
+        "dsh" => {
+            if let Some(id) = rd("settings.yaml", Fmt::Yaml, &["agent-default-model", "provider"]) {
+                st.base_url = rd("settings.yaml", Fmt::Yaml, &["llm-pi-ai", "providers", &id, "baseURL"]).unwrap_or_default();
+                st.api_key_tail = mask_tail(&rd("settings.yaml", Fmt::Yaml, &["llm-pi-ai", "providers", &id, "apiKey"]).unwrap_or_default());
+                st.source = format!("llm-pi-ai.providers.{id}.baseURL");
+            }
+            st.model = rd("settings.yaml", Fmt::Yaml, &["agent-default-model", "model"]).unwrap_or_default();
+        }
+        "claude" => {
+            st.base_url = rd("settings.json", Fmt::Json, &["env", "ANTHROPIC_BASE_URL"]).unwrap_or_default();
+            st.api_key_tail = mask_tail(&rd("settings.json", Fmt::Json, &["env", "ANTHROPIC_AUTH_TOKEN"]).unwrap_or_default());
+            st.model = rd("settings.json", Fmt::Json, &["env", "ANTHROPIC_MODEL"]).unwrap_or_default();
+            st.source = "env.ANTHROPIC_BASE_URL".into();
+        }
+        "gemini" => {
+            st.base_url = rd(".env", Fmt::Env, &["GOOGLE_GEMINI_BASE_URL"]).unwrap_or_default();
+            st.api_key_tail = mask_tail(&rd(".env", Fmt::Env, &["GEMINI_API_KEY"]).unwrap_or_default());
+            st.model = rd("settings.json", Fmt::Json, &["model", "name"]).unwrap_or_default();
+            st.source = ".env GOOGLE_GEMINI_BASE_URL".into();
+        }
+        "hermes" => {
+            st.base_url = rd("config.yaml", Fmt::Yaml, &["model", "base_url"]).unwrap_or_default();
+            st.api_key_tail = mask_tail(&rd("config.yaml", Fmt::Yaml, &["model", "api_key"]).unwrap_or_default());
+            st.model = rd("config.yaml", Fmt::Yaml, &["model", "name"]).unwrap_or_default();
+            st.source = "model.base_url".into();
+        }
+        _ => {
+            st.source = "由工具介面選擇".into();
         }
     }
-    state
+    if st.base_url.is_empty() && st.source != "由工具介面選擇" {
+        st.source = "尚未設定".into();
+    }
+    st
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -614,12 +620,18 @@ pub struct FileChange {
 }
 
 pub fn plan(spec: &ToolSpec, provider: &Provider) -> Result<Vec<FileChange>, String> {
+    plan_in(spec, provider, &tool_dir(spec))
+}
+
+/// Same as [`plan`] but against an explicit directory, which keeps end-to-end
+/// tests away from the user's real configuration.
+pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<FileChange>, String> {
     let mut files: Vec<FileChange> = Vec::new();
     for step in spec.steps {
         if step.when == When::HasModel && provider.model.trim().is_empty() {
             continue;
         }
-        let path = resolve_file(spec, step.file);
+        let path = resolve_file_in(spec, step.file, dir);
         let display = display_path(&path);
         let idx = match files.iter().position(|f| f.file == display) {
             Some(i) => i,
@@ -642,6 +654,9 @@ pub fn plan(spec: &ToolSpec, provider: &Provider) -> Result<Vec<FileChange>, Str
             files[idx].after.clone()
         };
         let segs = path_segments(step.path, provider);
+        if step.when == When::IfMissing && key_exists(&current, step.fmt, &segs) {
+            continue;
+        }
         let updated = match step.fmt {
             Fmt::Toml => set_toml(&current, &segs, step.val, provider)?,
             Fmt::Json => set_json(&current, &segs, step.val, provider)?,
@@ -654,6 +669,233 @@ pub fn plan(spec: &ToolSpec, provider: &Provider) -> Result<Vec<FileChange>, Str
         files[idx].after = updated;
     }
     Ok(files)
+}
+
+// ---------------------------------------------------------------------------
+// Importing providers that already exist in the tool's own config file.
+// ---------------------------------------------------------------------------
+
+fn toml_keys(text: &str, path: &[String]) -> Vec<String> {
+    let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
+        return Vec::new();
+    };
+    let mut item: &toml_edit::Item = doc.as_item();
+    for seg in path {
+        match item.get(seg) {
+            Some(i) => item = i,
+            None => return Vec::new(),
+        }
+    }
+    if let Some(t) = item.as_table() {
+        return t.iter().map(|(k, _)| k.to_string()).collect();
+    }
+    item.as_inline_table()
+        .map(|t| t.iter().map(|(k, _)| k.to_string()).collect())
+        .unwrap_or_default()
+}
+
+fn map_keys(spec: &ToolSpec, file: &str, fmt: Fmt, path: &[&str]) -> Vec<String> {
+    let full = resolve_file(spec, file);
+    let Ok(text) = std::fs::read_to_string(&full) else {
+        return Vec::new();
+    };
+    let segs = p(path);
+    match fmt {
+        Fmt::Toml => toml_keys(&text, &segs),
+        Fmt::Json => jsonc::get(&text, &segs)
+            .and_then(|v| v.as_object().map(|m| m.keys().cloned().collect()))
+            .unwrap_or_default(),
+        Fmt::Yaml => yamlpatch::list_keys(&text, &segs),
+        Fmt::Env => Vec::new(),
+    }
+}
+
+fn imported(config_id: &str, name: String, base_url: String, api_key: String, model: String, kind: String) -> Provider {
+    Provider {
+        id: String::new(),
+        config_id: config_id.to_string(),
+        name: if name.is_empty() { config_id.to_string() } else { name },
+        base_url,
+        api_key,
+        api_key_enc: String::new(),
+        model,
+        kind,
+        note: "從設定檔導入".into(),
+    }
+}
+
+/// Read every provider already present in the tool's config file.
+pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
+    let rd = |file: &str, fmt: Fmt, path: &[&str]| read_value(spec, file, fmt, &p(path)).unwrap_or_default();
+    let mut out = Vec::new();
+
+    match spec.id {
+        "codex" => {
+            let active = rd("config.toml", Fmt::Toml, &["model_provider"]);
+            let global_model = rd("config.toml", Fmt::Toml, &["model"]);
+            for id in map_keys(spec, "config.toml", Fmt::Toml, &["model_providers"]) {
+                let base = rd("config.toml", Fmt::Toml, &["model_providers", &id, "base_url"]);
+                if base.is_empty() {
+                    continue;
+                }
+                out.push(imported(
+                    &id,
+                    rd("config.toml", Fmt::Toml, &["model_providers", &id, "name"]),
+                    base,
+                    rd("config.toml", Fmt::Toml, &["model_providers", &id, "experimental_bearer_token"]),
+                    if active == id { global_model.clone() } else { String::new() },
+                    rd("config.toml", Fmt::Toml, &["model_providers", &id, "wire_api"]),
+                ));
+            }
+        }
+        "grok" => {
+            let active = rd("config.toml", Fmt::Toml, &["models", "default"]);
+            for id in map_keys(spec, "config.toml", Fmt::Toml, &["model"]) {
+                let base = rd("config.toml", Fmt::Toml, &["model", &id, "base_url"]);
+                if base.is_empty() {
+                    continue;
+                }
+                out.push(imported(
+                    &id,
+                    id.clone(),
+                    base,
+                    rd("config.toml", Fmt::Toml, &["model", &id, "api_key"]),
+                    if active == id { rd("config.toml", Fmt::Toml, &["model", &id, "model"]) } else { String::new() },
+                    String::new(),
+                ));
+            }
+        }
+        "opencode" => {
+            let active = rd("opencode.json", Fmt::Json, &["model"]);
+            for id in map_keys(spec, "opencode.json", Fmt::Json, &["provider"]) {
+                let base = rd("opencode.json", Fmt::Json, &["provider", &id, "options", "baseURL"]);
+                if base.is_empty() {
+                    continue;
+                }
+                let model = active
+                    .split_once('/')
+                    .filter(|(pid, _)| *pid == id)
+                    .map(|(_, m)| m.to_string())
+                    .unwrap_or_default();
+                out.push(imported(
+                    &id,
+                    rd("opencode.json", Fmt::Json, &["provider", &id, "name"]),
+                    base,
+                    rd("opencode.json", Fmt::Json, &["provider", &id, "options", "apiKey"]),
+                    model,
+                    String::new(),
+                ));
+            }
+        }
+        "qoder" => {
+            for id in map_keys(spec, "settings.json", Fmt::Json, &["providers"]) {
+                let base = rd("settings.json", Fmt::Json, &["providers", &id, "baseUrl"]);
+                if base.is_empty() {
+                    continue;
+                }
+                out.push(imported(
+                    &id,
+                    rd("settings.json", Fmt::Json, &["providers", &id, "displayName"]),
+                    base,
+                    rd("settings.json", Fmt::Json, &["providers", &id, "apiKey"]),
+                    rd("settings.json", Fmt::Json, &["providers", &id, "model"]),
+                    rd("settings.json", Fmt::Json, &["providers", &id, "protocol"]),
+                ));
+            }
+        }
+        "zcode" => {
+            for id in map_keys(spec, "v2/config.json", Fmt::Json, &["providers"]) {
+                let base = rd("v2/config.json", Fmt::Json, &["providers", &id, "options", "baseURL"]);
+                if base.is_empty() {
+                    continue;
+                }
+                out.push(imported(
+                    &id,
+                    rd("v2/config.json", Fmt::Json, &["providers", &id, "name"]),
+                    base,
+                    rd("v2/config.json", Fmt::Json, &["providers", &id, "options", "apiKey"]),
+                    String::new(),
+                    String::new(),
+                ));
+            }
+        }
+        "commandcode" => {
+            for id in map_keys(spec, "providers.json", Fmt::Json, &["providers"]) {
+                let base = rd("providers.json", Fmt::Json, &["providers", &id, "baseURL"]);
+                if base.is_empty() {
+                    continue;
+                }
+                out.push(imported(
+                    &id,
+                    rd("providers.json", Fmt::Json, &["providers", &id, "name"]),
+                    base,
+                    rd("providers.json", Fmt::Json, &["providers", &id, "apiKey"]),
+                    rd("providers.json", Fmt::Json, &["providers", &id, "model"]),
+                    rd("providers.json", Fmt::Json, &["providers", &id, "api"]),
+                ));
+            }
+        }
+        "dsh" => {
+            let active = rd("settings.yaml", Fmt::Yaml, &["agent-default-model", "provider"]);
+            let active_model = rd("settings.yaml", Fmt::Yaml, &["agent-default-model", "model"]);
+            for id in map_keys(spec, "settings.yaml", Fmt::Yaml, &["llm-pi-ai", "providers"]) {
+                let base = rd("settings.yaml", Fmt::Yaml, &["llm-pi-ai", "providers", &id, "baseURL"]);
+                let key = rd("settings.yaml", Fmt::Yaml, &["llm-pi-ai", "providers", &id, "apiKey"]);
+                if base.is_empty() && key.is_empty() {
+                    continue;
+                }
+                out.push(imported(
+                    &id,
+                    rd("settings.yaml", Fmt::Yaml, &["llm-pi-ai", "providers", &id, "displayName"]),
+                    base,
+                    key,
+                    if active == id { active_model.clone() } else { String::new() },
+                    rd("settings.yaml", Fmt::Yaml, &["llm-pi-ai", "providers", &id, "api"]),
+                ));
+            }
+        }
+        "claude" => {
+            let base = rd("settings.json", Fmt::Json, &["env", "ANTHROPIC_BASE_URL"]);
+            if !base.is_empty() {
+                out.push(imported(
+                    "current",
+                    "目前設定".into(),
+                    base,
+                    rd("settings.json", Fmt::Json, &["env", "ANTHROPIC_AUTH_TOKEN"]),
+                    rd("settings.json", Fmt::Json, &["env", "ANTHROPIC_MODEL"]),
+                    String::new(),
+                ));
+            }
+        }
+        "gemini" => {
+            let base = rd(".env", Fmt::Env, &["GOOGLE_GEMINI_BASE_URL"]);
+            if !base.is_empty() {
+                out.push(imported(
+                    "current",
+                    "目前設定".into(),
+                    base,
+                    rd(".env", Fmt::Env, &["GEMINI_API_KEY"]),
+                    rd("settings.json", Fmt::Json, &["model", "name"]),
+                    String::new(),
+                ));
+            }
+        }
+        "hermes" => {
+            let base = rd("config.yaml", Fmt::Yaml, &["model", "base_url"]);
+            if !base.is_empty() {
+                out.push(imported(
+                    "current",
+                    "目前設定".into(),
+                    base,
+                    rd("config.yaml", Fmt::Yaml, &["model", "api_key"]),
+                    rd("config.yaml", Fmt::Yaml, &["model", "name"]),
+                    String::new(),
+                ));
+            }
+        }
+        _ => {}
+    }
+    out
 }
 
 #[cfg(test)]
@@ -671,6 +913,7 @@ mod real_config_checks {
             name: "SwitchYard Selftest".into(),
             base_url: "https://selftest.invalid/v1".into(),
             api_key: "sk-selftest".into(),
+            api_key_enc: String::new(),
             model: "selftest-model".into(),
             kind: "responses".into(),
             note: String::new(),
@@ -692,28 +935,13 @@ mod real_config_checks {
         };
         let after = plan(spec, &probe_provider()).unwrap()[0].after.clone();
 
-        for section in [
-            "[desktop",
-            "[marketplaces.",
-            "[plugins.",
-            "[mcp_servers.",
-            "[windows",
-        ] {
-            assert!(
-                after.contains(section),
-                "Codex 計畫把 `{section}` 區塊吃掉了"
-            );
+        for section in ["[desktop", "[marketplaces.", "[plugins.", "[mcp_servers.", "[windows"] {
+            assert!(after.contains(section), "Codex 計畫把 `{section}` 區塊吃掉了");
         }
         let sections_before = before.matches("\n[").count();
         let sections_after = after.matches("\n[").count();
-        assert!(
-            sections_after >= sections_before,
-            "TOML 區塊數量變少：{sections_before} -> {sections_after}"
-        );
-        let changed = before
-            .lines()
-            .filter(|l| !after.lines().any(|a| a == *l))
-            .count();
+        assert!(sections_after >= sections_before, "TOML 區塊數量變少：{sections_before} -> {sections_after}");
+        let changed = before.lines().filter(|l| !after.lines().any(|a| a == *l)).count();
         assert!(changed <= 12, "非預期的大量改動：{changed} 行");
         assert!(after.parse::<toml_edit::DocumentMut>().is_ok(), "產生的 TOML 無法解析");
     }
@@ -729,9 +957,8 @@ mod real_config_checks {
         let a = json_map(&before);
         let b = json_map(&after);
 
-        let targeted = ["env", "model_provider"];
         for key in a.keys() {
-            if targeted.contains(&key.as_str()) {
+            if key == "env" {
                 continue;
             }
             assert_eq!(a.get(key), b.get(key), "頂層鍵 `{key}` 被改動了");
@@ -777,7 +1004,7 @@ mod real_config_checks {
     fn dsh_keeps_unrelated_top_level_blocks() {
         let spec = find("dsh").unwrap();
         let path = resolve_file(spec, "settings.yaml");
-        let Ok(before) = std::fs::read_to_string(&path) else {
+        let Ok(_before) = std::fs::read_to_string(&path) else {
             return;
         };
         let after = plan(spec, &probe_provider()).unwrap()[0].after.clone();
@@ -786,5 +1013,74 @@ mod real_config_checks {
         }
         assert!(after.contains("switchyard-selftest:"));
     }
-}
 
+    #[test]
+    fn reapplying_qoder_preserves_custom_models_array() {
+        let spec = find("qoder").unwrap();
+        let existing = r#"{
+  "providers": {
+    "qoder-custom-x": {
+      "displayName": "Old",
+      "baseUrl": "https://old/v1",
+      "apiKey": "sk-old",
+      "models": [{ "model": "m", "contextWindow": 999, "capabilities": { "vision": true } }]
+    }
+  }
+}
+"#;
+        let mut provider = probe_provider();
+        provider.config_id = "qoder-custom-x".into();
+        let steps: Vec<_> = spec
+            .steps
+            .iter()
+            .filter(|st| st.when != When::HasModel || !provider.model.is_empty())
+            .collect();
+        let mut text = existing.to_string();
+        for step in steps {
+            let segs = path_segments(step.path, &provider);
+            if step.when == When::IfMissing && key_exists(&text, step.fmt, &segs) {
+                continue;
+            }
+            text = set_json(&text, &segs, step.val, &provider).unwrap();
+        }
+        let parsed: Value = serde_json::from_str(&text).unwrap();
+        let models = &parsed["providers"]["qoder-custom-x"]["models"];
+        assert_eq!(models[0]["contextWindow"], serde_json::json!(999), "自訂 models 被覆蓋了");
+        assert_eq!(models[0]["capabilities"]["vision"], serde_json::json!(true));
+        assert_eq!(parsed["providers"]["qoder-custom-x"]["baseUrl"], serde_json::json!("https://selftest.invalid/v1"));
+    }
+
+    #[test]
+    fn reapplying_dsh_preserves_compat_block() {
+        let spec = find("dsh").unwrap();
+        let existing = "llm-pi-ai:\n  providers:\n    keep-me:\n      apiKey: sk-old\n      baseURL: https://old/v1\n      compat:\n        supportsDeveloperRole: false\n      models:\n        - id: custom\n          contextWindow: 12345\nagent-default-model:\n  provider: keep-me\n  model: custom\n";
+        let mut provider = probe_provider();
+        provider.config_id = "keep-me".into();
+        provider.kind = "openai-completions".into();
+        let mut text = existing.to_string();
+        for step in spec.steps {
+            if step.when == When::HasModel && provider.model.is_empty() {
+                continue;
+            }
+            let segs = path_segments(step.path, &provider);
+            if step.when == When::IfMissing && key_exists(&text, step.fmt, &segs) {
+                continue;
+            }
+            text = set_yaml(&text, &segs, step.val, &provider).unwrap();
+        }
+        assert!(text.contains("supportsDeveloperRole: false"), "compat 被覆蓋了：{text}");
+        assert!(text.contains("contextWindow: 12345"), "自訂 models 被覆蓋了：{text}");
+        assert!(text.contains("baseURL: https://selftest.invalid/v1"));
+        assert_eq!(text.matches("llm-pi-ai:").count(), 1);
+    }
+
+    #[test]
+    fn discover_finds_real_providers() {
+        for spec in TOOLS {
+            let found = discover(spec);
+            for provider in &found {
+                assert!(!provider.config_id.is_empty(), "{} 導入的 config_id 是空的", spec.id);
+            }
+        }
+    }
+}

@@ -77,7 +77,20 @@ pub fn snapshot(tool: &str, files: &[(PathBuf, String)]) -> Result<(String, Stri
         serde_json::to_string_pretty(&manifest).unwrap_or_default(),
     )
     .map_err(|e| format!("寫入備份清單失敗：{e}"))?;
+    prune(tool, KEEP_SNAPSHOTS);
     Ok((id, created))
+}
+
+/// How many snapshots to keep per tool.
+const KEEP_SNAPSHOTS: usize = 20;
+
+fn prune(tool: &str, keep: usize) {
+    let mut ids: Vec<String> = list(tool).into_iter().map(|b| b.id).collect();
+    ids.sort();
+    while ids.len() > keep {
+        let oldest = ids.remove(0);
+        let _ = std::fs::remove_dir_all(root(tool).join(oldest));
+    }
 }
 
 pub fn list(tool: &str) -> Vec<BackupInfo> {

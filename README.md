@@ -19,6 +19,11 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **自動備份與一鍵還原** —— 每次寫入前把要動的檔案複製到時間戳快照，列表可還原到任一版本。
 - **接管狀態偵測** —— 偵測到 cc-switch 正以代理模式接管同一套設定時會提示，避免兩個工具互相覆蓋。
 - **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\SwitchYard`。
+- **金鑰加密** —— Windows 上用 DPAPI 保護 `providers.json` 裡的金鑰，舊的明文檔會在啟動時自動遷移。
+- **一鍵導入既有供應商** —— 直接從各工具現有的設定檔讀出供應商清單，不必重新輸入。
+- **連線測試** —— 套用前可先打一次 `/models` 確認端點與金鑰，回報 HTTP 狀態與延遲。
+- **清單匯入／匯出** —— 換機或分享設定時用 JSON 檔搬移。
+- **亮色／暗色／跟隨系統主題**、diff 語法高亮、鍵盤操作、表格行內編輯。
 
 ## 支援的工具
 
@@ -46,11 +51,14 @@ Windows 10／11 64 位元。需要系統的 WebView2（Win11 內建；Win10 多�
 ## 從原始碼建置
 
 ```bash
-npm install          # 只為了 @tauri-apps/cli
-npm run build        # 產出 src-tauri/target/release/switchyard.exe 與安裝檔
+npm install                  # @tauri-apps/cli
+npm install --prefix ui      # React / Vite / TypeScript
+npm run build                # 先建置前端，再產出 exe 與 NSIS 安裝檔
 ```
 
-需要 Rust stable 與 Windows 的 MSVC 建置工具。前端是純 HTML/CSS/JS，沒有打包步驟。
+需要 Rust stable、Node 20+，以及 Windows 的 MSVC 建置工具（GNU toolchain 亦可編譯，本機已實測）。
+
+只跑前端開發伺服器：`npm run ui:dev`。加上 `?mock=1` 可在一般瀏覽器預覽介面而不啟動 Tauri。
 
 ## 專案結構
 
@@ -62,9 +70,12 @@ src-tauri/src/
   backup.rs      時間戳快照與還原
   store.rs       供應商清單（本機）
   main.rs        Tauri 指令層
-ui/              介面（無建置）
+ui/              React 18 + Vite + TypeScript 介面
 site/            GitHub Pages 落地頁
 ```
+
+技術棧：**Rust + Tauri 2**（WebView2 原生視窗）、`toml_edit`、`serde_json`、`similar`（diff）、
+`windows-sys`（DPAPI）；前端 **React 18 + Vite + TypeScript**，樣式為手寫 CSS 變數，無 CSS 框架。
 
 想加一個新工具，通常只要在 `adapters.rs` 的 `TOOLS` 加一筆宣告，不需要寫新的寫入邏輯。
 
@@ -75,7 +86,12 @@ cd src-tauri
 cargo test
 ```
 
-包含三類測試：編輯器的單元測試（註解／縮排／轉義是否保留）、YAML 導覽、以及**直接對本機真實設定檔執行的唯讀檢查**（例如確認 Codex 的 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]` 區塊在套用計畫後仍然存在）。
+38 個測試，分四類：
+
+1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
+2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
+3. **沙箱端到端測試** —— 在暫存目錄真的寫檔再讀回，涵蓋「重複套用冪等」「從無到有建立設定」「Gemini 雙檔寫入」「重新套用不覆蓋自訂 `models[]`／`compat`」。
+4. **DPAPI 加解密往返**。
 
 ## 授權
 
