@@ -97,6 +97,39 @@ pub fn summaries(tool: &str) -> BTreeMap<String, Summary> {
         .unwrap_or_default()
 }
 
+#[derive(serde::Serialize, Clone, Debug, Default)]
+pub struct HealthOverview {
+    pub tests: u64,
+    pub ok: u64,
+    pub avg_ms: u64,
+    pub providers_tested: usize,
+}
+
+pub fn overview() -> HealthOverview {
+    let store = load();
+    let mut out = HealthOverview::default();
+    let mut lat_sum = 0u64;
+    let mut lat_n = 0u64;
+    for bucket in store.values() {
+        for samples in bucket.values() {
+            if samples.is_empty() {
+                continue;
+            }
+            out.providers_tested += 1;
+            for s in samples {
+                out.tests += 1;
+                if s.ok {
+                    out.ok += 1;
+                    lat_sum += s.ms;
+                    lat_n += 1;
+                }
+            }
+        }
+    }
+    out.avg_ms = if lat_n > 0 { lat_sum / lat_n } else { 0 };
+    out
+}
+
 pub fn forget(tool: &str, provider_id: &str) -> Result<(), String> {
     let mut store = load();
     if let Some(bucket) = store.get_mut(tool) {

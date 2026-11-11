@@ -12,6 +12,9 @@ import type {
   TestResult,
   ToolView,
   HistoryMap,
+  Preset,
+  UsageReport,
+  HealthOverview,
 } from "./types";
 
 /** `?mock=1` runs the whole UI against the in-browser fake backend. */
@@ -37,6 +40,9 @@ export const api = {
   testProvider: (tool: string, providerId: string) => call<TestResult>("test_provider", { tool, providerId }),
   testHistory: (tool: string) => call<HistoryMap>("test_history", { tool }),
   setAutoHealth: (enabled: boolean) => call<boolean>("set_auto_health", { enabled }),
+  usageReport: (days: number) => call<UsageReport>("usage_report", { days }),
+  providerPresets: () => call<Preset[]>("provider_presets"),
+  healthOverview: () => call<HealthOverview>("health_overview"),
   exportProviders: () => call<ExportResult>("export_providers"),
   exportDiagnostics: () => call<ExportResult>("export_diagnostics"),
   importProvidersJson: (text: string) => call<JsonImportResult>("import_providers_json", { text }),

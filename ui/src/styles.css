@@ -962,3 +962,21 @@ kbd {
 .segmented.compact button { padding: 5px 0; font-size: 11px; }
 
 .toolbar .muted.small { white-space: nowrap; }
+
+/* ---------- stats dashboard ---------- */
+.stats { padding: 22px 26px 40px; max-width: 1180px; }
+.stats-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.stats-head h2 { margin: 0; font-size: 20px; }
+.stats-sub { font-size: 14px; margin: 22px 0 10px; color: var(--text); }
+.stat-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.stat-cards.slim { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
+.stat-card { background: var(--panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
+.stat-card .k { font-size: 10.5px; color: var(--muted); letter-spacing: .4px; }
+.stat-card .v { font-size: 17px; font-weight: 600; font-family: "Cascadia Code", Consolas, monospace; }
+.stat-card .v.accent { color: var(--accent); }
+.day-chart { display: flex; align-items: flex-end; gap: 4px; height: 140px; padding: 10px 12px 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow-x: auto; }
+.day-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; min-width: 22px; height: 100%; }
+.day-col i { width: 12px; border-radius: 3px 3px 0 0; background: linear-gradient(180deg, var(--accent), var(--accent-2)); display: block; }
+.day-col span { font-size: 9px; color: var(--muted); white-space: nowrap; }
+.rail-actions .on { background: var(--hover-tint); border-color: var(--line-2); }
+@media (max-width: 980px) { .stat-cards { grid-template-columns: repeat(3, 1fr); } .stat-cards.slim { grid-template-columns: repeat(2, 1fr); } }

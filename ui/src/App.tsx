@@ -21,6 +21,7 @@ import { ConfirmModal } from "./components/ConfirmModal";
 import { ExportModal } from "./components/ExportModal";
 import { CommandPalette } from "./components/CommandPalette";
 import { Onboarding } from "./components/Onboarding";
+import { StatsView } from "./components/StatsView";
 import { Toasts, useToasts } from "./components/Toasts";
 import type { EditField, TestState } from "./components/ProviderTable";
 
@@ -57,6 +58,7 @@ export default function App() {
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [history, setHistory] = useState<HistoryMap>({});
   const [autoHealth, setAutoHealth] = useState(false);
+  const [showStats, setShowStats] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [palette, setPalette] = useState(false);
   const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
@@ -251,6 +253,7 @@ export default function App() {
 
   useEffect(() => {
     if (MOCK && hashTokens().includes("palette")) setPalette(true);
+    if (MOCK && hashTokens().includes("stats")) setShowStats(true);
   }, []);
 
   const runUpdateCheck = useCallback(
@@ -589,9 +592,15 @@ export default function App() {
           onTheme={setMode}
           onExport={() => void exportList()}
           onImport={() => fileRef.current?.click()}
+          statsActive={showStats}
+          onStats={() => setShowStats((v) => !v)}
         />
 
         <main className="main">
+          {showStats ? (
+            <StatsView onError={(m) => push(m, "err")} />
+          ) : (
+          <>
           {update.kind === "available" ? (
             <div className="update-bar">
               <span className="dot" />
@@ -675,6 +684,8 @@ export default function App() {
                 </div>
               </div>
             </div>
+          )}
+          </>
           )}
         </main>
       </div>

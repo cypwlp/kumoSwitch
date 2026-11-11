@@ -655,6 +655,39 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return { imported, skipped: seed.importable > 0 ? 1 : 0 } satisfies ImportResult;
     }
 
+    case "provider_presets":
+      return [
+        { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com/v1", kind: "openai", models: ["deepseek-chat", "deepseek-reasoner"], docs: "https://api-docs.deepseek.com", note: "官方" },
+        { id: "zhipu", name: "智譜 GLM", base_url: "https://open.bigmodel.cn/api/paas/v4", kind: "openai", models: ["glm-4.7"], docs: "https://open.bigmodel.cn", note: "官方" },
+        { id: "opencode-zen", name: "OpenCode Zen", base_url: "https://opencode.ai/zen/go/v1", kind: "openai-responses", models: ["glm-5.3-flash"], docs: "https://opencode.ai", note: "聚合" },
+        { id: "ollama", name: "Ollama（本機）", base_url: "http://127.0.0.1:11434/v1", kind: "openai", models: ["qwen2.5-coder:14b"], docs: "https://ollama.com", note: "本機、免金鑰" },
+      ];
+
+    case "health_overview":
+      return { tests: 48, ok: 45, avg_ms: 162, providers_tested: 6 };
+
+    case "usage_report": {
+      const days = Number(args.days ?? 30);
+      const rows = [
+        { source: "claude", model: "deepseek-v4.1-flash", input: 4_200_000, output: 310_000, cache_read: 3_600_000, cache_write: 120_000, records: 2100, cost: 2.6 },
+        { source: "claude", model: "muse-spark-1.3-contributor", input: 1_800_000, output: 150_000, cache_read: 1_500_000, cache_write: 60_000, records: 900, cost: null },
+        { source: "codex", model: "codex-session", input: 2_600_000, output: 220_000, cache_read: 2_300_000, cache_write: 0, records: 700, cost: null },
+      ];
+      const dayRows = [];
+      const now = Date.now();
+      for (let i = Math.min(days, 14) - 1; i >= 0; i -= 1) {
+        const d = new Date(now - i * 86400_000).toISOString().slice(0, 10);
+        const input = 120_000 + ((i * 37) % 90) * 1000;
+        const output = 9000 + ((i * 13) % 40) * 100;
+        dayRows.push({ day: d, input, output, total: input + output });
+      }
+      return {
+        rows, days: dayRows, files: 132, records: 3700,
+        total_input: 8_600_000, total_output: 680_000, total_cache: 7_580_000,
+        total_cost: 2.6, days_scanned: days,
+      };
+    }
+
     case "test_history": {
       const out: HistoryMap = {};
       for (const list of Object.values(PROVIDERS)) {

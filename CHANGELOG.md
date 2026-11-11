@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 — 2026-11-11
+- 統計儀表板：讀取 Claude Code／Codex 本機 session log，聚合輸入／輸出／快取 token、
+  每日用量長條圖、依模型明細與公開單價成本估算；另有跨工具連線測試總覽
+- 預設供應商目錄：16 個已知端點（官方＋聚合＋本機），新增供應商時一鍵帶入 base URL／模型／協議
+- 統計範圍可選 7／30／90 天
+
 ## 0.3.0 — 2026-11-11
 - ZCode 改用真實的 `providerRules[]` schema：依 providerId 更新既有規則、否則追加，不再誤寫舊版 config.json
 - JSON 編輯器支援陣列索引與追加

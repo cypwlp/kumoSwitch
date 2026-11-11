@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../api";
+import type { Preset } from "../types";
 import type { Provider, ToolView } from "../types";
 import { Modal } from "./Modal";
 
@@ -25,6 +27,27 @@ const EMPTY: Provider = {
 export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }: EditorProps) {
   const [form, setForm] = useState<Provider>(() => ({ ...EMPTY, ...(provider ?? {}) }));
   const [showKey, setShowKey] = useState(false);
+  const [presets, setPresets] = useState<Preset[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    api.providerPresets().then((p) => alive && setPresets(p)).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const applyPreset = (id: string) => {
+    const preset = presets.find((x) => x.id === id);
+    if (!preset) return;
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name || preset.name,
+      base_url: preset.base_url,
+      model: preset.models[0] ?? prev.model,
+      kind: preset.kind,
+    }));
+  };
 
   const set = (key: keyof Provider) => (value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -74,6 +97,19 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }:
           submit();
         }}
       >
+        <div className="field">
+          <label htmlFor="f-preset">從預設選擇（選完仍可修改）</label>
+          <select id="f-preset" defaultValue="" onChange={(e) => applyPreset(e.target.value)}>
+            <option value="" disabled>
+              選擇一個已知供應商…
+            </option>
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · {p.note}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="field-row">
           <div className="field">
             <label htmlFor="f-name">名稱</label>

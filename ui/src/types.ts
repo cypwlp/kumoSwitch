@@ -108,3 +108,40 @@ export interface HistorySummary {
 }
 
 export type HistoryMap = Record<string, HistorySummary>;
+
+export interface Preset {
+  id: string;
+  name: string;
+  base_url: string;
+  kind: string;
+  models: string[];
+  docs: string;
+  note: string;
+}
+
+export interface UsageRow {
+  source: string;
+  model: string;
+  input: number;
+  output: number;
+  cache_read: number;
+  cache_write: number;
+  records: number;
+  cost: number | null;
+}
+
+export interface DayRow { day: string; input: number; output: number; total: number; }
+
+export interface UsageReport {
+  rows: UsageRow[];
+  days: DayRow[];
+  files: number;
+  records: number;
+  total_input: number;
+  total_output: number;
+  total_cache: number;
+  total_cost: number | null;
+  days_scanned: number;
+}
+
+export interface HealthOverview { tests: number; ok: number; avg_ms: number; providers_tested: number; }

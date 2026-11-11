@@ -8,7 +8,9 @@ mod history;
 mod e2e_tests;
 mod jsonc;
 mod net;
+mod presets;
 mod store;
+mod usage;
 mod tray;
 mod yamlpatch;
 
@@ -447,6 +449,21 @@ fn export_diagnostics() -> Result<ExportResult, String> {
 }
 
 #[tauri::command]
+fn usage_report(days: u32) -> usage::UsageReport {
+    usage::report(days.clamp(1, 365))
+}
+
+#[tauri::command]
+fn health_overview() -> history::HealthOverview {
+    history::overview()
+}
+
+#[tauri::command]
+fn provider_presets() -> Vec<presets::Preset> {
+    presets::list().to_vec()
+}
+
+#[tauri::command]
 fn set_auto_health(enabled: bool) -> Result<bool, String> {
     let mut data = store::load();
     data.auto_health = enabled;
@@ -564,6 +581,9 @@ fn main() {
             test_provider,
             test_history,
             set_auto_health,
+            usage_report,
+            provider_presets,
+            health_overview,
             export_providers,
             export_diagnostics,
             import_providers_json,
