@@ -4,7 +4,6 @@
 //! to the configured stack of providers in order, failing over on connection
 //! errors, 429 and 5xx. Responses stream straight through.
 
-use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -44,6 +43,7 @@ pub fn upstream_url(base: &str, path: &str) -> String {
     }
 }
 
+#[derive(Clone, Debug)]
 struct Target {
     base_url: String,
     api_key: String,
@@ -78,18 +78,22 @@ fn header_map(response: &reqwest::blocking::Response) -> Vec<(String, String)> {
         .collect()
 }
 
-fn handle(mut request: tiny_http::Request, config: ProxyConfig) {
+fn handle(request: tiny_http::Request, config: ProxyConfig) {
+    let targets = resolve_stack(&config);
+    handle_with_targets(request, config.enabled, targets);
+}
+
+fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: Vec<Target>) {
     let method = request.method().clone();
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or("/").to_string();
     let query = url.split_once('?').map(|(_, q)| format!("?{q}")).unwrap_or_default();
 
     let mut body = Vec::new();
-    let mut reader = request.as_reader();
+    let reader = request.as_reader();
     let _ = reader.read_to_end(&mut body);
 
-    let targets = resolve_stack(&config);
-    if !config.enabled || targets.is_empty() {
+    if !enabled || targets.is_empty() {
         let resp = tiny_http::Response::from_string("{\"error\":\"switchyard proxy disabled or empty stack\"}")
             .with_status_code(503)
             .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
@@ -181,6 +185,91 @@ pub fn start() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::Duration;
+
+    #[derive(Debug)]
+    struct CapturedRequest {
+        url: String,
+        authorization: String,
+        body: String,
+    }
+
+    fn local_url(server: &tiny_http::Server) -> String {
+        let addr = server.server_addr().to_ip().expect("local TCP listener");
+        format!("http://{addr}")
+    }
+
+    fn spawn_upstream(
+        status: u16,
+        tag: &'static str,
+    ) -> (String, Arc<Mutex<Vec<CapturedRequest>>>, thread::JoinHandle<()>) {
+        let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
+        let url = local_url(&server);
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&captured);
+        let join = thread::spawn(move || {
+            let mut request = server
+                .recv_timeout(Duration::from_secs(10))
+                .expect("upstream receive")
+                .expect("upstream request");
+            let authorization = request
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("Authorization"))
+                .map(|h| h.value.as_str().to_string())
+                .unwrap_or_default();
+            let url = request.url().to_string();
+            let mut body = String::new();
+            request.as_reader().read_to_string(&mut body).unwrap();
+            seen.lock().unwrap().push(CapturedRequest { url, authorization, body });
+
+            let payload = format!(r#"{{"mock":"{tag}"}}"#);
+            let response = tiny_http::Response::from_string(payload)
+                .with_status_code(status)
+                .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
+            let _ = request.respond(response);
+        });
+        (url, captured, join)
+    }
+
+    fn spawn_proxy(targets: Vec<Target>) -> (String, thread::JoinHandle<()>) {
+        let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
+        let url = local_url(&server);
+        let join = thread::spawn(move || {
+            let request = server
+                .recv_timeout(Duration::from_secs(10))
+                .expect("proxy receive")
+                .expect("proxy request");
+            handle_with_targets(request, true, targets);
+        });
+        (url, join)
+    }
+
+    fn target(base_url: String, api_key: &str) -> Target {
+        Target { base_url, api_key: api_key.into(), anthropic: false }
+    }
+
+    fn send_through_proxy(proxy_url: &str) -> reqwest::blocking::Response {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        client
+            .post(format!("{proxy_url}/v1/chat/completions?trace=1"))
+            .header("Content-Type", "application/json")
+            .body(r#"{"model":"e2e-model","messages":[]}"#)
+            .send()
+            .expect("proxy response")
+    }
+
+    fn assert_forwarded(request: &CapturedRequest, api_key: &str) {
+        assert_eq!(request.url, "/v1/chat/completions?trace=1");
+        assert_eq!(request.authorization, format!("Bearer {api_key}"));
+        assert!(request.body.contains(r#""model":"e2e-model""#), "body was {}", request.body);
+    }
 
     #[test]
     fn url_join_does_not_double_v1() {
@@ -188,5 +277,56 @@ mod tests {
         assert_eq!(upstream_url("https://x/v1/", "/v1/responses"), "https://x/v1/responses");
         assert_eq!(upstream_url("https://x", "/v1/messages"), "https://x/v1/messages");
         assert_eq!(upstream_url("https://x/v1", "/v1"), "https://x/v1");
+    }
+
+    #[test]
+    fn proxy_fails_over_from_500_to_200_and_preserves_request() {
+        let (bad_url, bad_seen, bad_join) = spawn_upstream(500, "bad");
+        let (good_url, good_seen, good_join) = spawn_upstream(200, "good");
+        let (proxy_url, proxy_join) = spawn_proxy(vec![
+            target(bad_url, "bad-key"),
+            target(good_url, "good-key"),
+        ]);
+
+        let response = send_through_proxy(&proxy_url);
+        assert_eq!(response.status().as_u16(), 200);
+        let body = response.text().unwrap();
+        assert!(body.contains(r#""mock":"good""#), "unexpected body: {body}");
+
+        proxy_join.join().unwrap();
+        bad_join.join().unwrap();
+        good_join.join().unwrap();
+
+        let bad = bad_seen.lock().unwrap();
+        let good = good_seen.lock().unwrap();
+        assert_eq!(bad.len(), 1, "first upstream should receive one request");
+        assert_eq!(good.len(), 1, "second upstream should receive one request");
+        assert_forwarded(&bad[0], "bad-key");
+        assert_forwarded(&good[0], "good-key");
+    }
+
+    #[test]
+    fn proxy_fails_over_from_connection_error_to_200() {
+        let dead_port = {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let (good_url, good_seen, good_join) = spawn_upstream(200, "good");
+        let (proxy_url, proxy_join) = spawn_proxy(vec![
+            target(format!("http://127.0.0.1:{dead_port}"), "dead-key"),
+            target(good_url, "good-key"),
+        ]);
+
+        let response = send_through_proxy(&proxy_url);
+        assert_eq!(response.status().as_u16(), 200);
+        let body = response.text().unwrap();
+        assert!(body.contains(r#""mock":"good""#), "unexpected body: {body}");
+
+        proxy_join.join().unwrap();
+        good_join.join().unwrap();
+
+        let good = good_seen.lock().unwrap();
+        assert_eq!(good.len(), 1, "healthy upstream should receive one request");
+        assert_forwarded(&good[0], "good-key");
     }
 }

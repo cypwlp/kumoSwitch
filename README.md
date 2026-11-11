@@ -35,7 +35,7 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **統計儀表板** —— 讀取 Claude Code／Codex 本機 session log，算 token 用量、每日趨勢與成本估算（只在本機計算）。
 - **預設供應商目錄** —— 16 個已知端點一鍵帶入，不用手打 base URL。
 - **代理／故障轉移（Beta）** —— 本地反向代理，依序備援、429/5xx 自動換下一個、串流穿透。
-- **跨平台** —— Windows／Linux／macOS 皆由 CI 建置。
+- **跨平台** —— Windows／Linux／macOS 皆由 CI 建置，main 每次推送跑三平台測試。
 - **自動更新** —— 啟動後檢查新版本，下載後驗簽再安裝；更新包以 minisign 簽章，CI 產出 `latest.json`。
 
 ## 支援的工具
@@ -84,6 +84,7 @@ src-tauri/src/
   jsonc.rs       保留格式的 JSON / JSONC 定點編輯器
   yamlpatch.rs   行導向的 YAML 編輯器
   backup.rs      時間戳快照與還原
+  proxy.rs       本機反向代理與有序故障轉移
   store.rs       供應商清單（本機）
   main.rs        Tauri 指令層
 ui/              React 18 + Vite + TypeScript 介面
@@ -102,12 +103,13 @@ cd src-tauri
 cargo test
 ```
 
-38 個測試，分四類：
+56 個測試，分五類：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
 3. **沙箱端到端測試** —— 在暫存目錄真的寫檔再讀回，涵蓋「重複套用冪等」「從無到有建立設定」「Gemini 雙檔寫入」「重新套用不覆蓋自訂 `models[]`／`compat`」。
-4. **DPAPI 加解密往返**。
+4. **代理端到端故障轉移** —— 本機啟動 500／200 上游與代理監聽器，驗證 5xx 與連線失敗都會自動切到下一家，且路徑、查詢字串、body 與 `Authorization` 正確轉發。
+5. **DPAPI 加解密往返**。
 
 ## 授權
 
