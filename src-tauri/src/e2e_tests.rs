@@ -29,6 +29,7 @@ fn provider(config_id: &str) -> Provider {
         model: "e2e-model".into(),
         kind: String::new(),
         note: String::new(),
+        last_used: 0,
     }
 }
 

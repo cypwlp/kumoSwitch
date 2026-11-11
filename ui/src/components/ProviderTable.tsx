@@ -104,6 +104,7 @@ interface TableProps {
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
   onTest: (provider: Provider) => void;
+  onClone: (provider: Provider) => void;
   onInlineSave: (provider: Provider, field: EditField, value: string) => void;
 }
 
@@ -116,6 +117,7 @@ export function ProviderTable({
   onEdit,
   onDelete,
   onTest,
+  onClone,
   onInlineSave,
 }: TableProps) {
   const [editing, setEditing] = useState<{ id: string; field: EditField } | null>(null);
@@ -188,7 +190,7 @@ export function ProviderTable({
                   />
                   <span>{p.note || p.config_id}</span>
                 </td>
-                <td className="url mono">
+                <td className="url mono" title={p.base_url}>
                   <EditableCell
                     value={p.base_url}
                     mono
@@ -234,6 +236,9 @@ export function ProviderTable({
                     </button>
                     <button className="small primary" onClick={() => onApply(p)} title="先看 diff 再套用">
                       套用
+                    </button>
+                    <button className="small ghost" onClick={() => onClone(p)} title="複製成新供應商">
+                      複製
                     </button>
                     <button className="small ghost" onClick={() => onEdit(p)}>
                       編輯

@@ -527,13 +527,18 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   switch (cmd) {
     case "app_info":
       return {
-        version: "0.1.0",
+        version: "0.2.0",
         dataDir: `${HOME}\\AppData\\Roaming\\io.github.switchyard`,
         encrypted: true,
       } satisfies AppInfo;
 
-    case "tool_list":
-      return toolViews();
+    case "tool_list": {
+      const views = toolViews();
+      if (window.location.hash.includes("onboard")) {
+        return views.map((t) => ({ ...t, provider_count: 0, active_id: null }));
+      }
+      return views;
+    }
 
     case "provider_list":
       return listOf(tool);
@@ -636,6 +641,12 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         message: bad ? "Unauthorized：API Key 無效或已過期" : "OK",
       } satisfies TestResult;
     }
+
+    case "export_diagnostics":
+      return {
+        path: `${HOME}\Documents\switchyard-diagnostics-20261110.txt`,
+        count: 6,
+      } satisfies ExportResult;
 
     case "export_providers": {
       const count = Object.values(PROVIDERS).reduce((n, list) => n + list.length, 0);

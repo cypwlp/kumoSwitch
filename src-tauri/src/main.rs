@@ -8,6 +8,7 @@ mod e2e_tests;
 mod jsonc;
 mod net;
 mod store;
+mod tray;
 mod yamlpatch;
 
 use adapters::{CurrentState, Fmt, Provider, ToolSpec, TOOLS};
@@ -156,7 +157,11 @@ fn provider_list(tool: String) -> Vec<Provider> {
 }
 
 #[tauri::command]
-fn provider_save(tool: String, provider: Provider) -> Result<Provider, String> {
+fn provider_save(
+    tool: String,
+    provider: Provider,
+    app: tauri::AppHandle,
+) -> Result<Provider, String> {
     let spec = spec(&tool)?;
     if provider.name.trim().is_empty() {
         return Err("請填寫供應商名稱".into());
@@ -166,12 +171,16 @@ fn provider_save(tool: String, provider: Provider) -> Result<Provider, String> {
     }
     let mut provider = provider;
     configured_kind(spec, &mut provider);
-    store::upsert(&tool, provider)
+    let saved = store::upsert(&tool, provider)?;
+    tray::refresh(&app);
+    Ok(saved)
 }
 
 #[tauri::command]
-fn provider_delete(tool: String, id: String) -> Result<(), String> {
-    store::remove(&tool, &id)
+fn provider_delete(tool: String, id: String, app: tauri::AppHandle) -> Result<(), String> {
+    store::remove(&tool, &id)?;
+    tray::refresh(&app);
+    Ok(())
 }
 
 fn load_provider(tool: &str, provider_id: &str) -> Result<(&'static ToolSpec, Provider), String> {
@@ -260,14 +269,13 @@ fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
-#[tauri::command]
-fn apply_provider(tool: String, provider_id: String) -> Result<ApplyResult, String> {
-    let (spec, provider) = load_provider(&tool, &provider_id)?;
+fn apply_core(tool: &str, provider_id: &str) -> Result<ApplyResult, String> {
+    let (spec, provider) = load_provider(tool, provider_id)?;
     let changes = adapters::plan(spec, &provider)?;
     let pending: Vec<_> = changes.iter().filter(|c| c.before != c.after).collect();
 
     if pending.is_empty() {
-        store::set_active(&tool, &provider_id);
+        store::touch(tool, provider_id);
         return Ok(ApplyResult {
             changed: false,
             backup_id: None,
@@ -290,7 +298,7 @@ fn apply_provider(tool: String, provider_id: String) -> Result<ApplyResult, Stri
         written.push(change.file.clone());
     }
 
-    store::set_active(&tool, &provider_id);
+    store::touch(tool, provider_id);
     Ok(ApplyResult {
         changed: true,
         backup_id: Some(backup_id),
@@ -300,7 +308,23 @@ fn apply_provider(tool: String, provider_id: String) -> Result<ApplyResult, Stri
 }
 
 #[tauri::command]
-fn import_from_config(tool: String) -> Result<ImportResult, String> {
+fn apply_provider(
+    tool: String,
+    provider_id: String,
+    app: tauri::AppHandle,
+) -> Result<ApplyResult, String> {
+    let result = apply_core(&tool, &provider_id)?;
+    tray::refresh(&app);
+    Ok(result)
+}
+
+/// Entry point used by the tray menu, where there is no window to reply to.
+pub fn apply_from_tray(tool: &str, provider_id: &str) -> Result<String, String> {
+    apply_core(tool, provider_id).map(|r| r.message)
+}
+
+#[tauri::command]
+fn import_from_config(tool: String, app: tauri::AppHandle) -> Result<ImportResult, String> {
     let spec = spec(&tool)?;
     let existing = store::list(&tool);
     let mut imported = Vec::new();
@@ -313,6 +337,7 @@ fn import_from_config(tool: String) -> Result<ImportResult, String> {
         configured_kind(spec, &mut provider);
         imported.push(store::upsert(&tool, provider)?);
     }
+    tray::refresh(&app);
     Ok(ImportResult { imported, skipped })
 }
 
@@ -335,7 +360,10 @@ fn export_providers() -> Result<ExportResult, String> {
 }
 
 #[tauri::command]
-fn import_providers_json(text: String) -> Result<JsonImportResult, String> {
+fn import_providers_json(
+    text: String,
+    app: tauri::AppHandle,
+) -> Result<JsonImportResult, String> {
     let incoming: store::Store =
         serde_json::from_str(&text).map_err(|e| format!("檔案格式不符：{e}"))?;
     let mut current = store::load();
@@ -359,7 +387,55 @@ fn import_providers_json(text: String) -> Result<JsonImportResult, String> {
         }
     }
     store::save(&current)?;
+    tray::refresh(&app);
     Ok(JsonImportResult { imported, skipped })
+}
+
+#[tauri::command]
+fn export_diagnostics() -> Result<ExportResult, String> {
+    let data = store::load();
+    let mut report = String::new();
+    report.push_str(&format!("SwitchYard {}
+", env!("CARGO_PKG_VERSION")));
+    report.push_str(&format!("OS: {} {}
+", std::env::consts::OS, std::env::consts::ARCH));
+    report.push_str(&format!("資料目錄: {}
+", adapters::display_path(&store::data_dir())));
+    report.push_str(&format!("金鑰加密: {}
+", if crypto::available() { "DPAPI" } else { "無（明文）" }));
+    report.push_str(&format!("cc-switch 設定存在: {}
+", adapters::home().join(".cc-switch").exists()));
+    report.push_str("
+--- 工具 ---
+");
+    let mut count = 0;
+    for spec in TOOLS {
+        let providers = data.providers.get(spec.id).cloned().unwrap_or_default();
+        count += providers.len();
+        let current = adapters::read_current(spec);
+        report.push_str(&format!(
+            "{:<14} 偵測={:<5} 驗證={:<5} 供應商={}  接管={}  來源={}
+",
+            spec.id,
+            adapters::tool_dir(spec).exists(),
+            spec.verified,
+            providers.len(),
+            takeover_state(spec.id),
+            if current.source.is_empty() { "-" } else { &current.source },
+        ));
+        report.push_str(&format!("{:<14} 路徑={}
+", "", adapters::display_path(&adapters::resolve_file(spec, spec.default_file))));
+        for provider in providers {
+            let tail = if provider.api_key.is_empty() { "金鑰=無".to_string() } else { format!("金鑰尾={}", &provider.api_key[provider.api_key.len().saturating_sub(4)..]) };
+            report.push_str(&format!("{:<14}   - {} | {} | {} | {}
+", "", provider.name, provider.base_url, provider.model, tail));
+        }
+    }
+    let dir = store::data_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("switchyard-diagnostics-{}.txt", store::stamp()));
+    std::fs::write(&path, report).map_err(|e| format!("寫入失敗：{e}"))?;
+    Ok(ExportResult { path: adapters::display_path(&path), count })
 }
 
 #[tauri::command]
@@ -415,6 +491,20 @@ fn main() {
         let _ = store::migrate();
     }
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main(app);
+        }))
+        .setup(|app| {
+            tray::install(app.handle())?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Keep running in the tray; quit lives in the tray menu.
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             tool_list,
             provider_list,
@@ -425,6 +515,7 @@ fn main() {
             import_from_config,
             test_provider,
             export_providers,
+            export_diagnostics,
             import_providers_json,
             backup_list,
             backup_restore,

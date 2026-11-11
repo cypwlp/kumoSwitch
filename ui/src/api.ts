@@ -35,6 +35,7 @@ export const api = {
   importFromConfig: (tool: string) => call<ImportResult>("import_from_config", { tool }),
   testProvider: (tool: string, providerId: string) => call<TestResult>("test_provider", { tool, providerId }),
   exportProviders: () => call<ExportResult>("export_providers"),
+  exportDiagnostics: () => call<ExportResult>("export_diagnostics"),
   importProvidersJson: (text: string) => call<JsonImportResult>("import_providers_json", { text }),
 };
 

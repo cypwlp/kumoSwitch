@@ -376,7 +376,7 @@ html, body {
 }
 .state-item { background: var(--panel); padding: 11px 14px; display: flex; flex-direction: column; gap: 4px; }
 .state-item .k { font-size: 10.5px; color: var(--muted); letter-spacing: 0.4px; }
-.state-item .v { font-size: 12.5px; word-break: break-all; }
+.state-item .v { font-size: 12.5px; overflow-wrap: anywhere; }
 .state-source {
   grid-column: 1 / -1;
   flex-direction: row;
@@ -404,6 +404,7 @@ html, body {
 
 button {
   font: inherit;
+  white-space: nowrap;
   cursor: pointer;
   border-radius: 9px;
   border: 1px solid var(--line-2);
@@ -468,7 +469,13 @@ button .cnt { opacity: 0.7; margin-left: 4px; font-size: 11px; }
 .c-state { width: 13%; }
 .c-act { width: 24%; text-align: right; }
 .grid td.c-act { text-align: right; white-space: nowrap; }
-.grid .url { color: var(--code-fg); word-break: break-all; }
+.grid .url {
+  color: var(--code-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+}
 .grid .name b { font-weight: 550; }
 .grid .name span { display: block; font-size: 11px; color: var(--muted); }
 .grid .act { display: inline-flex; gap: 4px; }
@@ -716,3 +723,188 @@ kbd {
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
+/* ============================================================
+   Command palette (Ctrl+K)
+   ============================================================ */
+.palette-layer {
+  position: fixed; inset: 0;
+  background: var(--overlay);
+  backdrop-filter: blur(4px);
+  z-index: 70;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 24px 24px;
+  animation: fade-in 0.14s ease both;
+}
+.palette {
+  width: min(680px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  box-shadow: var(--sheet-shadow);
+  overflow: hidden;
+  animation: sheet-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.palette-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  padding: 16px 18px;
+  outline: none;
+}
+.palette-list { max-height: 52vh; overflow-y: auto; }
+.palette-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.palette-row.active { background: var(--hover-tint); }
+.palette-tool {
+  font-size: 10.5px;
+  color: var(--muted);
+  min-width: 74px;
+  flex: 0 0 74px;
+}
+.palette-name { font-weight: 550; }
+.palette-url {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--code-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-model { font-size: 11px; color: var(--muted); }
+.palette-empty { padding: 28px; text-align: center; color: var(--muted); font-size: 13px; }
+.palette-foot {
+  display: flex;
+  gap: 16px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+kbd {
+  font-family: "Cascadia Code", Consolas, monospace;
+  background: var(--chip-bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-size: 10.5px;
+  margin-right: 4px;
+  color: var(--text);
+}
+
+/* ============================================================
+   First-run onboarding
+   ============================================================ */
+.onboard { min-height: 100%; display: grid; place-items: center; padding: 40px; }
+.onboard-card { width: min(660px, 100%); }
+.onboard-card h2 { font-size: 22px; margin: 14px 0 8px; letter-spacing: -0.2px; }
+.onboard-card p { line-height: 1.8; }
+.onboard-list { display: flex; flex-direction: column; gap: 8px; margin: 20px 0 22px; }
+.onboard-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.onboard-item:hover { border-color: var(--line-2); }
+.onboard-item.on { border-color: var(--line-2); background: var(--hover-tint); }
+.onboard-item input { accent-color: var(--accent); }
+.onboard-name { font-weight: 550; min-width: 108px; }
+.onboard-item .badge { margin-left: auto; }
+.onboard-tick { color: var(--ok); }
+.onboard-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.mini-select {
+  background: var(--input-bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.mini-select:focus { border-color: var(--accent); }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line-2);
+  background: var(--chip-bg);
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+}
+
+/* ---------- overflow menu ---------- */
+.more { position: relative; }
+.more > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 13px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text);
+  background: transparent;
+  user-select: none;
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary:hover { background: var(--hover-tint); }
+.more > summary::after { content: "▾"; font-size: 9px; color: var(--muted); }
+.more[open] > summary { background: var(--hover-tint); }
+.more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 190px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 11px;
+  box-shadow: var(--sheet-shadow);
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.more-menu button {
+  background: none;
+  border: none;
+  border-radius: 7px;
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.more-menu button:hover { background: var(--hover-tint); }
+.more-menu kbd { margin: 0 0 0 4px; }

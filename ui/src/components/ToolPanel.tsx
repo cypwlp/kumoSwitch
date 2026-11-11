@@ -21,6 +21,11 @@ interface PanelProps {
   onDelete: (provider: Provider) => void;
   onTest: (provider: Provider) => void;
   onInlineSave: (provider: Provider, field: EditField, value: string) => void;
+  onClone: (provider: Provider) => void;
+  onPalette: () => void;
+  onDiagnostics: () => void;
+  sort: "manual" | "name" | "recent";
+  onSort: (value: "manual" | "name" | "recent") => void;
 }
 
 export function ToolPanel({
@@ -41,6 +46,11 @@ export function ToolPanel({
   onDelete,
   onTest,
   onInlineSave,
+  onClone,
+  onPalette,
+  onDiagnostics,
+  sort,
+  onSort,
 }: PanelProps) {
   return (
     <section className="panel" key={tool.id}>
@@ -116,6 +126,16 @@ export function ToolPanel({
           {rows.length} / {total} 個供應商
         </span>
         <div className="spacer" />
+        <select
+          className="mini-select"
+          value={sort}
+          aria-label="排序方式"
+          onChange={(event) => onSort(event.target.value as "manual" | "name" | "recent")}
+        >
+          <option value="manual">原始順序</option>
+          <option value="name">依名稱</option>
+          <option value="recent">最近使用</option>
+        </select>
         <button
           className="ghost"
           onClick={onImportConfig}
@@ -125,9 +145,14 @@ export function ToolPanel({
           從設定檔導入
           {tool.importable > 0 ? <span className="cnt">{tool.importable}</span> : null}
         </button>
-        <button className="ghost" onClick={onBackups}>
-          備份紀錄
-        </button>
+        <details className="more">
+          <summary className="ghost">更多</summary>
+          <div className="more-menu">
+            <button onClick={onPalette}>快速切換 <kbd>Ctrl</kbd><kbd>K</kbd></button>
+            <button onClick={onBackups}>備份紀錄</button>
+            <button onClick={onDiagnostics}>匯出診斷摘要</button>
+          </div>
+        </details>
         <button className="primary" onClick={onAdd} title="新增供應商 (Ctrl+N)">
           ＋ 新增供應商
         </button>
@@ -143,6 +168,7 @@ export function ToolPanel({
         onDelete={onDelete}
         onTest={onTest}
         onInlineSave={onInlineSave}
+        onClone={onClone}
       />
     </section>
   );

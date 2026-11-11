@@ -17,6 +17,8 @@ import { DiffModal } from "./components/DiffModal";
 import { BackupModal } from "./components/BackupModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ExportModal } from "./components/ExportModal";
+import { CommandPalette } from "./components/CommandPalette";
+import { Onboarding } from "./components/Onboarding";
 import { Toasts, useToasts } from "./components/Toasts";
 import type { EditField, TestState } from "./components/ProviderTable";
 
@@ -52,6 +54,16 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [modal, setModal] = useState<ModalState>(null);
+  const [palette, setPalette] = useState(false);
+  const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
+  const [onboarded, setOnboarded] = useState<boolean>(() => {
+    if (MOCK) return false;
+    try {
+      return window.localStorage.getItem("switchyard.onboarded") === "1";
+    } catch {
+      return false;
+    }
+  });
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -64,11 +76,15 @@ export default function App() {
 
   const rows = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return providers;
-    return providers.filter((p) =>
-      [p.name, p.base_url, p.model, p.note, p.kind].join(" ").toLowerCase().includes(q),
-    );
-  }, [providers, filter]);
+    const list = q
+      ? providers.filter((p) =>
+          [p.name, p.base_url, p.model, p.note, p.kind].join(" ").toLowerCase().includes(q),
+        )
+      : providers.slice();
+    if (sort === "name") list.sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
+    if (sort === "recent") list.sort((a, b) => (b.last_used ?? 0) - (a.last_used ?? 0));
+    return list;
+  }, [providers, filter, sort]);
 
   /* ------------------------------------------------------------ loading */
 
@@ -189,6 +205,11 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && (event.key === "k" || event.key === "K")) {
+        event.preventDefault();
+        setPalette((open) => !open);
+        return;
+      }
       if (hasLayer()) return;
       if ((event.ctrlKey || event.metaKey) && (event.key === "n" || event.key === "N")) {
         if (!selectedId) return;
@@ -213,6 +234,36 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedId, openEditor]);
+
+  useEffect(() => {
+    if (MOCK && hashTokens().includes("palette")) setPalette(true);
+  }, []);
+
+  /* ------------------------------------------- tray / cross-window events */
+
+  useEffect(() => {
+    if (MOCK) return;
+    let dispose: (() => void) | undefined;
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const offToast = await listen<{ text: string; kind: string }>("switchyard://toast", (event) => {
+          push(event.payload.text, event.payload.kind === "err" ? "err" : "ok");
+        });
+        const offChanged = await listen("switchyard://changed", () => {
+          void refreshTools();
+          if (selectedId) void loadProviders(selectedId);
+        });
+        dispose = () => {
+          offToast();
+          offChanged();
+        };
+      } catch {
+        /* not running inside Tauri */
+      }
+    })();
+    return () => dispose?.();
+  }, [push, refreshTools, loadProviders, selectedId]);
 
   /* ------------------------------------------------------------ actions */
 
@@ -404,7 +455,69 @@ export default function App() {
     }
   };
 
+  const importMany = async (toolIds: string[]) => {
+    setBusy(true);
+    let total = 0;
+    try {
+      for (const id of toolIds) {
+        const result = await api.importFromConfig(id);
+        total += result.imported.length;
+      }
+      markOnboarded();
+      await refreshTools();
+      const first = toolIds[0];
+      if (first) await selectTool(first, true);
+      push(total > 0 ? `已導入 ${total} 個供應商` : "沒有新供應商可導入", "ok");
+    } catch (err) {
+      push(errorText(err), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const markOnboarded = () => {
+    setOnboarded(true);
+    try {
+      window.localStorage.setItem("switchyard.onboarded", "1");
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const cloneProvider = async (provider: Provider) => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const copy = await api.providerSave(selected.id, {
+        ...provider,
+        id: "",
+        config_id: "",
+        name: `${provider.name} 副本`,
+        last_used: 0,
+      });
+      push(`已建立「${copy.name}」`, "ok");
+      await reload(selected.id);
+    } catch (err) {
+      push(errorText(err), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const diagnostics = async () => {
+    try {
+      const result = await api.exportDiagnostics();
+      push(`診斷已匯出（${result.count} 個供應商摘要）`, "ok");
+      setModal({ kind: "export", result });
+    } catch (err) {
+      push(errorText(err), "err");
+    }
+  };
+
   /* ------------------------------------------------------------- render */
+
+  const showOnboarding =
+    !onboarded && tools.length > 0 && tools.every((t) => t.provider_count === 0);
 
   return (
     <>
@@ -440,11 +553,23 @@ export default function App() {
               onBackups={() => void openBackups(selected.id)}
               onAdd={() => openEditor(null)}
               onImportConfig={() => void importConfig()}
+              sort={sort}
+              onSort={setSort}
+              onClone={(p) => void cloneProvider(p)}
+              onPalette={() => setPalette(true)}
+              onDiagnostics={() => void diagnostics()}
               onApply={(p) => void openDiff(selected.id, p)}
               onEdit={(p) => openEditor(p)}
               onDelete={askDelete}
               onTest={(p) => void runTest(p)}
               onInlineSave={(p, field, value) => void inlineSave(p, field, value)}
+            />
+          ) : showOnboarding ? (
+            <Onboarding
+              tools={tools}
+              busy={busy}
+              onImport={importMany}
+              onSkip={markOnboarded}
             />
           ) : (
             <div className="welcome">
@@ -483,6 +608,18 @@ export default function App() {
           if (file) readJsonFile(file);
         }}
       />
+
+      {palette ? (
+        <CommandPalette
+          tools={tools}
+          onError={(message) => push(message, "err")}
+          onClose={() => setPalette(false)}
+          onPick={(tool, provider) => {
+            setPalette(false);
+            void openDiff(tool.id, provider);
+          }}
+        />
+      ) : null}
 
       {modal?.kind === "editor" && selected ? (
         <EditorModal

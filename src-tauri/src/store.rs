@@ -126,8 +126,17 @@ pub fn remove(tool: &str, id: &str) -> Result<(), String> {
     save(&store)
 }
 
-pub fn set_active(tool: &str, id: &str) {
+/// Mark a provider as applied: remembers it as active and stamps the time.
+pub fn touch(tool: &str, id: &str) {
     let mut store = load();
+    let now = stamp() as u64;
+    if let Some(list) = store.providers.get_mut(tool) {
+        for provider in list.iter_mut() {
+            if provider.id == id {
+                provider.last_used = now;
+            }
+        }
+    }
     store.active.insert(tool.to_string(), id.to_string());
     let _ = save(&store);
 }

@@ -9,6 +9,8 @@ export interface Provider {
   model: string;
   kind: string;
   note: string;
+  /** Unix millis of the last successful apply. */
+  last_used?: number;
 }
 
 export interface CurrentState {

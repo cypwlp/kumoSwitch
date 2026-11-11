@@ -32,6 +32,9 @@ pub struct Provider {
     pub kind: String,
     #[serde(default)]
     pub note: String,
+    /// Unix millis of the last successful apply, used for sorting.
+    #[serde(default)]
+    pub last_used: u64,
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -721,6 +724,7 @@ fn imported(config_id: &str, name: String, base_url: String, api_key: String, mo
         model,
         kind,
         note: "從設定檔導入".into(),
+        last_used: 0,
     }
 }
 
@@ -917,6 +921,7 @@ mod real_config_checks {
             model: "selftest-model".into(),
             kind: "responses".into(),
             note: String::new(),
+            last_used: 0,
         }
     }
 
