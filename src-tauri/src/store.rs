@@ -18,6 +18,9 @@ pub struct Store {
     pub providers: BTreeMap<String, Vec<Provider>>,
     #[serde(default)]
     pub active: BTreeMap<String, String>,
+    /// Re-test providers that already have history, on a timer.
+    #[serde(default)]
+    pub auto_health: bool,
 }
 
 fn store_path() -> PathBuf {

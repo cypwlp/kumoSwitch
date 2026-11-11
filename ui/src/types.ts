@@ -72,6 +72,7 @@ export interface TestResult {
 }
 
 export interface AppInfo {
+  autoHealth?: boolean;
   version: string;
   dataDir: string;
   encrypted: boolean;

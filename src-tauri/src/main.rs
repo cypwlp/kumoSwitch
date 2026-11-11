@@ -447,6 +447,42 @@ fn export_diagnostics() -> Result<ExportResult, String> {
 }
 
 #[tauri::command]
+fn set_auto_health(enabled: bool) -> Result<bool, String> {
+    let mut data = store::load();
+    data.auto_health = enabled;
+    store::save(&data)?;
+    Ok(enabled)
+}
+
+/// Periodically re-test providers that already have history, so the health
+/// column stays meaningful without manual clicks. Off by default.
+fn spawn_health_loop(app: tauri::AppHandle) {
+    use tauri::Emitter as _;
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(600));
+        let data = store::load();
+        if !data.auto_health {
+            continue;
+        }
+        let mut any = false;
+        for (tool, list) in &data.providers {
+            let summaries = history::summaries(tool);
+            for provider in list {
+                if !summaries.get(&provider.id).map(|s| s.total > 0).unwrap_or(false) {
+                    continue;
+                }
+                let result = net::probe(&provider.base_url, &provider.api_key, tool == "claude");
+                let _ = history::record(tool, &provider.id, result.ok, result.ms as u64, result.status);
+                any = true;
+            }
+        }
+        if any {
+            let _ = app.emit("switchyard://changed", ());
+        }
+    });
+}
+
+#[tauri::command]
 fn backup_list(tool: String) -> Vec<backup::BackupInfo> {
     backup::list(&tool)
 }
@@ -491,6 +527,7 @@ fn app_info() -> serde_json::Value {
         "version": env!("CARGO_PKG_VERSION"),
         "dataDir": adapters::display_path(&store::data_dir()),
         "encrypted": crypto::available(),
+        "autoHealth": store::load().auto_health,
     })
 }
 
@@ -506,6 +543,7 @@ fn main() {
         }))
         .setup(|app| {
             tray::install(app.handle())?;
+            spawn_health_loop(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -525,6 +563,7 @@ fn main() {
             import_from_config,
             test_provider,
             test_history,
+            set_auto_health,
             export_providers,
             export_diagnostics,
             import_providers_json,

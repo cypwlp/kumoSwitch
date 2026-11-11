@@ -56,6 +56,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [history, setHistory] = useState<HistoryMap>({});
+  const [autoHealth, setAutoHealth] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [palette, setPalette] = useState(false);
   const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
@@ -168,7 +169,10 @@ export default function App() {
     void (async () => {
       try {
         const appInfo = await api.appInfo();
-        if (alive) setInfo(appInfo);
+        if (alive) {
+          setInfo(appInfo);
+          setAutoHealth(Boolean(appInfo.autoHealth));
+        }
       } catch {
         /* version banner is optional */
       }
@@ -532,6 +536,17 @@ export default function App() {
     }
   };
 
+  const toggleAutoHealth = async () => {
+    const next = !autoHealth;
+    try {
+      await api.setAutoHealth(next);
+      setAutoHealth(next);
+      push(next ? "已開啟自動健康檢查（每 10 分鐘）" : "已關閉自動健康檢查", "ok");
+    } catch (err) {
+      push(errorText(err), "err");
+    }
+  };
+
   const diagnostics = async () => {
     try {
       const result = await api.exportDiagnostics();
@@ -623,6 +638,8 @@ export default function App() {
               onPalette={() => setPalette(true)}
               onDiagnostics={() => void diagnostics()}
               onCheckUpdate={() => void runUpdateCheck(true)}
+              autoHealth={autoHealth}
+              onToggleAutoHealth={() => void toggleAutoHealth()}
               onApply={(p) => void openDiff(selected.id, p)}
               onEdit={(p) => openEditor(p)}
               onDelete={askDelete}

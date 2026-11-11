@@ -254,6 +254,7 @@ fn render(value: &Value, indent: &str, unit: &str) -> String {
 fn find<'n>(node: &'n Node, key: &str) -> Option<&'n Node> {
     match &node.kind {
         Kind::Object(members) => members.iter().find(|m| m.key == key).map(|m| &m.value),
+        Kind::Array(items) => key.parse::<usize>().ok().and_then(|i| items.get(i)),
         _ => None,
     }
 }
@@ -300,8 +301,8 @@ pub fn set(text: &str, path: &[String], value: &Value) -> Result<String, String>
     }
 
     let node = root(text)?;
-    if !matches!(node.kind, Kind::Object(_)) {
-        return Err("config root is not a JSON object".into());
+    if !matches!(node.kind, Kind::Object(_) | Kind::Array(_)) {
+        return Err("config root is not a JSON container".into());
     }
 
     // Walk as deep as the document already goes.
@@ -319,8 +320,8 @@ pub fn set(text: &str, path: &[String], value: &Value) -> Result<String, String>
                     out.push_str(&text[child.span.end..]);
                     return Ok(out);
                 }
-                if !matches!(child.kind, Kind::Object(_)) {
-                    return Err(format!("`{}` exists but is not an object", seg));
+                if !matches!(child.kind, Kind::Object(_) | Kind::Array(_)) {
+                    return Err(format!("`{}` exists but is not a container", seg));
                 }
                 container = child;
                 depth = idx + 1;
@@ -337,38 +338,51 @@ pub fn set(text: &str, path: &[String], value: &Value) -> Result<String, String>
         missing = Value::Object(map);
     }
 
-    let (obj_start, members) = match &container.kind {
-        Kind::Object(m) => (container.span.start, m),
-        _ => return Err("target is not an object".into()),
+    let (obj_start, last_end, first_start) = match &container.kind {
+        Kind::Object(m) => (
+            container.span.start,
+            m.last().map(|x| x.value.span.end),
+            m.first().map(|x| x.value.span.start),
+        ),
+        Kind::Array(items) => (
+            container.span.start,
+            items.last().map(|x| x.span.end),
+            items.first().map(|x| x.span.start),
+        ),
+        _ => return Err("target is not a container".into()),
     };
+    let is_array = matches!(container.kind, Kind::Array(_));
     let close = container.span.end - 1;
     let base_indent = line_indent(text, obj_start);
-    let child_indent = if let Some(first) = members.first() {
-        line_indent(text, first.value.span.start)
+    let child_indent = if let Some(first) = first_start {
+        line_indent(text, first)
     } else {
         format!("{base_indent}{unit}")
     };
 
     let rendered = render(&missing, &child_indent, &unit);
-    let key = serde_json::to_string(&path[depth]).unwrap_or_default();
+    let entry = if is_array {
+        rendered.clone()
+    } else {
+        let key = serde_json::to_string(&path[depth]).unwrap_or_default();
+        format!("{key}: {rendered}")
+    };
 
-    let (insert_at, snippet) = if let Some(last) = members.last() {
-        let tail = &text[last.value.span.end..close];
+    let (insert_at, snippet) = if let Some(last) = last_end {
+        let tail = &text[last..close];
         match tail.find(',') {
             // Keep an existing trailing comma in front of the new member.
-            Some(comma) => (
-                last.value.span.end + comma + 1,
-                format!("\n{child_indent}{key}: {rendered}"),
-            ),
-            None => (
-                last.value.span.end,
-                format!(",\n{child_indent}{key}: {rendered}"),
-            ),
+            Some(comma) => (last + comma + 1, format!("
+{child_indent}{entry}")),
+            None => (last, format!(",
+{child_indent}{entry}")),
         }
     } else {
         (
             obj_start + 1,
-            format!("\n{child_indent}{key}: {rendered}\n{base_indent}"),
+            format!("
+{child_indent}{entry}
+{base_indent}"),
         )
     };
 

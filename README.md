@@ -31,6 +31,7 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **Ctrl+K 命令面板** —— 跨 10 個工具搜尋供應商，Enter 直接看 diff。
 - **首次啟動引導** —— 自動偵測既有設定並一鍵導入，不必從零輸入。
 - **診斷匯出** —— 一鍵產生環境與設定摘要（金鑰只留末四碼）。
+- **自動健康檢查** —— 可開啟每 10 分鐘重測已有歷史的供應商，健康度欄不用手動按。
 - **自動更新** —— 啟動後檢查新版本，下載後驗簽再安裝；更新包以 minisign 簽章，CI 產出 `latest.json`。
 
 ## 支援的工具
@@ -44,14 +45,14 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 | OpenCode | `~/.config/opencode/opencode.json` | `provider.*.options`、頂層 `model` | 依官方文件 |
 | Qoder | `~/.qoder/settings.json` | `providers.<qoder-custom-*>` | 已對真實設定檔驗證 |
 | DSH | `~/.dsh/settings.yaml` | `llm-pi-ai.providers.*`、`agent-default-model` | 已對真實設定檔驗證 |
-| ZCode | `~/.zcode/v2/config.json` | `providers.*.options` | 待實測（UI 會提醒） |
+| ZCode | `~/.zcode/v2/provider_config.json` | `providerRules[]`、`defaultModelSelection` | 對社群範例驗證 |
 | Hermes | `~/.hermes/config.yaml` | `model.*` | 待實測（UI 會提醒） |
 | Command Code | `~/.commandcode/providers.json` | `providers.*` | 待實測（UI 會提醒） |
 | Crush | `~/.config/crush/crush.json` | `providers.*` | 依官方文件 |
-| Qwen Code | `~/.qwen/settings.json` + `.env` | `modelProviders.*`、`OPENAI_*` | 待實測（UI 會提醒） |
-| Kilo Code | `~/.config/kilo/kilo.jsonc` | `provider.*.options` | 待實測（UI 會提醒） |
+| Qwen Code | `~/.qwen/settings.json` + `.env` | `modelProviders.*`、`OPENAI_*` | 對官方文件驗證 |
+| Kilo Code | `~/.config/kilo/kilo.jsonc` | `provider.*.options` | 對官方範例驗證 |
 
-「待實測」表示該工具的設定格式來自公開文件或第三方整理，尚未在真實安裝上驗證。畫面會標記提醒，套用前請務必看過 diff。
+「待實測」目前只剩 Hermes 與 Command Code。其餘工具的寫入邏輯都有夹具測試：直接拿官方／社群的範例設定檔跑一遍，驗證目標鍵寫對、且使用者自訂的模型 metadata 不被覆蓋。
 
 ## 下載
 

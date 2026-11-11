@@ -25,6 +25,8 @@ interface PanelProps {
   onPalette: () => void;
   onDiagnostics: () => void;
   onCheckUpdate: () => void;
+  autoHealth: boolean;
+  onToggleAutoHealth: () => void;
   sort: "manual" | "name" | "recent";
   onSort: (value: "manual" | "name" | "recent") => void;
 }
@@ -51,6 +53,8 @@ export function ToolPanel({
   onPalette,
   onDiagnostics,
   onCheckUpdate,
+  autoHealth,
+  onToggleAutoHealth,
   sort,
   onSort,
 }: PanelProps) {
@@ -154,6 +158,9 @@ export function ToolPanel({
             <button onClick={onBackups}>備份紀錄</button>
             <button onClick={onDiagnostics}>匯出診斷摘要</button>
             <button onClick={onCheckUpdate}>檢查更新</button>
+            <button onClick={onToggleAutoHealth}>
+              {autoHealth ? "✓ 自動健康檢查（10 分鐘）" : "自動健康檢查（關）"}
+            </button>
           </div>
         </details>
         <button className="primary" onClick={onAdd} title="新增供應商 (Ctrl+N)">

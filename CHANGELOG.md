@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — 2026-11-11
+- ZCode 改用真實的 `providerRules[]` schema：依 providerId 更新既有規則、否則追加，不再誤寫舊版 config.json
+- JSON 編輯器支援陣列索引與追加
+- Kilo／Qwen／Crush／ZCode 以官方／社群範例設定檔加入夹具測試（共 46 個測試）
+- 新增自動健康檢查：每 10 分鐘重測已有歷史的供應商（預設關閉，更多選單可開）
+
 ## 0.2.2 — 2026-11-11
 - 修正 CI：可攜版 exe 改以 find 定位（--target 會改變輸出路徑）
 

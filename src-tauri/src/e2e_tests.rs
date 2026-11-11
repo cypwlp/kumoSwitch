@@ -191,3 +191,149 @@ fn creates_config_from_nothing() {
     assert_eq!(json["model"], "e2e/e2e-model");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+// ---------------------------------------------------------------------------
+// Fixtures taken from official / community example configs.
+// ---------------------------------------------------------------------------
+
+const ZCODE_SAMPLE: &str = r#"{
+  "schemaVersion": 1,
+  "config": {
+    "providerConfigRules": {
+      "providerRules": [
+        {
+          "providerId": "custom",
+          "providerName": "Custom provider",
+          "enabled": true,
+          "config": {
+            "group": "standard-personal",
+            "access": { "type": "api-key", "apiKey": "sk-old" },
+            "api": { "type": "openai-chat-completions", "baseUrl": "https://old.invalid/v1", "headers": {} },
+            "personalModelIds": ["keep-model"],
+            "visibility": "visible"
+          }
+        }
+      ]
+    },
+    "modelConfigRules": { "providerModelRules": [ { "providerId": "custom", "modelId": "keep-model", "config": { "enabled": true } } ] },
+    "providerOrder": ["custom"],
+    "defaultModelSelection": { "providerId": "custom", "modelId": "keep-model" }
+  }
+}
+"#;
+
+#[test]
+fn zcode_updates_existing_rule_without_touching_siblings() {
+    let dir = sandbox("zcode-existing");
+    seed(&dir, "v2/provider_config.json", ZCODE_SAMPLE);
+    apply(&dir, "zcode", "custom");
+    let after = std::fs::read_to_string(dir.join("v2/provider_config.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&after).unwrap();
+    let rule = &json["config"]["providerConfigRules"]["providerRules"][0];
+    assert_eq!(rule["config"]["api"]["baseUrl"], "https://e2e.invalid/v1");
+    assert_eq!(rule["config"]["access"]["apiKey"], "sk-e2e");
+    assert_eq!(rule["config"]["personalModelIds"][0], "keep-model", "自訂模型清單被覆蓋");
+    assert_eq!(rule["config"]["group"], "standard-personal");
+    assert_eq!(json["config"]["modelConfigRules"]["providerModelRules"][0]["modelId"], "keep-model");
+    assert_eq!(json["config"]["defaultModelSelection"]["modelId"], "e2e-model");
+    assert_eq!(json["config"]["providerConfigRules"]["providerRules"].as_array().unwrap().len(), 1);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn zcode_appends_new_rule_and_keeps_old() {
+    let dir = sandbox("zcode-append");
+    seed(&dir, "v2/provider_config.json", ZCODE_SAMPLE);
+    apply(&dir, "zcode", "brand-new");
+    let after = std::fs::read_to_string(dir.join("v2/provider_config.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&after).unwrap();
+    let rules = json["config"]["providerConfigRules"]["providerRules"].as_array().unwrap();
+    assert_eq!(rules.len(), 2, "應該追加而非覆蓋");
+    assert_eq!(rules[0]["providerId"], "custom");
+    assert_eq!(rules[1]["providerId"], "brand-new");
+    assert_eq!(rules[1]["config"]["api"]["baseUrl"], "https://e2e.invalid/v1");
+    assert_eq!(rules[1]["enabled"], true);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+const KILO_SAMPLE: &str = r#"{
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "openai-compatible/keep-model",
+  "provider": {
+    "openai-compatible": {
+      "options": { "apiKey": "sk-old", "baseURL": "https://old.invalid/v1" },
+      "models": { "keep-model": { "name": "Keep", "tool_call": true, "limit": { "context": 128000, "output": 16384 } } }
+    }
+  }
+}
+"#;
+
+#[test]
+fn kilo_matches_official_example_and_preserves_model_limits() {
+    let dir = sandbox("kilo");
+    seed(&dir, "kilo.jsonc", KILO_SAMPLE);
+    apply(&dir, "kilo", "openai-compatible");
+    let after = std::fs::read_to_string(dir.join("kilo.jsonc")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&after).unwrap();
+    let prov = &json["provider"]["openai-compatible"];
+    assert_eq!(prov["options"]["baseURL"], "https://e2e.invalid/v1");
+    assert_eq!(prov["options"]["apiKey"], "sk-e2e");
+    assert_eq!(prov["models"]["keep-model"]["limit"]["context"], 128000, "模型 limit 被覆蓋");
+    assert_eq!(prov["models"]["keep-model"]["tool_call"], true);
+    assert_eq!(json["model"], "openai-compatible/e2e-model");
+    assert_eq!(json["$schema"], "https://app.kilo.ai/config.json");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+const CRUSH_SAMPLE: &str = r#"{
+  "$schema": "https://charm.land/crush.json",
+  "providers": {
+    "deepseek": {
+      "type": "openai-compat",
+      "base_url": "https://old.invalid",
+      "api_key": "sk-old",
+      "models": [ { "id": "keep", "name": "Keep", "context_window": 64000 } ]
+    }
+  }
+}
+"#;
+
+#[test]
+fn crush_preserves_model_metadata() {
+    let dir = sandbox("crush");
+    seed(&dir, "crush.json", CRUSH_SAMPLE);
+    apply(&dir, "crush", "deepseek");
+    let after = std::fs::read_to_string(dir.join("crush.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&after).unwrap();
+    let prov = &json["providers"]["deepseek"];
+    assert_eq!(prov["base_url"], "https://e2e.invalid/v1");
+    assert_eq!(prov["api_key"], "sk-e2e");
+    assert_eq!(prov["models"][0]["context_window"], 64000, "模型 metadata 被覆蓋");
+    assert_eq!(json["$schema"], "https://charm.land/crush.json");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+const QWEN_SAMPLE: &str = r#"{
+  "modelProviders": {
+    "openai": [ { "id": "keep", "envKey": "OPENAI_API_KEY", "baseUrl": "https://old.invalid/v1" } ]
+  },
+  "theme": "dark"
+}
+"#;
+
+#[test]
+fn qwen_writes_env_and_keeps_existing_provider_list() {
+    let dir = sandbox("qwen");
+    seed(&dir, "settings.json", QWEN_SAMPLE);
+    seed(&dir, ".env", "# keep\nOTHER=1\n");
+    apply(&dir, "qwen", "openai");
+    let env = std::fs::read_to_string(dir.join(".env")).unwrap();
+    assert!(env.contains("OPENAI_BASE_URL=https://e2e.invalid/v1"));
+    assert!(env.contains("OPENAI_API_KEY=sk-e2e"));
+    assert!(env.contains("OTHER=1"));
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap();
+    assert_eq!(json["modelProviders"]["openai"][0]["id"], "keep", "既有清單被覆蓋");
+    assert_eq!(json["theme"], "dark");
+    std::fs::remove_dir_all(&dir).ok();
+}

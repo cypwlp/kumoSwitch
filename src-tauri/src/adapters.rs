@@ -236,16 +236,33 @@ pub static TOOLS: &[ToolSpec] = &[
         name: "ZCode",
         blurb: "Z.ai ZCode CLI",
         dir: ".zcode",
-        default_file: "v2/config.json",
-        alt_files: &["v2/provider_config.json"],
+        default_file: "v2/provider_config.json",
+        alt_files: &[],
         env_override: Some("ZCODE_PERSONAL_PROVIDER_CONFIG_FILE"),
-        verified: false,
+        verified: true,
         restart: "需要重開終端",
         steps: &[
-            Step { file: "v2/config.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
-            Step { file: "v2/config.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "options", "apiKey"], val: s("{{api_key}}"), when: When::Always },
-            Step { file: "v2/config.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "options", "baseURL"], val: s("{{base_url}}"), when: When::Always },
-            Step { file: "v2/config.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "options", "apiKeyRequired"], val: Val::Bool(false), when: When::IfMissing },
+            Step { file: "v2/provider_config.json", fmt: Fmt::Json, path: &["config", "providerConfigRules", "providerRules", "{{index}}", "providerId"], val: s("{{config_id}}"), when: When::Always },
+            Step { file: "v2/provider_config.json", fmt: Fmt::Json, path: &["config", "providerConfigRules", "providerRules", "{{index}}", "providerName"], val: s("{{name}}"), when: When::Always },
+            Step { file: "v2/provider_config.json", fmt: Fmt::Json, path: &["config", "providerConfigRules", "providerRules", "{{index}}", "enabled"], val: Val::Bool(true), when: When::Always },
+            Step { file: "v2/provider_config.json", fmt: Fmt::Json, path: &["config", "providerConfigRules", "providerRules", "{{index}}", "config", "access", "type"], val: s("api-key"), when: When::IfMissing },
+            Step { file: "v2/provider_config.json", fmt: Fmt::Json, path: &["config", "providerConfigRules", "providerRules", "{{index}}", "config", "access", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "v2/provider_config.json", fmt: Fmt::Json, path: &["config", "providerConfigRules", "providerRules", "{{index}}", "config", "api", "type"], val: s("openai-chat-completions"), when: When::IfMissing },
+            Step { file: "v2/provider_config.json", fmt: Fmt::Json, path: &["config", "providerConfigRules", "providerRules", "{{index}}", "config", "api", "baseUrl"], val: s("{{base_url}}"), when: When::Always },
+            Step {
+                file: "v2/provider_config.json",
+                fmt: Fmt::Json,
+                path: &["config", "providerConfigRules", "providerRules", "{{index}}", "config", "personalModelIds"],
+                val: Val::Json(r#"["{{model}}"]"#),
+                when: When::IfMissing,
+            },
+            Step {
+                file: "v2/provider_config.json",
+                fmt: Fmt::Json,
+                path: &["config", "defaultModelSelection"],
+                val: Val::Json(r#"{"providerId":"{{config_id}}","modelId":"{{model}}"}"#),
+                when: When::HasModel,
+            },
         ],
         kind_choices: EMPTY,
     },
@@ -318,7 +335,7 @@ pub static TOOLS: &[ToolSpec] = &[
         default_file: "settings.json",
         alt_files: &[],
         env_override: None,
-        verified: false,
+        verified: true,
         restart: "需要重開終端",
         steps: &[
             Step {
@@ -343,7 +360,7 @@ pub static TOOLS: &[ToolSpec] = &[
         default_file: "kilo.jsonc",
         alt_files: &["kilo.json"],
         env_override: None,
-        verified: false,
+        verified: true,
         restart: "需要重開終端",
         steps: &[
             Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
@@ -444,8 +461,9 @@ pub fn display_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-fn subst(template: &str, provider: &Provider) -> String {
+fn subst(template: &str, provider: &Provider, index: usize) -> String {
     template
+        .replace("{{index}}", &index.to_string())
         .replace("{{config_id}}", &provider.config_id)
         .replace("{{name}}", &provider.name)
         .replace("{{base_url}}", provider.base_url.trim_end_matches('/'))
@@ -454,8 +472,8 @@ fn subst(template: &str, provider: &Provider) -> String {
         .replace("{{kind}}", &provider.kind)
 }
 
-fn path_segments(path: &[&'static str], provider: &Provider) -> Vec<String> {
-    path.iter().map(|p| subst(p, provider)).collect()
+fn path_segments(path: &[&'static str], provider: &Provider, index: usize) -> Vec<String> {
+    path.iter().map(|p| subst(p, provider, index)).collect()
 }
 
 fn read_raw(text: &str, fmt: Fmt, path: &[String]) -> Option<String> {
@@ -517,7 +535,7 @@ fn set_env(text: &str, key: &str, value: &str) -> String {
     joined
 }
 
-fn set_toml(text: &str, path: &[String], val: Val, provider: &Provider) -> Result<String, String> {
+fn set_toml(text: &str, path: &[String], val: Val, provider: &Provider, index: usize) -> Result<String, String> {
     let mut doc = if text.trim().is_empty() {
         toml_edit::DocumentMut::new()
     } else {
@@ -545,7 +563,7 @@ fn set_toml(text: &str, path: &[String], val: Val, provider: &Provider) -> Resul
     let last = path.last().cloned().unwrap_or_default();
     let new_value: toml_edit::Value = match val {
         Val::Bool(b) => b.into(),
-        Val::Str(t) => subst(t, provider).into(),
+        Val::Str(t) => subst(t, provider, index).into(),
         Val::Json(_) | Val::Yaml(_) => return Err("TOML 步驟不支援 JSON/YAML 模板值".into()),
     };
     // Replacing the whole item would drop its decor, i.e. the comment lines that
@@ -560,22 +578,22 @@ fn set_toml(text: &str, path: &[String], val: Val, provider: &Provider) -> Resul
     Ok(doc.to_string())
 }
 
-fn set_json(text: &str, path: &[String], val: Val, provider: &Provider) -> Result<String, String> {
+fn set_json(text: &str, path: &[String], val: Val, provider: &Provider, index: usize) -> Result<String, String> {
     let value = match val {
-        Val::Str(t) => Value::String(subst(t, provider)),
+        Val::Str(t) => Value::String(subst(t, provider, index)),
         Val::Bool(b) => Value::Bool(b),
-        Val::Json(t) => serde_json::from_str(&subst(t, provider))
+        Val::Json(t) => serde_json::from_str(&subst(t, provider, index))
             .map_err(|e| format!("JSON 模板無效：{e}"))?,
         Val::Yaml(_) => return Err("JSON 檔案不支援 YAML 模板值".into()),
     };
     jsonc::set(text, path, &value)
 }
 
-fn set_yaml(text: &str, path: &[String], val: Val, provider: &Provider) -> Result<String, String> {
+fn set_yaml(text: &str, path: &[String], val: Val, provider: &Provider, index: usize) -> Result<String, String> {
     match val {
-        Val::Str(t) => yamlpatch::set_scalar(text, path, &subst(t, provider)),
+        Val::Str(t) => yamlpatch::set_scalar(text, path, &subst(t, provider, index)),
         Val::Yaml(t) | Val::Json(t) => {
-            let value: Value = serde_json::from_str(&subst(t, provider))
+            let value: Value = serde_json::from_str(&subst(t, provider, index))
                 .map_err(|e| format!("模板無效：{e}"))?;
             yamlpatch::set_block(text, path, &value)
         }
@@ -696,7 +714,24 @@ pub fn plan(spec: &ToolSpec, provider: &Provider) -> Result<Vec<FileChange>, Str
 
 /// Same as [`plan`] but against an explicit directory, which keeps end-to-end
 /// tests away from the user's real configuration.
+/// ZCode keeps providers in an array; find the slot for this provider, or append.
+fn zcode_index(spec: &ToolSpec, provider: &Provider, dir: &Path) -> usize {
+    let path = resolve_file_in(spec, spec.default_file, dir);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return 0;
+    };
+    let segs = p(&["config", "providerConfigRules", "providerRules"]);
+    let Some(Value::Array(items)) = jsonc::get(&text, &segs) else {
+        return 0;
+    };
+    items
+        .iter()
+        .position(|item| item.get("providerId").and_then(|v| v.as_str()) == Some(provider.config_id.as_str()))
+        .unwrap_or(items.len())
+}
+
 pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<FileChange>, String> {
+    let index = if spec.id == "zcode" { zcode_index(spec, provider, dir) } else { 0 };
     let mut files: Vec<FileChange> = Vec::new();
     for step in spec.steps {
         if step.when == When::HasModel && provider.model.trim().is_empty() {
@@ -724,16 +759,16 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
         } else {
             files[idx].after.clone()
         };
-        let segs = path_segments(step.path, provider);
+        let segs = path_segments(step.path, provider, index);
         if step.when == When::IfMissing && key_exists(&current, step.fmt, &segs) {
             continue;
         }
         let updated = match step.fmt {
-            Fmt::Toml => set_toml(&current, &segs, step.val, provider)?,
-            Fmt::Json => set_json(&current, &segs, step.val, provider)?,
-            Fmt::Yaml => set_yaml(&current, &segs, step.val, provider)?,
+            Fmt::Toml => set_toml(&current, &segs, step.val, provider, index)?,
+            Fmt::Json => set_json(&current, &segs, step.val, provider, index)?,
+            Fmt::Yaml => set_yaml(&current, &segs, step.val, provider, index)?,
             Fmt::Env => match step.val {
-                Val::Str(t) => set_env(&current, &segs[0], &subst(t, provider)),
+                Val::Str(t) => set_env(&current, &segs[0], &subst(t, provider, index)),
                 _ => return Err("ENV 只支援字串值".into()),
             },
         };
@@ -876,19 +911,25 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
             }
         }
         "zcode" => {
-            for id in map_keys(spec, "v2/config.json", Fmt::Json, &["providers"]) {
-                let base = rd("v2/config.json", Fmt::Json, &["providers", &id, "options", "baseURL"]);
-                if base.is_empty() {
-                    continue;
+            let full = resolve_file(spec, spec.default_file);
+            if let Ok(text) = std::fs::read_to_string(&full) {
+                if let Some(Value::Array(items)) = jsonc::get(&text, &p(&["config", "providerConfigRules", "providerRules"])) {
+                    for item in items {
+                        let id = item.get("providerId").and_then(|v| v.as_str()).unwrap_or("");
+                        let base = item.pointer("/config/api/baseUrl").and_then(|v| v.as_str()).unwrap_or("");
+                        if id.is_empty() || base.is_empty() {
+                            continue;
+                        }
+                        out.push(imported(
+                            id,
+                            item.get("providerName").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            base.to_string(),
+                            item.pointer("/config/access/apiKey").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            String::new(),
+                            String::new(),
+                        ));
+                    }
                 }
-                out.push(imported(
-                    &id,
-                    rd("v2/config.json", Fmt::Json, &["providers", &id, "name"]),
-                    base,
-                    rd("v2/config.json", Fmt::Json, &["providers", &id, "options", "apiKey"]),
-                    String::new(),
-                    String::new(),
-                ));
             }
         }
         "commandcode" => {
@@ -1161,11 +1202,11 @@ mod real_config_checks {
             .collect();
         let mut text = existing.to_string();
         for step in steps {
-            let segs = path_segments(step.path, &provider);
+            let segs = path_segments(step.path, &provider, 0);
             if step.when == When::IfMissing && key_exists(&text, step.fmt, &segs) {
                 continue;
             }
-            text = set_json(&text, &segs, step.val, &provider).unwrap();
+            text = set_json(&text, &segs, step.val, &provider, 0).unwrap();
         }
         let parsed: Value = serde_json::from_str(&text).unwrap();
         let models = &parsed["providers"]["qoder-custom-x"]["models"];
@@ -1186,11 +1227,11 @@ mod real_config_checks {
             if step.when == When::HasModel && provider.model.is_empty() {
                 continue;
             }
-            let segs = path_segments(step.path, &provider);
+            let segs = path_segments(step.path, &provider, 0);
             if step.when == When::IfMissing && key_exists(&text, step.fmt, &segs) {
                 continue;
             }
-            text = set_yaml(&text, &segs, step.val, &provider).unwrap();
+            text = set_yaml(&text, &segs, step.val, &provider, 0).unwrap();
         }
         assert!(text.contains("supportsDeveloperRole: false"), "compat 被覆蓋了：{text}");
         assert!(text.contains("contextWindow: 12345"), "自訂 models 被覆蓋了：{text}");
