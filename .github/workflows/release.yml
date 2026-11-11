@@ -56,5 +56,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp src-tauri/target/release/switchyard.exe SwitchYard-portable.exe
+          exe=$(find src-tauri/target -type f -name switchyard.exe -path '*release*' | head -n 1)
+          echo "portable source: $exe"
+          cp "$exe" SwitchYard-portable.exe
           gh release upload "${{ github.ref_name }}" SwitchYard-portable.exe --clobber

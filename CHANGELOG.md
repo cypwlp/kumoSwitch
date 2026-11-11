@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.2 — 2026-11-11
+- 修正 CI：可攜版 exe 改以 find 定位（--target 會改變輸出路徑）
+
 ## 0.2.1 — 2026-11-11
 - 修正 CI：補上 root `tauri` script，tauri-action 才能呼叫 `npm run tauri build`
 
