@@ -1,5 +1,8 @@
 # SwitchYard
 
+[![Release](https://img.shields.io/github/v/release/cypwlp/SwitchYard)](https://github.com/cypwlp/SwitchYard/releases)
+[![License](https://img.shields.io/github/license/cypwlp/SwitchYard)](LICENSE)
+
 > 切換 AI CLI 供應商，不動其他一行設定。
 
 一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code、Crush、Qwen Code、Kilo Code 共 13 種工具的供應商設定集中管理。
@@ -52,7 +55,7 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 
 ## 下載
 
-到 [Releases](../../releases) 取得 Windows 安裝檔（NSIS）或可攜版 `.exe`。可攜版解壓即用、不寫註冊表。
+到 [Releases](https://github.com/cypwlp/SwitchYard/releases) 取得 Windows 安裝檔（NSIS）或可攜版 `.exe`。可攜版解壓即用、不寫註冊表。
 
 Windows 10／11 64 位元。需要系統的 WebView2（Win11 內建；Win10 多半已隨 Edge 安裝）。
 
