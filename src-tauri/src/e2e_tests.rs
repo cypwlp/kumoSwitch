@@ -337,3 +337,48 @@ fn qwen_writes_env_and_keeps_existing_provider_list() {
     assert_eq!(json["theme"], "dark");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+const HERMES_SAMPLE: &str = "providers:\n  myprovider:\n    api: https://old.invalid/v1\n    key_env: OLD_KEY\n    transport: chat_completions\n    default_model: keep\n    models:\n      keep: { context_length: 128000 }\nmodel:\n  provider: custom:myprovider\n  default: keep\n";
+
+#[test]
+fn hermes_updates_provider_and_pointer() {
+    let dir = sandbox("hermes");
+    seed(&dir, "config.yaml", HERMES_SAMPLE);
+    apply(&dir, "hermes", "myprovider");
+    let after = std::fs::read_to_string(dir.join("config.yaml")).unwrap();
+    assert!(after.contains("api: https://e2e.invalid/v1"), "{after}");
+    assert!(after.contains("key: sk-e2e"), "{after}");
+    assert!(after.contains("provider: custom:myprovider"), "{after}");
+    assert!(after.contains("default: e2e-model"), "{after}");
+    assert!(after.contains("key_env: OLD_KEY"), "key_env 被覆蓋");
+    assert!(after.contains("context_length: 128000"), "models 被覆蓋");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+const COMMANDCODE_SAMPLE: &str = r#"{
+  "provider": {
+    "myprovider": {
+      "name": "My Provider",
+      "baseURL": "https://old.invalid/v1",
+      "apiKey": "sk-old",
+      "api": "openai-completions",
+      "models": { "keep": { "contextWindow": 128000 } }
+    }
+  }
+}
+"#;
+
+#[test]
+fn commandcode_uses_singular_provider_key() {
+    let dir = sandbox("commandcode");
+    seed(&dir, "providers.json", COMMANDCODE_SAMPLE);
+    apply(&dir, "commandcode", "myprovider");
+    let after = std::fs::read_to_string(dir.join("providers.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&after).unwrap();
+    let prov = &json["provider"]["myprovider"];
+    assert_eq!(prov["baseURL"], "https://e2e.invalid/v1");
+    assert_eq!(prov["apiKey"], "sk-e2e");
+    assert_eq!(prov["models"]["keep"]["contextWindow"], 128000, "模型 metadata 被覆蓋");
+    assert!(json.get("providers").is_none(), "不該寫出複數 providers");
+    std::fs::remove_dir_all(&dir).ok();
+}

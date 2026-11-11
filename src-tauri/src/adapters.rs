@@ -274,13 +274,23 @@ pub static TOOLS: &[ToolSpec] = &[
         default_file: "config.yaml",
         alt_files: &[],
         env_override: None,
-        verified: false,
+        verified: true,
         restart: "需要重開終端",
         steps: &[
-            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["model", "provider"], val: s("{{config_id}}"), when: When::Always },
-            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["model", "name"], val: s("{{model}}"), when: When::HasModel },
-            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["model", "base_url"], val: s("{{base_url}}"), when: When::Always },
-            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["model", "api_key"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "api"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "key"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "key_env"], val: s("SWITCHYARD_{{config_id}}_KEY"), when: When::IfMissing },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "transport"], val: s("chat_completions"), when: When::IfMissing },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "default_model"], val: s("{{model}}"), when: When::HasModel },
+            Step {
+                file: "config.yaml",
+                fmt: Fmt::Yaml,
+                path: &["providers", "{{config_id}}", "models"],
+                val: Val::Yaml(r#"{"{{model}}":{"context_length":128000}}"#),
+                when: When::IfMissing,
+            },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["model", "provider"], val: s("custom:{{config_id}}"), when: When::Always },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["model", "default"], val: s("{{model}}"), when: When::HasModel },
         ],
         kind_choices: EMPTY,
     },
@@ -292,16 +302,16 @@ pub static TOOLS: &[ToolSpec] = &[
         default_file: "providers.json",
         alt_files: &[],
         env_override: None,
-        verified: false,
+        verified: true,
         restart: "需要重開終端",
         steps: &[
-            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
-            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "baseURL"], val: s("{{base_url}}"), when: When::Always },
-            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "apiKey"], val: s("{{api_key}}"), when: When::Always },
-            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "api"], val: s("{{kind}}"), when: When::Always },
-            Step { file: "providers.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "model"], val: s("{{model}}"), when: When::HasModel },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "baseURL"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "api"], val: s("openai-completions"), when: When::IfMissing },
+            Step { file: "providers.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "models", "{{model}}", "contextWindow"], val: Val::Json("128000"), when: When::IfMissing },
         ],
-        kind_choices: OPENCODE_API,
+        kind_choices: EMPTY,
     },
     ToolSpec {
         id: "crush",
@@ -682,10 +692,13 @@ pub fn read_current(spec: &ToolSpec) -> CurrentState {
             st.source = ".env GOOGLE_GEMINI_BASE_URL".into();
         }
         "hermes" => {
-            st.base_url = rd("config.yaml", Fmt::Yaml, &["model", "base_url"]).unwrap_or_default();
-            st.api_key_tail = mask_tail(&rd("config.yaml", Fmt::Yaml, &["model", "api_key"]).unwrap_or_default());
-            st.model = rd("config.yaml", Fmt::Yaml, &["model", "name"]).unwrap_or_default();
-            st.source = "model.base_url".into();
+            if let Some(pointer) = rd("config.yaml", Fmt::Yaml, &["model", "provider"]) {
+                let id = pointer.strip_prefix("custom:").unwrap_or(&pointer);
+                st.base_url = rd("config.yaml", Fmt::Yaml, &["providers", id, "api"]).unwrap_or_default();
+                st.api_key_tail = mask_tail(&rd("config.yaml", Fmt::Yaml, &["providers", id, "key"]).unwrap_or_default());
+                st.source = format!("providers.{id}.api");
+            }
+            st.model = rd("config.yaml", Fmt::Yaml, &["model", "default"]).unwrap_or_default();
         }
         _ => {
             st.source = "由工具介面選擇".into();
@@ -1045,15 +1058,34 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
             }
         }
         "hermes" => {
-            let base = rd("config.yaml", Fmt::Yaml, &["model", "base_url"]);
-            if !base.is_empty() {
+            for id in map_keys(spec, "config.yaml", Fmt::Yaml, &["providers"]) {
+                let base = rd("config.yaml", Fmt::Yaml, &["providers", &id, "api"]);
+                if base.is_empty() {
+                    continue;
+                }
                 out.push(imported(
-                    "current",
-                    "目前設定".into(),
+                    &id,
+                    id.clone(),
                     base,
-                    rd("config.yaml", Fmt::Yaml, &["model", "api_key"]),
-                    rd("config.yaml", Fmt::Yaml, &["model", "name"]),
+                    rd("config.yaml", Fmt::Yaml, &["providers", &id, "key"]),
+                    rd("config.yaml", Fmt::Yaml, &["providers", &id, "default_model"]),
                     String::new(),
+                ));
+            }
+        }
+        "commandcode" => {
+            for id in map_keys(spec, "providers.json", Fmt::Json, &["provider"]) {
+                let base = rd("providers.json", Fmt::Json, &["provider", &id, "baseURL"]);
+                if base.is_empty() {
+                    continue;
+                }
+                out.push(imported(
+                    &id,
+                    rd("providers.json", Fmt::Json, &["provider", &id, "name"]),
+                    base,
+                    rd("providers.json", Fmt::Json, &["provider", &id, "apiKey"]),
+                    String::new(),
+                    rd("providers.json", Fmt::Json, &["provider", &id, "api"]),
                 ));
             }
         }

@@ -48,13 +48,13 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 | Qoder | `~/.qoder/settings.json` | `providers.<qoder-custom-*>` | 已對真實設定檔驗證 |
 | DSH | `~/.dsh/settings.yaml` | `llm-pi-ai.providers.*`、`agent-default-model` | 已對真實設定檔驗證 |
 | ZCode | `~/.zcode/v2/provider_config.json` | `providerRules[]`、`defaultModelSelection` | 對社群範例驗證 |
-| Hermes | `~/.hermes/config.yaml` | `model.*` | 待實測（UI 會提醒） |
-| Command Code | `~/.commandcode/providers.json` | `providers.*` | 待實測（UI 會提醒） |
+| Hermes | `~/.hermes/config.yaml` | `providers.*.api/key`、`model.provider` | 對社群範例驗證 |
+| Command Code | `~/.commandcode/providers.json` | `provider.*`（單數） | 對社群範例驗證 |
 | Crush | `~/.config/crush/crush.json` | `providers.*` | 依官方文件 |
 | Qwen Code | `~/.qwen/settings.json` + `.env` | `modelProviders.*`、`OPENAI_*` | 對官方文件驗證 |
 | Kilo Code | `~/.config/kilo/kilo.jsonc` | `provider.*.options` | 對官方範例驗證 |
 
-「待實測」目前只剩 Hermes 與 Command Code。其餘工具的寫入邏輯都有夹具測試：直接拿官方／社群的範例設定檔跑一遍，驗證目標鍵寫對、且使用者自訂的模型 metadata 不被覆蓋。
+13 個工具的寫入邏輯都有夹具測試：直接拿官方／社群的範例設定檔跑一遍，驗證目標鍵寫對、且使用者自訂的模型 metadata 不被覆蓋。
 
 ## 下載
 

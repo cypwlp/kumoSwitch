@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0 — 2026-11-11
+- Hermes 改用真實 schema（providers.<id>.api/key/key_env、model.provider: custom:<id>）
+- Command Code 頂層鍵修正為單數 provider
+- 13/13 工具皆通過官方／社群範例夹具測試（53 個測試）
+
 ## 0.4.0 — 2026-11-11
 - 統計儀表板：讀取 Claude Code／Codex 本機 session log，聚合輸入／輸出／快取 token、
   每日用量長條圖、依模型明細與公開單價成本估算；另有跨工具連線測試總覽
