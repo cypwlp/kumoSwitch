@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.2 — 2026-11-11
+- 修跨平台打包：圖示轉為真 RGBA8（macOS/Linux 拒收調色板 PNG）
+
 ## 0.6.1 — 2026-11-11
 - 修跨平台 CI：圖示轉 8-bit（macOS 打包不支援 16-bit PNG）、Linux/macOS 補簽章變數
 

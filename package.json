@@ -1,7 +1,7 @@
 {
   "name": "switchyard",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Switch AI CLI providers without rewriting your config",
   "scripts": {
     "dev": "tauri dev",
