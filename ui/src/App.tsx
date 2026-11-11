@@ -22,6 +22,7 @@ import { ExportModal } from "./components/ExportModal";
 import { CommandPalette } from "./components/CommandPalette";
 import { Onboarding } from "./components/Onboarding";
 import { StatsView } from "./components/StatsView";
+import { ProxyView } from "./components/ProxyView";
 import { Toasts, useToasts } from "./components/Toasts";
 import type { EditField, TestState } from "./components/ProviderTable";
 
@@ -59,6 +60,7 @@ export default function App() {
   const [history, setHistory] = useState<HistoryMap>({});
   const [autoHealth, setAutoHealth] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showProxy, setShowProxy] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [palette, setPalette] = useState(false);
   const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
@@ -254,6 +256,7 @@ export default function App() {
   useEffect(() => {
     if (MOCK && hashTokens().includes("palette")) setPalette(true);
     if (MOCK && hashTokens().includes("stats")) setShowStats(true);
+    if (MOCK && hashTokens().includes("proxy")) setShowProxy(true);
   }, []);
 
   const runUpdateCheck = useCallback(
@@ -593,11 +596,15 @@ export default function App() {
           onExport={() => void exportList()}
           onImport={() => fileRef.current?.click()}
           statsActive={showStats}
-          onStats={() => setShowStats((v) => !v)}
+          onStats={() => { setShowProxy(false); setShowStats((v) => !v); }}
+          proxyActive={showProxy}
+          onProxy={() => { setShowStats(false); setShowProxy((v) => !v); }}
         />
 
         <main className="main">
-          {showStats ? (
+          {showProxy ? (
+            <ProxyView onError={(m) => push(m, "err")} onToast={(m, k) => push(m, k ?? "ok")} />
+          ) : showStats ? (
             <StatsView onError={(m) => push(m, "err")} />
           ) : (
           <>

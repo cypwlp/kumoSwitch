@@ -9,6 +9,7 @@ mod e2e_tests;
 mod jsonc;
 mod net;
 mod presets;
+mod proxy;
 mod store;
 mod usage;
 mod tray;
@@ -449,6 +450,42 @@ fn export_diagnostics() -> Result<ExportResult, String> {
 }
 
 #[tauri::command]
+fn proxy_status() -> proxy::ProxyConfig {
+    store::load().proxy
+}
+
+#[tauri::command]
+fn proxy_save(config: proxy::ProxyConfig) -> Result<proxy::ProxyConfig, String> {
+    let mut data = store::load();
+    data.proxy = config.clone();
+    store::save(&data)?;
+    proxy::start();
+    Ok(config)
+}
+
+/// Point a tool at the local proxy by applying a dedicated provider entry.
+#[tauri::command]
+fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, String> {
+    let config = store::load().proxy;
+    let provider = Provider {
+        id: String::new(),
+        config_id: "switchyard-proxy".into(),
+        name: "SwitchYard 代理".into(),
+        base_url: format!("http://127.0.0.1:{}/v1", config.port),
+        api_key: "switchyard-proxy".into(),
+        api_key_enc: String::new(),
+        model: String::new(),
+        kind: String::new(),
+        note: "經本地代理＋故障轉移".into(),
+        last_used: 0,
+    };
+    let saved = store::upsert(&tool, provider)?;
+    let result = apply_core(&tool, &saved.id)?;
+    tray::refresh(&app);
+    Ok(result)
+}
+
+#[tauri::command]
 fn usage_report(days: u32) -> usage::UsageReport {
     usage::report(days.clamp(1, 365))
 }
@@ -561,6 +598,7 @@ fn main() {
         .setup(|app| {
             tray::install(app.handle())?;
             spawn_health_loop(app.handle().clone());
+            proxy::start();
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -584,6 +622,9 @@ fn main() {
             usage_report,
             provider_presets,
             health_overview,
+            proxy_status,
+            proxy_save,
+            proxy_attach,
             export_providers,
             export_diagnostics,
             import_providers_json,

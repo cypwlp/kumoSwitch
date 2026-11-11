@@ -145,3 +145,5 @@ export interface UsageReport {
 }
 
 export interface HealthOverview { tests: number; ok: number; avg_ms: number; providers_tested: number; }
+
+export interface ProxyConfig { enabled: boolean; port: number; stack: string[]; }

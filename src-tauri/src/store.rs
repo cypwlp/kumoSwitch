@@ -21,6 +21,8 @@ pub struct Store {
     /// Re-test providers that already have history, on a timer.
     #[serde(default)]
     pub auto_health: bool,
+    #[serde(default)]
+    pub proxy: crate::proxy::ProxyConfig,
 }
 
 fn store_path() -> PathBuf {

@@ -13,24 +13,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
+        with: { node-version: 20, cache: npm }
       - uses: dtolnay/rust-toolchain@stable
-
       - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
+        with: { workspaces: src-tauri }
       - run: npm ci
-
       - run: npm ci --prefix ui
-
       - run: npm run build --prefix ui
-
       - run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - uses: tauri-apps/tauri-action@v0
@@ -41,11 +31,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: SwitchYard ${{ github.ref_name }}
-          releaseBody: |
-            Windows 10/11 x64。安裝檔（NSIS）或可攜版任選其一。
-
-            - `SwitchYard_*_x64-setup.exe`：安裝版
-            - `SwitchYard-portable.exe`：可攜版，免安裝不寫註冊表
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
@@ -57,6 +42,77 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           exe=$(find src-tauri/target -type f -name switchyard.exe -path '*release*' | head -n 1)
-          echo "portable source: $exe"
           cp "$exe" SwitchYard-portable.exe
           gh release upload "${{ github.ref_name }}" SwitchYard-portable.exe --clobber
+
+      # Optional Authenticode signing. Activates only when a cert is provided.
+      - name: Sign Windows binary (optional)
+        if: env.WINDOWS_CERT_PFX_BASE64 != ''
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $bytes = [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64)
+          [IO.File]::WriteAllBytes("cert.pfx", $bytes)
+          $pwd = ConvertTo-SecureString $env:WINDOWS_CERT_PASSWORD -AsPlainText -Force
+          Import-PfxCertificate -FilePath cert.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pwd | Out-Null
+          $thumb = (Get-PfxCertificate cert.pfx).Thumbprint
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+                      Where-Object { $_.FullName -match "x64" } | Select-Object -First 1
+          $targets = Get-ChildItem -Recurse -Include switchyard.exe,SwitchYard-portable.exe -path "*release*"
+          foreach ($t in $targets) {
+            & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /sha1 $thumb $t.FullName
+          }
+          gh release upload "${{ github.ref_name }}" SwitchYard-portable.exe --clobber
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - name: Install Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - run: npm ci --prefix ui
+      - run: npm run build --prefix ui
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: SwitchYard ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: false
+          args: --bundles deb,appimage
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: npm ci
+      - run: npm ci --prefix ui
+      - run: npm run build --prefix ui
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: SwitchYard ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: false
+          args: --bundles dmg

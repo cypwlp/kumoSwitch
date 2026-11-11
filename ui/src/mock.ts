@@ -655,6 +655,13 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return { imported, skipped: seed.importable > 0 ? 1 : 0 } satisfies ImportResult;
     }
 
+    case "proxy_status":
+      return { enabled: false, port: 17890, stack: [] };
+    case "proxy_save":
+      return args.config;
+    case "proxy_attach":
+      return { changed: true, backup_id: "mock", written: ["config"], message: "已掛載代理" };
+
     case "provider_presets":
       return [
         { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com/v1", kind: "openai", models: ["deepseek-chat", "deepseek-reasoner"], docs: "https://api-docs.deepseek.com", note: "官方" },

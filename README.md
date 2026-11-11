@@ -34,6 +34,8 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **自動健康檢查** —— 可開啟每 10 分鐘重測已有歷史的供應商，健康度欄不用手動按。
 - **統計儀表板** —— 讀取 Claude Code／Codex 本機 session log，算 token 用量、每日趨勢與成本估算（只在本機計算）。
 - **預設供應商目錄** —— 16 個已知端點一鍵帶入，不用手打 base URL。
+- **代理／故障轉移（Beta）** —— 本地反向代理，依序備援、429/5xx 自動換下一個、串流穿透。
+- **跨平台** —— Windows／Linux／macOS 皆由 CI 建置。
 - **自動更新** —— 啟動後檢查新版本，下載後驗簽再安裝；更新包以 minisign 簽章，CI 產出 `latest.json`。
 
 ## 支援的工具
@@ -110,3 +112,15 @@ cargo test
 ## 授權
 
 MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research 等公司無關。
+
+
+## 簽章（消除 SmartScreen 警告）
+
+CI 已內建可選 Authenticode 簽章：只要提供 `WINDOWS_CERT_PFX_BASE64` 與 `WINDOWS_CERT_PASSWORD`
+兩個 secret 即自動啟用。取得憑證的選項：OV/EV 程式碼簽章憑證，或 Azure Trusted Signing。
+未提供憑證時 CI 仍正常產出未簽章安裝檔。
+
+## 同步到個人伺服器
+
+`deploy/` 內含 bare-IP nginx 設定與一鍵腳本。在伺服器上執行 `sh deploy.sh` 即把
+GitHub Pages 的同一份網站發佈到 `http://<IP>/`（域名若被 ICP 攔截，bare IP 仍可用）。

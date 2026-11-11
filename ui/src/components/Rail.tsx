@@ -19,6 +19,8 @@ interface RailProps {
   onImport: () => void;
   statsActive: boolean;
   onStats: () => void;
+  proxyActive: boolean;
+  onProxy: () => void;
 }
 
 const THEMES: { mode: ThemeMode; label: string; icon: ReactNode }[] = [
@@ -42,6 +44,8 @@ export function Rail({
   onImport,
   statsActive,
   onStats,
+  proxyActive,
+  onProxy,
 }: RailProps) {
   const q = filter.trim().toLowerCase();
   const visible = tools.filter(
@@ -116,6 +120,9 @@ export function Rail({
         <div className="rail-actions">
           <button className={`ghost small${statsActive ? " on" : ""}`} onClick={onStats} title="用量與成本統計">
             統計
+          </button>
+          <button className={`ghost small${proxyActive ? " on" : ""}`} onClick={onProxy} title="本地代理與故障轉移">
+            代理
           </button>
           <button className="ghost small" onClick={onExport} title="把所有供應商匯出成 JSON">
             匯出清單

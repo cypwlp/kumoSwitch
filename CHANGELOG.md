@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-11-11
+- 本地反向代理＋故障轉移（Beta）：依序備援、429/5xx/連線錯誤自動換next、串流穿透、金鑰由代理注入
+- 代理設定頁：啟用／連接埠／備援順序／把工具掛載到代理
+- CI 跨平台：Windows＋Linux（deb/AppImage）＋macOS（dmg）
+- CI 可選 Authenticode 簽章 hook（提供 WINDOWS_CERT_PFX_BASE64 即啟用）
+- deploy/：bare-IP nginx 設定＋一鍵部署腳本（同步到個人伺服器）
+
 ## 0.5.0 — 2026-11-11
 - Hermes 改用真實 schema（providers.<id>.api/key/key_env、model.provider: custom:<id>）
 - Command Code 頂層鍵修正為單數 provider

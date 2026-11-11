@@ -15,6 +15,7 @@ import type {
   Preset,
   UsageReport,
   HealthOverview,
+  ProxyConfig,
 } from "./types";
 
 /** `?mock=1` runs the whole UI against the in-browser fake backend. */
@@ -43,6 +44,9 @@ export const api = {
   usageReport: (days: number) => call<UsageReport>("usage_report", { days }),
   providerPresets: () => call<Preset[]>("provider_presets"),
   healthOverview: () => call<HealthOverview>("health_overview"),
+  proxyStatus: () => call<ProxyConfig>("proxy_status"),
+  proxySave: (config: ProxyConfig) => call<ProxyConfig>("proxy_save", { config }),
+  proxyAttach: (tool: string) => call<ApplyResult>("proxy_attach", { tool }),
   exportProviders: () => call<ExportResult>("export_providers"),
   exportDiagnostics: () => call<ExportResult>("export_diagnostics"),
   importProvidersJson: (text: string) => call<JsonImportResult>("import_providers_json", { text }),

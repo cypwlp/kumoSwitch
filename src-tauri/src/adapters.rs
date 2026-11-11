@@ -945,22 +945,6 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                 }
             }
         }
-        "commandcode" => {
-            for id in map_keys(spec, "providers.json", Fmt::Json, &["providers"]) {
-                let base = rd("providers.json", Fmt::Json, &["providers", &id, "baseURL"]);
-                if base.is_empty() {
-                    continue;
-                }
-                out.push(imported(
-                    &id,
-                    rd("providers.json", Fmt::Json, &["providers", &id, "name"]),
-                    base,
-                    rd("providers.json", Fmt::Json, &["providers", &id, "apiKey"]),
-                    rd("providers.json", Fmt::Json, &["providers", &id, "model"]),
-                    rd("providers.json", Fmt::Json, &["providers", &id, "api"]),
-                ));
-            }
-        }
         "dsh" => {
             let active = rd("settings.yaml", Fmt::Yaml, &["agent-default-model", "provider"]);
             let active_model = rd("settings.yaml", Fmt::Yaml, &["agent-default-model", "model"]);
