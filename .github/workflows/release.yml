@@ -155,17 +155,46 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix ui
       - run: npm run build --prefix ui
+      - name: Configure optional Apple signing
+        env:
+          APPLE_CERTIFICATE_INPUT: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD_INPUT: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_INPUT: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_INPUT: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_INPUT: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID_INPUT: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE_INPUT" ]; then
+            echo "Apple signing secrets not configured; building the unsigned Beta."
+            exit 0
+          fi
+
+          for value in \
+            "$APPLE_CERTIFICATE_PASSWORD_INPUT" \
+            "$APPLE_SIGNING_IDENTITY_INPUT" \
+            "$APPLE_ID_INPUT" \
+            "$APPLE_PASSWORD_INPUT" \
+            "$APPLE_TEAM_ID_INPUT"; do
+            if [ -z "$value" ]; then
+              echo "::warning::Apple certificate exists but notarization credentials are incomplete; building unsigned."
+              exit 0
+            fi
+          done
+
+          {
+            echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE_INPUT"
+            echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD_INPUT"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY_INPUT"
+            echo "APPLE_ID=$APPLE_ID_INPUT"
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD_INPUT"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID_INPUT"
+          } >> "$GITHUB_ENV"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           releaseId: ${{ needs.prepare.outputs.release_id }}
           releaseDraft: true
