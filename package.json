@@ -1,13 +1,14 @@
 {
   "name": "switchyard",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Switch AI CLI providers without rewriting your config",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
     "ui:dev": "npm run dev --prefix ui",
-    "ui:build": "npm run build --prefix ui"
+    "ui:build": "npm run build --prefix ui",
+    "tauri": "tauri"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

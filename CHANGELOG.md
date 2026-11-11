@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.1 — 2026-11-11
+- 修正 CI：補上 root `tauri` script，tauri-action 才能呼叫 `npm run tauri build`
+
 ## 0.2.0 — 2026-11-11
 
 **產品化**
