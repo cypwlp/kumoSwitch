@@ -388,7 +388,7 @@ html, body {
 .state-source .v { color: var(--code-fg); font-size: 11.5px; }
 .state-source .v.none { color: var(--muted); font-family: inherit; }
 
-.toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: nowrap; }
 .search {
   flex: 0 1 330px;
   background: var(--input-bg);
@@ -840,6 +840,7 @@ kbd {
 .onboard-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 .mini-select {
+  flex: 0 0 auto;
   background: var(--input-bg);
   border: 1px solid var(--line);
   color: var(--text);
@@ -956,3 +957,8 @@ kbd {
 .health.ok .health-text { color: var(--ok); }
 .health.warn .health-text { color: var(--warn); }
 .health.bad .health-text { color: var(--danger); }
+
+.segmented.compact { margin-bottom: 8px; }
+.segmented.compact button { padding: 5px 0; font-size: 11px; }
+
+.toolbar .muted.small { white-space: nowrap; }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { AppInfo, ToolView } from "../types";
 import type { ThemeMode } from "../theme";
+import { LangToggle } from "./LangToggle";
 import { AutoIcon, Logo, MoonIcon, SunIcon } from "./Icons";
 
 interface RailProps {
@@ -92,6 +93,7 @@ export function Rail({
       </nav>
 
       <div className="rail-foot">
+        <LangToggle />
         <div className="segmented" role="group" aria-label="主題">
           {THEMES.map((t) => (
             <button
