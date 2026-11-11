@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>SwitchYard — 切換 AI CLI 供應商，不動其他一行設定</title>
+<title>SwitchTower — 切換 AI CLI 供應商，不動其他一行設定</title>
 <meta name="description" content="Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH 等 13 種 AI CLI 的供應商切換器。只改寫該改的鍵，套用前先看 diff，每次寫入自動備份。" />
-<meta property="og:title" content="SwitchYard — AI CLI 供應商切換器" />
+<meta property="og:title" content="SwitchTower — AI CLI 供應商切換器" />
 <meta property="og:description" content="非破壞性寫入。套用前逐行 diff，寫入前自動備份，隨時一鍵還原。" />
 <meta property="og:image" content="assets/screenshot-panel.png" />
 <link rel="icon" href="assets/icon.png" />
@@ -21,7 +21,7 @@
         <path d="M25 20H14M18 16l-4 4 4 4" stroke="#cbd5e1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
         <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#818cf8"/></linearGradient></defs>
       </svg>
-      <span>SwitchYard</span>
+      <span>SwitchTower</span>
     </a>
     <nav class="links">
       <a href="#why">為什麼</a>
@@ -40,7 +40,7 @@
       <h1>切換 AI CLI 供應商<br/><em>不動其他一行設定</em></h1>
       <p>
         Codex、Claude Code、Gemini CLI、OpenCode、Qoder、Crush⋯⋯13 種工具的供應商設定，
-        集中一個視窗管理。SwitchYard 只定點改寫供應商相關的那幾個鍵，
+        集中一個視窗管理。SwitchTower 只定點改寫供應商相關的那幾個鍵，
         你的註解、外掛、MCP、主題全部原樣保留。
       </p>
       <div class="cta">
@@ -49,6 +49,7 @@
         <a class="btn ghost" href="#dl">其他平台</a>
       </div>
       <p class="fineprint" id="releaseNote">正在取得最新版本…</p>
+      <p class="fineprint">原名 SwitchYard；v0.7.0 起更名為 SwitchTower，舊資料會自動遷移。</p>
       <ul class="bullets">
         <li>套用前逐行 diff 預覽</li>
         <li>寫入前自動時間戳備份</li>
@@ -57,7 +58,7 @@
     </div>
     <div class="hero-shot">
       <div class="glow"></div>
-      <img src="assets/screenshot-panel.png" alt="SwitchYard 主介面：左側工具清單，右側供應商表格" />
+      <img src="assets/screenshot-panel.png" alt="SwitchTower 主介面：左側工具清單，右側供應商表格" />
     </div>
   </section>
 
@@ -65,7 +66,7 @@
     <h2 class="section-title">為什麼還要多做一個？</h2>
     <p class="section-sub">
       cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常常整份重寫設定檔——
-      註解消失、外掛設定被清掉、自訂的 MCP 伺服器不見了。SwitchYard 從設計上就不允許這件事發生。
+      註解消失、外掛設定被清掉、自訂的 MCP 伺服器不見了。SwitchTower 從設計上就不允許這件事發生。
     </p>
     <div class="cards">
       <article class="card">
@@ -137,7 +138,7 @@
         <h3>本機優先</h3>
         <p>
           沒有帳號、沒有雲端同步、沒有遙測。設定與備份都放在你自己的
-          <code>%APPDATA%\SwitchYard</code> 裡。
+          <code>%APPDATA%\SwitchTower</code> 裡。
         </p>
       </article>
     </div>
@@ -183,7 +184,7 @@
     <div class="table-scroll">
       <table class="compare">
         <thead>
-          <tr><th></th><th class="hl">SwitchYard</th><th>cc-switch</th><th>Codex++</th></tr>
+          <tr><th></th><th class="hl">SwitchTower</th><th>cc-switch</th><th>Codex++</th></tr>
         </thead>
         <tbody>
           <tr><td>供應商切換</td><td class="hl">✓</td><td>✓</td><td>✓</td></tr>
@@ -200,7 +201,7 @@
     </div>
     <p class="fineprint">
       * 依 Codex++ 專案 issue #1563「供應商切換破壞性重寫 config.toml」的描述。
-      SwitchYard 的代理／故障轉移仍是 Beta；核心仍是「把設定改對」。
+      SwitchTower 的代理／故障轉移仍是 Beta；核心仍是「把設定改對」。
     </p>
   </section>
 
@@ -208,11 +209,12 @@
     <div class="dl-card">
       <div>
         <h2>下載</h2>
-        <p class="section-sub">Windows 10／11 x64、macOS Apple Silicon、Linux x64。Windows 安裝檔建議一般使用者；可攜版不寫註冊表。</p>
+        <p class="section-sub">Windows 10／11 x64、macOS Apple Silicon／Intel、Linux x64。Windows 安裝檔建議一般使用者；可攜版不寫註冊表。</p>
         <div class="cta">
           <a class="btn primary big" id="dlSetup2" href="#">Windows 安裝檔</a>
           <a class="btn ghost big" id="dlPortable2" href="#">Windows 可攜版</a>
-          <a class="btn ghost big" id="dlMac" href="#">macOS DMG</a>
+          <a class="btn ghost big" id="dlMac" href="#">macOS Apple Silicon</a>
+          <a class="btn ghost big" id="dlMacIntel" href="#">macOS Intel</a>
           <a class="btn ghost big" id="dlLinuxAppImage" href="#">Linux AppImage</a>
           <a class="btn ghost big" id="dlLinuxDeb" href="#">Linux deb</a>
           <a class="btn ghost big" id="allReleases" href="#" target="_blank" rel="noopener">所有版本</a>
@@ -236,29 +238,32 @@
       <p>寫入是定點替換：只改供應商相關的鍵。套用前你會看到逐行 diff，寫入前會自動備份，壞了也能一鍵還原。專案內也附了直接對真實設定檔執行的唯讀測試，驗證其他區塊零改動。</p>
     </details>
     <details><summary>API Key 存在哪裡？</summary>
-      <p>Windows 在 <code>%APPDATA%\SwitchYard\providers.json</code>，macOS／Linux 在 <code>~/.config/SwitchYard/providers.json</code>，以及各工具原本就該存金鑰的位置。沒有雲端、沒有上傳、沒有遙測。</p>
+      <p>Windows 在 <code>%APPDATA%\SwitchTower\providers.json</code>，macOS／Linux 在 <code>~/.config/SwitchTower/providers.json</code>，以及各工具原本就該存金鑰的位置。Windows 使用 DPAPI；macOS／Linux 以 Keychain／Secret Service 保存主金鑰，供應商金鑰再以 AES-256-GCM 加密。沒有雲端、沒有上傳、沒有遙測。</p>
+    </details>
+    <details><summary>原本的 SwitchYard 資料會保留嗎？</summary>
+      <p>會。v0.7.0 首次啟動時會把 <code>%APPDATA%\SwitchYard</code> 或 <code>~/.config/SwitchYard</code> 遷移到 <code>SwitchTower</code>，供應商、備份與歷史紀錄都會保留。</p>
     </details>
     <details><summary>為什麼顯示未知發行者？</summary>
       <p>目前是未簽章 Beta，沒有購買 Windows Authenticode 或 Apple Developer ID／公證。這是預期行為，不代表檔案一定有問題；請只從本專案的 GitHub Releases 下載，並核對 SHA-256。</p>
     </details>
     <details><summary>有自動更新嗎？</summary>
-      <p>Windows 安裝版已接上 Tauri updater 與更新包簽章驗證；可攜版、macOS 與 Linux 目前建議手動下載新版本替換。</p>
+      <p>v0.7.0 起，Windows 安裝版、macOS（Apple Silicon／Intel）與 Linux AppImage 都使用同一份簽章驗證的 <code>latest.json</code> 自動更新。Windows 可攜版與 Linux deb 仍需手動下載替換。</p>
     </details>
     <details><summary>需要關掉 cc-switch 嗎？</summary>
-      <p>不需要關，但若 cc-switch 正以代理模式接管同一個工具，SwitchYard 會在上方提示。兩者同時寫同一份設定時，後寫的會蓋掉先寫的，這是設計上的必然。</p>
+      <p>不需要關，但若 cc-switch 正以代理模式接管同一個工具，SwitchTower 會在上方提示。兩者同時寫同一份設定時，後寫的會蓋掉先寫的，這是設計上的必然。</p>
     </details>
     <details><summary>套用後為什麼沒生效？</summary>
       <p>多數 CLI 在啟動時讀取設定，需要重開終端。Claude Code 支援熱切換，新開的 session 就會套用。每個工具的畫面會標明要怎麼重啟。</p>
     </details>
     <details><summary>支援 macOS／Linux 嗎？</summary>
-      <p>有。v0.6.2 提供 macOS Apple Silicon DMG、Linux x64 AppImage 與 deb；Windows 仍是主要驗證平台，其他平台請先視為 Beta。</p>
+      <p>有。v0.7.0 提供 macOS Apple Silicon／Intel DMG、Linux x64 AppImage 與 deb；Windows 仍是主要驗證平台，其他平台請先視為 Beta。</p>
     </details>
   </section>
 </main>
 
 <footer>
   <div class="wrap foot-inner">
-    <span>SwitchYard · MIT License</span>
+    <span>SwitchTower · MIT License</span>
     <span class="dot">·</span>
     <a id="repoLink2" href="#" target="_blank" rel="noopener">GitHub</a>
     <span class="dot">·</span>

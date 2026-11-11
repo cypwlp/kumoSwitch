@@ -22,7 +22,8 @@ pub struct Provider {
     pub base_url: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub api_key: String,
-    /// DPAPI-protected key, hex encoded. Only present on Windows.
+    /// Encrypted key. Windows uses DPAPI; macOS/Linux use AES-256-GCM with a
+    /// master key stored in Keychain or Secret Service.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub api_key_enc: String,
     #[serde(default)]
@@ -279,7 +280,7 @@ pub static TOOLS: &[ToolSpec] = &[
         steps: &[
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "api"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "key"], val: s("{{api_key}}"), when: When::Always },
-            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "key_env"], val: s("SWITCHYARD_{{config_id}}_KEY"), when: When::IfMissing },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "key_env"], val: s("SWITCHTOWER_{{config_id}}_KEY"), when: When::IfMissing },
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "transport"], val: s("chat_completions"), when: When::IfMissing },
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "default_model"], val: s("{{model}}"), when: When::HasModel },
             Step {
@@ -1089,8 +1090,8 @@ mod real_config_checks {
     fn probe_provider() -> Provider {
         Provider {
             id: "selftest".into(),
-            config_id: "switchyard-selftest".into(),
-            name: "SwitchYard Selftest".into(),
+            config_id: "switchtower-selftest".into(),
+            name: "SwitchTower Selftest".into(),
             base_url: "https://selftest.invalid/v1".into(),
             api_key: "sk-selftest".into(),
             api_key_enc: String::new(),
@@ -1174,7 +1175,7 @@ mod real_config_checks {
         for (k, v) in &pa {
             assert_eq!(Some(v), pb.get(k), "既有 provider `{k}` 被改動了");
         }
-        assert!(pb.contains_key("switchyard-selftest"));
+        assert!(pb.contains_key("switchtower-selftest"));
         assert_eq!(
             b.get("enabledPlugins").and_then(|v| v.as_object()).map(|m| m.len()),
             a.get("enabledPlugins").and_then(|v| v.as_object()).map(|m| m.len())
@@ -1192,7 +1193,7 @@ mod real_config_checks {
         for block in ["permission:", "ui-theme:", "agent-presets:"] {
             assert!(after.contains(block), "DSH 計畫把 `{block}` 吃掉了");
         }
-        assert!(after.contains("switchyard-selftest:"));
+        assert!(after.contains("switchtower-selftest:"));
     }
 
     #[test]

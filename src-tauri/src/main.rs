@@ -183,6 +183,7 @@ fn provider_save(
 #[tauri::command]
 fn provider_delete(tool: String, id: String, app: tauri::AppHandle) -> Result<(), String> {
     store::remove(&tool, &id)?;
+    history::forget(&tool, &id)?;
     tray::refresh(&app);
     Ok(())
 }
@@ -268,7 +269,7 @@ fn preview(tool: String, provider_id: String) -> Result<Preview, String> {
 /// Write via a sibling temp file so an interrupted write can never leave the
 /// user's config truncated.
 fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    let tmp = path.with_extension("switchyard-tmp");
+    let tmp = path.with_extension("switchtower-tmp");
     std::fs::write(&tmp, text)?;
     std::fs::rename(&tmp, path)
 }
@@ -364,7 +365,7 @@ fn export_providers() -> Result<ExportResult, String> {
     let count = data.providers.values().map(|v| v.len()).sum();
     let dir = store::data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("switchyard-export-{}.json", store::stamp()));
+    let path = dir.join(format!("switchtower-export-{}.json", store::stamp()));
     let text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
     std::fs::write(&path, text).map_err(|e| format!("匯出失敗：{e}"))?;
     Ok(ExportResult { path: adapters::display_path(&path), count })
@@ -406,14 +407,14 @@ fn import_providers_json(
 fn export_diagnostics() -> Result<ExportResult, String> {
     let data = store::load();
     let mut report = String::new();
-    report.push_str(&format!("SwitchYard {}
+    report.push_str(&format!("SwitchTower {}
 ", env!("CARGO_PKG_VERSION")));
     report.push_str(&format!("OS: {} {}
 ", std::env::consts::OS, std::env::consts::ARCH));
     report.push_str(&format!("資料目錄: {}
 ", adapters::display_path(&store::data_dir())));
     report.push_str(&format!("金鑰加密: {}
-", if crypto::available() { "DPAPI" } else { "無（明文）" }));
+", if crypto::available() { crypto::label() } else { "不可用（拒絕寫入明文）" }));
     report.push_str(&format!("cc-switch 設定存在: {}
 ", adapters::home().join(".cc-switch").exists()));
     report.push_str("
@@ -444,7 +445,7 @@ fn export_diagnostics() -> Result<ExportResult, String> {
     }
     let dir = store::data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("switchyard-diagnostics-{}.txt", store::stamp()));
+    let path = dir.join(format!("switchtower-diagnostics-{}.txt", store::stamp()));
     std::fs::write(&path, report).map_err(|e| format!("寫入失敗：{e}"))?;
     Ok(ExportResult { path: adapters::display_path(&path), count })
 }
@@ -469,10 +470,10 @@ fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, Stri
     let config = store::load().proxy;
     let provider = Provider {
         id: String::new(),
-        config_id: "switchyard-proxy".into(),
-        name: "SwitchYard 代理".into(),
+        config_id: "switchtower-proxy".into(),
+        name: "SwitchTower 代理".into(),
         base_url: format!("http://127.0.0.1:{}/v1", config.port),
-        api_key: "switchyard-proxy".into(),
+        api_key: "switchtower-proxy".into(),
         api_key_enc: String::new(),
         model: String::new(),
         kind: String::new(),
@@ -531,7 +532,7 @@ fn spawn_health_loop(app: tauri::AppHandle) {
             }
         }
         if any {
-            let _ = app.emit("switchyard://changed", ());
+            let _ = app.emit("switchtower://changed", ());
         }
     });
 }
@@ -643,7 +644,7 @@ mod write_path_tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("switchyard-{tag}-{}", store::stamp()));
+        let dir = std::env::temp_dir().join(format!("switchtower-{tag}-{}", store::stamp()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -659,7 +660,7 @@ mod write_path_tests {
         let leftovers: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().contains("switchyard-tmp"))
+            .filter(|e| e.file_name().to_string_lossy().contains("switchtower-tmp"))
             .collect();
         assert!(leftovers.is_empty(), "暫存檔沒有被清掉");
         std::fs::remove_dir_all(&dir).ok();

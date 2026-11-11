@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
  */
 function classicScriptEntry(): Plugin {
   return {
-    name: "switchyard-classic-script",
+    name: "switchtower-classic-script",
     apply: "build",
     closeBundle() {
       const file = fileURLToPath(new URL("./dist/index.html", import.meta.url));

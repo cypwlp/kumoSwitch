@@ -3,13 +3,43 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-pub fn data_dir() -> PathBuf {
-    if let Ok(p) = std::env::var("APPDATA") {
-        if !p.is_empty() {
-            return PathBuf::from(p).join("SwitchYard");
+fn data_root() -> PathBuf {
+    if let Ok(path) = std::env::var("APPDATA") {
+        if !path.is_empty() {
+            return PathBuf::from(path);
         }
     }
-    crate::adapters::home().join(".config").join("SwitchYard")
+    crate::adapters::home().join(".config")
+}
+
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+fn migrate_legacy_dir(legacy: &std::path::Path, current: &std::path::Path) {
+    if current.exists() || !legacy.exists() {
+        return;
+    }
+    if std::fs::rename(legacy, current).is_err() {
+        let _ = copy_dir_all(legacy, current);
+    }
+}
+
+pub fn data_dir() -> PathBuf {
+    let root = data_root();
+    let current = root.join("SwitchTower");
+    migrate_legacy_dir(&root.join("SwitchYard"), &current);
+    current
 }
 
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -38,7 +68,7 @@ pub fn load() -> Store {
     for list in store.providers.values_mut() {
         for provider in list.iter_mut() {
             if !provider.api_key_enc.is_empty() {
-                if let Some(key) = crate::crypto::open(&provider.api_key_enc) {
+                if let Ok(key) = crate::crypto::open(&provider.api_key_enc) {
                     provider.api_key = key;
                 }
             }
@@ -56,13 +86,12 @@ pub fn save(store: &Store) -> Result<(), String> {
             if provider.api_key.is_empty() {
                 continue;
             }
-            match crate::crypto::seal(&provider.api_key) {
-                Some(blob) if !blob.is_empty() => {
-                    provider.api_key_enc = blob;
-                    provider.api_key.clear();
-                }
-                _ => provider.api_key_enc.clear(),
-            }
+            // An unreadable ciphertext must survive a metadata-only save.
+            // Deleting the provider is the explicit way to remove its key.
+            let blob = crate::crypto::seal(&provider.api_key)
+                .map_err(|error| format!("無法加密 API Key：{error}"))?;
+            provider.api_key_enc = blob;
+            provider.api_key.clear();
         }
     }
     let text = serde_json::to_string_pretty(&outgoing).map_err(|e| e.to_string())?;
@@ -113,7 +142,13 @@ pub fn upsert(tool: &str, mut provider: Provider) -> Result<Provider, String> {
         provider.config_id = make_config_id(tool, &format!("{}-{}", provider.name, entry.len() + 1));
     }
     match entry.iter_mut().find(|p| p.id == provider.id) {
-        Some(existing) => *existing = provider.clone(),
+        Some(existing) => {
+            if provider.api_key.is_empty() && !existing.api_key_enc.is_empty() {
+                provider.api_key = existing.api_key.clone();
+                provider.api_key_enc = existing.api_key_enc.clone();
+            }
+            *existing = provider.clone();
+        }
         None => entry.push(provider.clone()),
     }
     save(&store)?;
@@ -177,5 +212,27 @@ pub fn make_config_id(tool: &str, name: &str) -> String {
     match tool {
         "qoder" => format!("qoder-custom-{:08x}", (stamp() as u32) ^ 0x5f3a),
         _ => base,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_legacy_data_directory() {
+        let base = std::env::temp_dir().join(format!("switchtower-store-{}", stamp()));
+        let legacy = base.join("SwitchYard");
+        let current = base.join("SwitchTower");
+        std::fs::create_dir_all(legacy.join("backups")).unwrap();
+        std::fs::write(legacy.join("providers.json"), "{\"providers\":{}}").unwrap();
+        std::fs::write(legacy.join("backups").join("one.json"), "backup").unwrap();
+
+        migrate_legacy_dir(&legacy, &current);
+
+        assert!(current.join("providers.json").exists());
+        assert!(current.join("backups").join("one.json").exists());
+        assert!(!legacy.exists());
+        std::fs::remove_dir_all(&base).ok();
     }
 }

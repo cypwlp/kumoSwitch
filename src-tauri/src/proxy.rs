@@ -135,7 +135,7 @@ fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: 
     let _ = reader.read_to_end(&mut body);
 
     if !enabled || targets.is_empty() {
-        let resp = tiny_http::Response::from_string("{\"error\":\"switchyard proxy disabled or empty stack\"}")
+        let resp = tiny_http::Response::from_string("{\"error\":\"switchtower proxy disabled or empty stack\"}")
             .with_status_code(503)
             .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
         let _ = request.respond(resp);

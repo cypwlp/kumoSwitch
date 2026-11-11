@@ -3,12 +3,20 @@ import { useCallback, useEffect, useState } from "react";
 export type ThemeMode = "dark" | "light" | "system";
 export type Resolved = "dark" | "light";
 
-const KEY = "switchyard.theme";
+const KEY = "switchtower.theme";
+const LEGACY_KEY = "switchyard.theme";
 const QUERY = "(prefers-color-scheme: dark)";
 
 export function readStoredTheme(): ThemeMode {
   try {
-    const raw = window.localStorage.getItem(KEY);
+    let raw = window.localStorage.getItem(KEY);
+    if (raw === null) {
+      const legacy = window.localStorage.getItem(LEGACY_KEY);
+      if (legacy === "dark" || legacy === "light" || legacy === "system") {
+        window.localStorage.setItem(KEY, legacy);
+        raw = legacy;
+      }
+    }
     if (raw === "dark" || raw === "light" || raw === "system") return raw;
   } catch {
     /* private mode / disabled storage */

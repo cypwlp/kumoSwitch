@@ -21,13 +21,15 @@ const latestApi = `https://api.github.com/repos/${repo}/releases/latest`;
 
 function pickAssets(release) {
   const assets = release.assets || [];
+  const dmg = assets.filter((a) => /\.dmg$/i.test(a.name));
   const setup = assets.find((a) => /setup|installer|\.msi$/i.test(a.name) && !/portable/i.test(a.name));
   const portable = assets.find((a) => /portable/i.test(a.name));
-  const mac = assets.find((a) => /\.dmg$/i.test(a.name));
+  const mac = dmg.find((a) => /aarch64|arm64/i.test(a.name)) || dmg[0];
+  const macIntel = dmg.find((a) => /x86_64|x64|intel/i.test(a.name)) || dmg.find((a) => a !== mac);
   const appImage = assets.find((a) => /\.AppImage$/i.test(a.name));
   const deb = assets.find((a) => /\.deb$/i.test(a.name));
   const checksums = assets.find((a) => /sha256sums|checksums/i.test(a.name));
-  return { setup, portable, mac, appImage, deb, checksums };
+  return { setup, portable, mac, macIntel, appImage, deb, checksums };
 }
 
 function wire(link, asset, fallback, hideIfMissing = false) {
@@ -52,12 +54,13 @@ function wire(link, asset, fallback, hideIfMissing = false) {
     const res = await fetch(latestApi, { headers: { Accept: "application/vnd.github+json" } });
     if (!res.ok) throw new Error(String(res.status));
     const release = await res.json();
-    const { setup, portable, mac, appImage, deb, checksums } = pickAssets(release);
+    const { setup, portable, mac, macIntel, appImage, deb, checksums } = pickAssets(release);
     wire("dlSetup", setup, releasesUrl);
     wire("dlSetup2", setup, releasesUrl);
     wire("dlPortable", portable, releasesUrl);
     wire("dlPortable2", portable, releasesUrl);
     wire("dlMac", mac, releasesUrl, true);
+    wire("dlMacIntel", macIntel, releasesUrl, true);
     wire("dlLinuxAppImage", appImage, releasesUrl, true);
     wire("dlLinuxDeb", deb, releasesUrl, true);
     wire("dlChecksums", checksums, releasesUrl, true);
@@ -72,7 +75,7 @@ function wire(link, asset, fallback, hideIfMissing = false) {
       });
     }
   } catch {
-    ["dlSetup", "dlSetup2", "dlPortable", "dlPortable2", "dlMac", "dlLinuxAppImage", "dlLinuxDeb", "dlChecksums"].forEach((id) => {
+    ["dlSetup", "dlSetup2", "dlPortable", "dlPortable2", "dlMac", "dlMacIntel", "dlLinuxAppImage", "dlLinuxDeb", "dlChecksums"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) {
         el.hidden = false;

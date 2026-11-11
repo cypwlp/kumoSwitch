@@ -1,9 +1,9 @@
 [package]
-name = "switchyard"
-version = "0.6.2"
+name = "switchtower"
+version = "0.7.0"
 description = "Switch AI CLI providers without rewriting your config"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.88"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -22,6 +22,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+
+[target.'cfg(not(windows))'.dependencies]
+aes-gcm = { version = "0.10", features = ["zeroize"] }
+keyring = "4"
 
 [profile.release]
 codegen-units = 1

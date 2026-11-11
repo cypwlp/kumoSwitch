@@ -70,7 +70,15 @@ export default function App() {
   const [onboarded, setOnboarded] = useState<boolean>(() => {
     if (MOCK) return false;
     try {
-      return window.localStorage.getItem("switchyard.onboarded") === "1";
+      let value = window.localStorage.getItem("switchtower.onboarded");
+      if (value === null) {
+        const legacy = window.localStorage.getItem("switchyard.onboarded");
+        if (legacy === "1") {
+          window.localStorage.setItem("switchtower.onboarded", "1");
+          value = legacy;
+        }
+      }
+      return value === "1";
     } catch {
       return false;
     }
@@ -285,10 +293,10 @@ export default function App() {
     (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        const offToast = await listen<{ text: string; kind: string }>("switchyard://toast", (event) => {
+        const offToast = await listen<{ text: string; kind: string }>("switchtower://toast", (event) => {
           push(event.payload.text, event.payload.kind === "err" ? "err" : "ok");
         });
-        const offChanged = await listen("switchyard://changed", () => {
+        const offChanged = await listen("switchtower://changed", () => {
           void refreshTools();
           if (selectedId) void loadProviders(selectedId);
         });
@@ -347,7 +355,7 @@ export default function App() {
     const toolId = selected.id;
     setConfirm({
       title: "刪除供應商",
-      message: `確定刪除「${provider.name}」？\n這只會刪除 SwitchYard 裡的紀錄，不會改動你的設定檔。`,
+      message: `確定刪除「${provider.name}」？\n這只會刪除 SwitchTower 裡的紀錄，不會改動你的設定檔。`,
       confirmLabel: "刪除",
       danger: true,
       run: async () => {
@@ -516,7 +524,7 @@ export default function App() {
   const markOnboarded = () => {
     setOnboarded(true);
     try {
-      window.localStorage.setItem("switchyard.onboarded", "1");
+      window.localStorage.setItem("switchtower.onboarded", "1");
     } catch {
       /* ignore */
     }
@@ -674,7 +682,7 @@ export default function App() {
               <div className="welcome-card">
                 <h2>選擇左側的工具開始</h2>
                 <p>
-                  SwitchYard 只改寫供應商相關的那幾個鍵，
+                  SwitchTower 只改寫供應商相關的那幾個鍵，
                   <br />
                   你的註解、外掛、MCP 與其他設定原樣保留。
                 </p>

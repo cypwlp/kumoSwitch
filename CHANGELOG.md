@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 — 2026-11-11
+- 品牌更名：SwitchYard → SwitchTower；GitHub repo、安裝包、bundle identifier、資料目錄與 updater 全部遷移。
+- 舊資料會自動從 `%APPDATA%\SwitchYard`／`~/.config/SwitchYard` 遷移到 `SwitchTower`；主題、語言與引導狀態也會從舊 localStorage key 繼承。
+- 跨平台金鑰保護：macOS 使用 Keychain、Linux 使用 Secret Service 保存隨機主金鑰，供應商金鑰以 AES-256-GCM 加密；安全儲存不可用時拒絕寫入明文。
+- 自動更新升級為跨平台：Windows 安裝版、macOS Apple Silicon／Intel 與 Linux AppImage 共用一份統一產生的簽章 `latest.json`。
+- macOS 新增 Intel x64 DMG；Release 改為先建立草稿、三平台與更新清單全部成功後才正式發布。
 - 代理相容性：轉發客戶端 headers（含 `anthropic-beta`）、保留任意 HTTP method、修改連接埠即時重載、長串流改為 30 分鐘 idle timeout。
 
 ## 0.6.2 — 2026-11-11

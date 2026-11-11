@@ -157,6 +157,9 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }:
               {showKey ? "隱藏" : "顯示"}
             </button>
           </div>
+          <div className="hint">
+            {provider ? "留空會保留現有金鑰；刪除整個供應商才會移除它。" : "金鑰會以系統安全儲存加密後留在本機。"}
+          </div>
         </div>
 
         {tool.kind_choices.length ? (

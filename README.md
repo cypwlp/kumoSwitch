@@ -1,9 +1,11 @@
-# SwitchYard
+# SwitchTower
 
-[![Release](https://img.shields.io/github/v/release/cypwlp/SwitchYard)](https://github.com/cypwlp/SwitchYard/releases)
-[![License](https://img.shields.io/github/license/cypwlp/SwitchYard)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/cypwlp/SwitchTower)](https://github.com/cypwlp/SwitchTower/releases)
+[![License](https://img.shields.io/github/license/cypwlp/SwitchTower)](LICENSE)
 
 > 切換 AI CLI 供應商，不動其他一行設定。
+
+> **2026-11-11 起更名：SwitchYard → SwitchTower。** 舊版資料會自動遷移；原本的 GitHub 網址由 GitHub 自動重新導向。
 
 一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code、Crush、Qwen Code、Kilo Code 共 13 種工具的供應商設定集中管理。
 
@@ -11,7 +13,7 @@
 
 ## 為什麼不用現有的
 
-cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份設定檔重寫一遍：註解消失、外掛設定被清掉、自訂的 MCP 伺服器不見了（見 Codex++ issue #1563）。SwitchYard 的寫入方式從設計上就不允許這件事發生。
+cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份設定檔重寫一遍：註解消失、外掛設定被清掉、自訂的 MCP 伺服器不見了（見 Codex++ issue #1563）。SwitchTower 的寫入方式從設計上就不允許這件事發生。
 
 ![diff 預覽](site/assets/screenshot-diff.png)
 
@@ -21,8 +23,8 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **套用前 diff** —— 按下套用不會立刻寫檔，先顯示「目前 → 套用後」的逐行差異與新增／刪除行數，確認後才寫。
 - **自動備份與一鍵還原** —— 每次寫入前把要動的檔案複製到時間戳快照，列表可還原到任一版本。
 - **接管狀態偵測** —— 偵測到 cc-switch 正以代理模式接管同一套設定時會提示，避免兩個工具互相覆蓋。
-- **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\SwitchYard`。
-- **金鑰加密** —— Windows 上用 DPAPI 保護 `providers.json` 裡的金鑰，舊的明文檔會在啟動時自動遷移。
+- **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\SwitchTower`。
+- **跨平台金鑰加密** —— Windows 使用 DPAPI；macOS／Linux 用 Keychain／Secret Service 保存隨機主金鑰，再以 AES-256-GCM 加密 `providers.json` 裡的金鑰。舊的明文檔會自動遷移，安全儲存不可用時拒絕寫入明文。
 - **一鍵導入既有供應商** —— 直接從各工具現有的設定檔讀出供應商清單，不必重新輸入。
 - **連線測試** —— 套用前可先打一次 `/models` 確認端點與金鑰，回報 HTTP 狀態與延遲。
 - **清單匯入／匯出** —— 換機或分享設定時用 JSON 檔搬移。
@@ -36,7 +38,7 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **預設供應商目錄** —— 16 個已知端點一鍵帶入，不用手打 base URL。
 - **代理／故障轉移（Beta）** —— 本地反向代理，依序備援、429/5xx 自動換下一個、串流穿透。
 - **跨平台** —— Windows／Linux／macOS 皆由 CI 建置，main 每次推送跑三平台測試。
-- **自動更新** —— Windows 安裝版啟動後檢查新版本，下載後驗簽再安裝；可攜版與 macOS／Linux 目前手動下載更新。
+- **跨平台自動更新** —— Windows 安裝版、macOS Apple Silicon／Intel 與 Linux AppImage 共用一份簽章驗證的 `latest.json`；可攜版與 Linux deb 仍建議手動替換。
 
 ## 支援的工具
 
@@ -60,10 +62,10 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 
 ## 下載
 
-到 [Releases](https://github.com/cypwlp/SwitchYard/releases) 取得：
+到 [Releases](https://github.com/cypwlp/SwitchTower/releases) 取得：
 
-- Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `SwitchYard-portable.exe`
-- macOS Apple Silicon：`.dmg`
+- Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `SwitchTower-portable.exe`
+- macOS Apple Silicon／Intel：`.dmg`
 - Linux x64：`.AppImage` 或 `.deb`
 - Release 流程會自動產生並附加 `SHA256SUMS.txt`
 
@@ -97,7 +99,7 @@ site/            GitHub Pages 落地頁
 ```
 
 技術棧：**Rust + Tauri 2**（WebView2 原生視窗）、`toml_edit`、`serde_json`、`similar`（diff）、
-`windows-sys`（DPAPI）；前端 **React 18 + Vite + TypeScript**，樣式為手寫 CSS 變數，無 CSS 框架。
+`windows-sys`（DPAPI）、`keyring`（Keychain／Secret Service）、`aes-gcm`；前端 **React 18 + Vite + TypeScript**，樣式為手寫 CSS 變數，無 CSS 框架。
 
 想加一個新工具，通常只要在 `adapters.rs` 的 `TOOLS` 加一筆宣告，不需要寫新的寫入邏輯。
 
@@ -108,13 +110,13 @@ cd src-tauri
 cargo test
 ```
 
-58 個測試，分五類：
+60 個測試（各平台依可用加密後端略有差異），分五類：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
 3. **沙箱端到端測試** —— 在暫存目錄真的寫檔再讀回，涵蓋「重複套用冪等」「從無到有建立設定」「Gemini 雙檔寫入」「重新套用不覆蓋自訂 `models[]`／`compat`」。
 4. **代理端到端故障轉移** —— 本機啟動 500／200 上游與代理監聽器，驗證 5xx 與連線失敗都會自動切到下一家，並檢查 header／method 轉發與連接埠重載。
-5. **DPAPI 加解密往返**。
+5. **金鑰加解密往返** —— Windows 驗證 DPAPI；macOS／Linux 的 AES-256-GCM 路徑由三平台 CI 編譯驗證。
 
 ## 授權
 
@@ -125,7 +127,7 @@ MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research 等�
 
 目前公開版本不做 Windows Authenticode、macOS Developer ID 或公證，因此可能出現 SmartScreen／Gatekeeper 警告。這是未簽章 Beta 的預期行為。
 
-CI 仍保留可選的 Windows Authenticode hook：提供 `WINDOWS_CERT_PFX_BASE64` 與 `WINDOWS_CERT_PASSWORD` 時才會啟用。Tauri updater 的 minisign 更新包驗證與 OS 簽章是兩件事，目前仍保留。
+CI 仍保留可選的 Windows Authenticode hook：提供 `WINDOWS_CERT_PFX_BASE64` 與 `WINDOWS_CERT_PASSWORD` 時，會在 Tauri 打包前先簽好執行檔與安裝檔，避免破壞 updater 簽章。macOS 也可用 `APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID` 啟用 Developer ID 與公證。Tauri updater 的 minisign 驗證與 OS 簽章是兩件事。
 
 ## 同步到個人伺服器
 

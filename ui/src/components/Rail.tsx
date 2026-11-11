@@ -61,7 +61,7 @@ export function Rail({
       <div className="brand">
         <Logo />
         <div>
-          <h1>SwitchYard</h1>
+          <h1>SwitchTower</h1>
           <p>AI CLI 供應商切換</p>
         </div>
       </div>
