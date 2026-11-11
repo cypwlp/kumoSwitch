@@ -20,13 +20,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          notes_file="release-notes.md"
+          awk -v version="${TAG#v}" '
+            $0 ~ "^## " version "([[:space:]]|$)" { found=1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$notes_file"
+
+          if [ -s "$notes_file" ]; then
+            notes_args=(--notes-file "$notes_file")
+          else
+            notes_args=(--generate-notes)
+          fi
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --draft
+            gh release edit "$TAG" --draft "${notes_args[@]}"
           else
             gh release create "$TAG" \
               --draft \
               --title "SwitchTower $TAG" \
-              --generate-notes
+              "${notes_args[@]}"
           fi
           release_id=$(gh release view "$TAG" --json databaseId --jq .databaseId)
           echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
@@ -216,10 +229,13 @@ jobs:
 
       - name: Build one cross-platform latest.json
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
           RELEASE_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_NOTES: ${{ github.event.head_commit.message }}
-        run: node .github/scripts/build-latest-json.mjs release-assets latest.json "$RELEASE_TAG"
+        run: |
+          release_notes=$(gh release view "$TAG" --json body --jq .body)
+          RELEASE_NOTES="$release_notes" node .github/scripts/build-latest-json.mjs release-assets latest.json "$RELEASE_TAG"
 
       - name: Upload updater manifest
         env:
