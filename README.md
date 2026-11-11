@@ -36,7 +36,7 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **預設供應商目錄** —— 16 個已知端點一鍵帶入，不用手打 base URL。
 - **代理／故障轉移（Beta）** —— 本地反向代理，依序備援、429/5xx 自動換下一個、串流穿透。
 - **跨平台** —— Windows／Linux／macOS 皆由 CI 建置，main 每次推送跑三平台測試。
-- **自動更新** —— 啟動後檢查新版本，下載後驗簽再安裝；更新包以 minisign 簽章，CI 產出 `latest.json`。
+- **自動更新** —— Windows 安裝版啟動後檢查新版本，下載後驗簽再安裝；可攜版與 macOS／Linux 目前手動下載更新。
 
 ## 支援的工具
 
@@ -60,9 +60,14 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 
 ## 下載
 
-到 [Releases](https://github.com/cypwlp/SwitchYard/releases) 取得 Windows 安裝檔（NSIS）或可攜版 `.exe`。可攜版解壓即用、不寫註冊表。
+到 [Releases](https://github.com/cypwlp/SwitchYard/releases) 取得：
 
-Windows 10／11 64 位元。需要系統的 WebView2（Win11 內建；Win10 多半已隨 Edge 安裝）。
+- Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `SwitchYard-portable.exe`
+- macOS Apple Silicon：`.dmg`
+- Linux x64：`.AppImage` 或 `.deb`
+- Release 流程會自動產生並附加 `SHA256SUMS.txt`
+
+目前公開版本是**未簽章 Beta**。Windows 可能顯示 SmartScreen「未知發行者」，macOS 可能顯示 Gatekeeper 警告；請只從本專案 Releases 下載並核對 SHA-256。Windows 需要 WebView2（Win11 內建；Win10 多半已隨 Edge 安裝）。
 
 ## 從原始碼建置
 
@@ -116,11 +121,11 @@ cargo test
 MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research 等公司無關。
 
 
-## 簽章（消除 SmartScreen 警告）
+## 簽章（目前未啟用）
 
-CI 已內建可選 Authenticode 簽章：只要提供 `WINDOWS_CERT_PFX_BASE64` 與 `WINDOWS_CERT_PASSWORD`
-兩個 secret 即自動啟用。取得憑證的選項：OV/EV 程式碼簽章憑證，或 Azure Trusted Signing。
-未提供憑證時 CI 仍正常產出未簽章安裝檔。
+目前公開版本不做 Windows Authenticode、macOS Developer ID 或公證，因此可能出現 SmartScreen／Gatekeeper 警告。這是未簽章 Beta 的預期行為。
+
+CI 仍保留可選的 Windows Authenticode hook：提供 `WINDOWS_CERT_PFX_BASE64` 與 `WINDOWS_CERT_PASSWORD` 時才會啟用。Tauri updater 的 minisign 更新包驗證與 OS 簽章是兩件事，目前仍保留。
 
 ## 同步到個人伺服器
 

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SwitchYard — 切換 AI CLI 供應商，不動其他一行設定</title>
-<meta name="description" content="Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH 等 10 種 AI CLI 的供應商切換器。只改寫該改的鍵，套用前先看 diff，每次寫入自動備份。" />
+<meta name="description" content="Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH 等 13 種 AI CLI 的供應商切換器。只改寫該改的鍵，套用前先看 diff，每次寫入自動備份。" />
 <meta property="og:title" content="SwitchYard — AI CLI 供應商切換器" />
 <meta property="og:description" content="非破壞性寫入。套用前逐行 diff，寫入前自動備份，隨時一鍵還原。" />
 <meta property="og:image" content="assets/screenshot-panel.png" />
@@ -36,7 +36,7 @@
 <main id="top">
   <section class="hero wrap">
     <div class="hero-copy">
-      <span class="pill"><i></i> Windows · 單一執行檔 · 零依賴</span>
+      <span class="pill"><i></i> Windows · macOS · Linux · 未簽章 Beta</span>
       <h1>切換 AI CLI 供應商<br/><em>不動其他一行設定</em></h1>
       <p>
         Codex、Claude Code、Gemini CLI、OpenCode、Qoder、Crush⋯⋯13 種工具的供應商設定，
@@ -45,7 +45,8 @@
       </p>
       <div class="cta">
         <a class="btn primary" id="dlSetup" href="#">下載 Windows 安裝檔</a>
-        <a class="btn ghost" id="dlPortable" href="#">可攜版 .exe</a>
+        <a class="btn ghost" id="dlPortable" href="#">Windows 可攜版</a>
+        <a class="btn ghost" href="#dl">其他平台</a>
       </div>
       <p class="fineprint" id="releaseNote">正在取得最新版本…</p>
       <ul class="bullets">
@@ -192,14 +193,14 @@
           <tr><td>備份與還原</td><td class="hl">✓</td><td>✓</td><td>✓</td></tr>
           <tr><td>支援工具數</td><td class="hl">13</td><td>12+</td><td>Codex 為主</td></tr>
           <tr><td>自動更新</td><td class="hl">✓ 簽章驗證</td><td>✓</td><td>✓</td></tr>
-          <tr><td>代理／負載均衡</td><td class="hl">—</td><td>✓</td><td>✓</td></tr>
+          <tr><td>代理／故障轉移</td><td class="hl">✓ Beta</td><td>✓</td><td>✓</td></tr>
           <tr><td>安裝體積</td><td class="hl">單檔 .exe</td><td>桌面安裝包</td><td>桌面安裝包</td></tr>
         </tbody>
       </table>
     </div>
     <p class="fineprint">
       * 依 Codex++ 專案 issue #1563「供應商切換破壞性重寫 config.toml」的描述。
-      SwitchYard 刻意不做代理與負載均衡，只做「把設定改對」這件事。
+      SwitchYard 的代理／故障轉移仍是 Beta；核心仍是「把設定改對」。
     </p>
   </section>
 
@@ -207,18 +208,24 @@
     <div class="dl-card">
       <div>
         <h2>下載</h2>
-        <p class="section-sub">Windows 10／11 64 位元。安裝檔建議一般使用者；可攜版解壓即用、不寫註冊表。</p>
+        <p class="section-sub">Windows 10／11 x64、macOS Apple Silicon、Linux x64。Windows 安裝檔建議一般使用者；可攜版不寫註冊表。</p>
         <div class="cta">
           <a class="btn primary big" id="dlSetup2" href="#">Windows 安裝檔</a>
-          <a class="btn ghost big" id="dlPortable2" href="#">可攜版 .exe</a>
+          <a class="btn ghost big" id="dlPortable2" href="#">Windows 可攜版</a>
+          <a class="btn ghost big" id="dlMac" href="#">macOS DMG</a>
+          <a class="btn ghost big" id="dlLinuxAppImage" href="#">Linux AppImage</a>
+          <a class="btn ghost big" id="dlLinuxDeb" href="#">Linux deb</a>
           <a class="btn ghost big" id="allReleases" href="#" target="_blank" rel="noopener">所有版本</a>
         </div>
+        <p class="notice"><b>未簽章 Beta：</b>Windows 可能顯示 SmartScreen「未知發行者」，macOS 可能顯示 Gatekeeper 警告；請確認下載來源，並用 SHA-256 核對檔案。</p>
         <p class="fineprint" id="releaseNote2"></p>
+        <p class="fineprint"><a id="dlChecksums" href="#">下載 SHA-256 checksums</a></p>
       </div>
       <ol class="steps">
-        <li><b>下載並執行</b><span>SmartScreen 可能提示未知發行者，選擇「仍要執行」。</span></li>
-        <li><b>新增供應商</b><span>填入 Base URL、API Key、模型名稱，儲存。</span></li>
-        <li><b>按「套用」</b><span>看過 diff 再確認，之後重開該工具的終端即可。</span></li>
+        <li><b>Windows</b><span>執行安裝檔，或直接開啟可攜版。若出現 SmartScreen，確認來源後選擇「仍要執行」。</span></li>
+        <li><b>macOS</b><span>開啟 DMG，把 App 拖進「應用程式」。若被 Gatekeeper 攔下，右鍵「打開」或到系統設定允許。</span></li>
+        <li><b>Linux</b><span>AppImage 加執行權限後直接執行；deb 用套件管理器安裝。</span></li>
+        <li><b>開始使用</b><span>新增供應商，按「套用」前先看 diff；完成後重開該工具終端。</span></li>
       </ol>
     </div>
   </section>
@@ -229,7 +236,13 @@
       <p>寫入是定點替換：只改供應商相關的鍵。套用前你會看到逐行 diff，寫入前會自動備份，壞了也能一鍵還原。專案內也附了直接對真實設定檔執行的唯讀測試，驗證其他區塊零改動。</p>
     </details>
     <details><summary>API Key 存在哪裡？</summary>
-      <p>存在你本機的 <code>%APPDATA%\SwitchYard\providers.json</code>，以及各工具原本就該存金鑰的位置。沒有雲端、沒有上傳、沒有遙測。</p>
+      <p>Windows 在 <code>%APPDATA%\SwitchYard\providers.json</code>，macOS／Linux 在 <code>~/.config/SwitchYard/providers.json</code>，以及各工具原本就該存金鑰的位置。沒有雲端、沒有上傳、沒有遙測。</p>
+    </details>
+    <details><summary>為什麼顯示未知發行者？</summary>
+      <p>目前是未簽章 Beta，沒有購買 Windows Authenticode 或 Apple Developer ID／公證。這是預期行為，不代表檔案一定有問題；請只從本專案的 GitHub Releases 下載，並核對 SHA-256。</p>
+    </details>
+    <details><summary>有自動更新嗎？</summary>
+      <p>Windows 安裝版已接上 Tauri updater 與更新包簽章驗證；可攜版、macOS 與 Linux 目前建議手動下載新版本替換。</p>
     </details>
     <details><summary>需要關掉 cc-switch 嗎？</summary>
       <p>不需要關，但若 cc-switch 正以代理模式接管同一個工具，SwitchYard 會在上方提示。兩者同時寫同一份設定時，後寫的會蓋掉先寫的，這是設計上的必然。</p>
@@ -238,7 +251,7 @@
       <p>多數 CLI 在啟動時讀取設定，需要重開終端。Claude Code 支援熱切換，新開的 session 就會套用。每個工具的畫面會標明要怎麼重啟。</p>
     </details>
     <details><summary>支援 macOS／Linux 嗎？</summary>
-      <p>程式碼是跨平台的，但目前的發佈流程只打包 Windows。用 Rust 自行編譯即可在其他平台執行。</p>
+      <p>有。v0.6.2 提供 macOS Apple Silicon DMG、Linux x64 AppImage 與 deb；Windows 仍是主要驗證平台，其他平台請先視為 Beta。</p>
     </details>
   </section>
 </main>
