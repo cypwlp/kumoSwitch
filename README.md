@@ -129,7 +129,11 @@ MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research、Cl
 
 CI 仍保留可選的 Windows Authenticode hook：提供 `WINDOWS_CERT_PFX_BASE64` 與 `WINDOWS_CERT_PASSWORD` 時，會在 Tauri 打包前先簽好執行檔與安裝檔，避免破壞 updater 簽章。macOS 也可用 `APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID` 啟用 Developer ID 與公證。Tauri updater 的 minisign 驗證與 OS 簽章是兩件事。
 
-## 同步到個人伺服器
+## 鏡像站
 
-`deploy/` 內含 bare-IP nginx 設定與一鍵腳本。在伺服器上執行 `sh deploy.sh` 即把
-GitHub Pages 的同一份網站發佈到 `http://<IP>/`（域名若被 ICP 攔截，bare IP 仍可用）。
+主要網站是 [GitHub Pages](https://cypwlp.github.io/kumoSwitch/)。鏡像網域為
+[kumoswitch.cypilu.cloud](https://kumoswitch.cypilu.cloud/)，DNS 指向獨立的 Nginx virtual host，
+不會覆蓋同一台主機上的其他站點。
+
+部署方式：在伺服器上執行 `sh deploy/deploy.sh`。若鏡像網域由中國大陸直接連線時出現
+DNSPod／ICP 攔截頁，需完成網域備案或改由境外 CDN／反向代理承接；origin Nginx 設定本身已就緒。
