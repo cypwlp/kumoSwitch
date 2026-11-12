@@ -100,7 +100,14 @@ test.afterAll(async () => {
       /* already exited */
     }
   }
-  if (root) rmSync(root, { recursive: true, force: true });
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_500));
+  if (root) {
+    try {
+      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+    } catch {
+      // Windows can keep WebView2 profile files locked briefly after process exit.
+    }
+  }
 });
 
 test("real Tauri WebView loads providers through Tauri IPC", async () => {
