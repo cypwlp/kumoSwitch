@@ -112,7 +112,30 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   const providerButton = page.getByRole("button", { name: "查看供應商 E2E Provider 的模型與設定" });
   const importButton = page.getByRole("button", { name: /^從設定檔導入/ });
   const skipOnboarding = page.getByRole("button", { name: "略過，稍後再說" });
-  await expect(importButton.or(skipOnboarding)).toBeVisible();
+  try {
+    await expect(importButton.or(skipOnboarding)).toBeVisible({ timeout: 10_000 });
+  } catch (error) {
+    const diagnostic = await page.evaluate(async () => {
+      const internals = (window as any).__TAURI_INTERNALS__;
+      const invoke = async (cmd: string, args?: Record<string, unknown>) => {
+        try {
+          return await internals.invoke(cmd, args);
+        } catch (invokeError) {
+          return { invokeError: String(invokeError) };
+        }
+      };
+      return {
+        url: location.href,
+        hash: location.hash,
+        body: document.body.innerText.slice(0, 3000),
+        localStorage: { ...localStorage },
+        appInfo: await invoke("app_info"),
+        tools: await invoke("tool_list"),
+        providers: await invoke("provider_list", { tool: "codex" }),
+      };
+    });
+    throw new Error(`${String(error)}\nTAURI_DIAGNOSTIC=${JSON.stringify(diagnostic)}`);
+  }
   if (await skipOnboarding.isVisible()) await skipOnboarding.click();
   await expect(importButton).toBeVisible();
   if (!await providerButton.isVisible()) {
