@@ -397,7 +397,7 @@ function tomlPreview(tool: string, target: Provider): FileDiff {
   const modelLine = target.model ? [`-model = "${from.model}"`, `+model = "${target.model}"`] : [];
   const body = [
     "@@ -1,8 +1,8 @@",
-    " # Codex CLI — 供應商鍵位由 SwitchTower 維護",
+    " # Codex CLI — 供應商鍵位由 kumoSwitch 維護",
     `-model_provider = "${from.config_id}"`,
     `+model_provider = "${target.config_id}"`,
     ...modelLine,
@@ -526,7 +526,7 @@ function buildPreview(tool: string, providerId: string): Preview {
   const activeId = ACTIVE[tool];
   if (activeId && activeId !== providerId) {
     const from = findProvider(tool, activeId);
-    warnings.push(`舊供應商「${from.name}」的區塊會原樣保留，SwitchTower 只更新目標供應商的鍵位。`);
+    warnings.push(`舊供應商「${from.name}」的區塊會原樣保留，kumoSwitch 只更新目標供應商的鍵位。`);
   }
   if (!target.api_key.trim()) {
     warnings.push("此供應商未填 API Key，將寫入空字串；多數工具會回報 401。");
@@ -554,8 +554,8 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   switch (cmd) {
     case "app_info":
       return {
-        version: "0.7.0",
-        dataDir: `${HOME}\\AppData\\Roaming\\SwitchTower`,
+        version: "0.8.0",
+        dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
       } satisfies AppInfo;
 
@@ -719,14 +719,14 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "export_diagnostics":
       return {
-        path: `${HOME}\\Documents\\switchtower-diagnostics-20261110.txt`,
+        path: `${HOME}\\Documents\\kumoswitch-diagnostics-20261110.txt`,
         count: 6,
       } satisfies ExportResult;
 
     case "export_providers": {
       const count = Object.values(PROVIDERS).reduce((n, list) => n + list.length, 0);
       return {
-        path: `${HOME}\\Documents\\switchtower-providers-20261110.json`,
+        path: `${HOME}\\Documents\\kumoswitch-providers-20261110.json`,
         count,
       } satisfies ExportResult;
     }

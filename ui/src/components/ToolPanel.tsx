@@ -146,7 +146,7 @@ export function ToolPanel({
           className="ghost"
           onClick={onImportConfig}
           disabled={busy}
-          title="讀取這個工具現有的設定檔，把裡面的供應商收進 SwitchTower"
+          title="讀取這個工具現有的設定檔，把裡面的供應商收進 kumoSwitch"
         >
           從設定檔導入
           {tool.importable > 0 ? <span className="cnt">{tool.importable}</span> : null}

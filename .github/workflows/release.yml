@@ -38,7 +38,7 @@ jobs:
           else
             gh release create "$TAG" \
               --draft \
-              --title "SwitchTower $TAG" \
+              --title "kumoSwitch $TAG" \
               "${notes_args[@]}"
           fi
           release_id=$(gh release view "$TAG" --json databaseId --jq .databaseId)
@@ -102,10 +102,10 @@ jobs:
           TAG: ${{ github.ref_name }}
           WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
         run: |
-          $exe = Get-ChildItem src-tauri\target -Recurse -Filter switchtower.exe -File |
+          $exe = Get-ChildItem src-tauri\target -Recurse -Filter kumoswitch.exe -File |
                  Where-Object { $_.FullName -match 'release' } | Select-Object -First 1
           if (-not $exe) { throw "portable exe not found" }
-          $portable = Join-Path $PWD "SwitchTower-portable.exe"
+          $portable = Join-Path $PWD "kumoSwitch-portable.exe"
           Copy-Item $exe.FullName $portable -Force
 
           if ($env:WINDOWS_CERT_PFX_BASE64) {

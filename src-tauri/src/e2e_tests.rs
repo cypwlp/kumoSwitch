@@ -7,7 +7,7 @@ use crate::write_atomic;
 use std::path::{Path, PathBuf};
 
 fn sandbox(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("switchtower-e2e-{tag}-{}", crate::store::stamp()));
+    let dir = std::env::temp_dir().join(format!("kumoswitch-e2e-{tag}-{}", crate::store::stamp()));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }

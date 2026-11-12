@@ -70,12 +70,15 @@ export default function App() {
   const [onboarded, setOnboarded] = useState<boolean>(() => {
     if (MOCK) return false;
     try {
-      let value = window.localStorage.getItem("switchtower.onboarded");
+      let value = window.localStorage.getItem("kumoswitch.onboarded");
       if (value === null) {
-        const legacy = window.localStorage.getItem("switchyard.onboarded");
-        if (legacy === "1") {
-          window.localStorage.setItem("switchtower.onboarded", "1");
-          value = legacy;
+        for (const legacyKey of ["switchtower.onboarded", "switchyard.onboarded"]) {
+          const legacy = window.localStorage.getItem(legacyKey);
+          if (legacy === "1") {
+            window.localStorage.setItem("kumoswitch.onboarded", "1");
+            value = legacy;
+            break;
+          }
         }
       }
       return value === "1";
@@ -293,10 +296,10 @@ export default function App() {
     (async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        const offToast = await listen<{ text: string; kind: string }>("switchtower://toast", (event) => {
+        const offToast = await listen<{ text: string; kind: string }>("kumoswitch://toast", (event) => {
           push(event.payload.text, event.payload.kind === "err" ? "err" : "ok");
         });
-        const offChanged = await listen("switchtower://changed", () => {
+        const offChanged = await listen("kumoswitch://changed", () => {
           void refreshTools();
           if (selectedId) void loadProviders(selectedId);
         });
@@ -355,7 +358,7 @@ export default function App() {
     const toolId = selected.id;
     setConfirm({
       title: "刪除供應商",
-      message: `確定刪除「${provider.name}」？\n這只會刪除 SwitchTower 裡的紀錄，不會改動你的設定檔。`,
+      message: `確定刪除「${provider.name}」？\n這只會刪除 kumoSwitch 裡的紀錄，不會改動你的設定檔。`,
       confirmLabel: "刪除",
       danger: true,
       run: async () => {
@@ -524,7 +527,7 @@ export default function App() {
   const markOnboarded = () => {
     setOnboarded(true);
     try {
-      window.localStorage.setItem("switchtower.onboarded", "1");
+      window.localStorage.setItem("kumoswitch.onboarded", "1");
     } catch {
       /* ignore */
     }
@@ -682,7 +685,7 @@ export default function App() {
               <div className="welcome-card">
                 <h2>選擇左側的工具開始</h2>
                 <p>
-                  SwitchTower 只改寫供應商相關的那幾個鍵，
+                  kumoSwitch 只改寫供應商相關的那幾個鍵，
                   <br />
                   你的註解、外掛、MCP 與其他設定原樣保留。
                 </p>

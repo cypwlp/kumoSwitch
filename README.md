@@ -1,19 +1,19 @@
-# SwitchTower
+# kumoSwitch
 
-[![Release](https://img.shields.io/github/v/release/cypwlp/SwitchTower)](https://github.com/cypwlp/SwitchTower/releases)
-[![License](https://img.shields.io/github/license/cypwlp/SwitchTower)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/cypwlp/kumoSwitch)](https://github.com/cypwlp/kumoSwitch/releases)
+[![License](https://img.shields.io/github/license/cypwlp/kumoSwitch)](LICENSE)
 
 > 切換 AI CLI 供應商，不動其他一行設定。
 
-> **2026-11-11 起更名：SwitchYard → SwitchTower。** 舊版資料會自動遷移；原本的 GitHub 網址由 GitHub 自動重新導向。
+> **2026-11-12 起更名：SwitchTower → kumoSwitch。** 更早版本名為 SwitchYard；舊資料、主題與語言設定會自動遷移，GitHub 舊網址由 GitHub 自動重新導向。
 
 一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code、Crush、Qwen Code、Kilo Code 共 13 種工具的供應商設定集中管理。
 
 ![主介面](site/assets/screenshot-panel.png)
 
-## 為什麼不用現有的
+## 設計原則
 
-cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份設定檔重寫一遍：註解消失、外掛設定被清掉、自訂的 MCP 伺服器不見了（見 Codex++ issue #1563）。SwitchTower 的寫入方式從設計上就不允許這件事發生。
+kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套用前先顯示逐行 diff，寫入前建立時間戳備份，讓你能確認、比較並一鍵還原；不需要靠整份重新序列化來完成切換。
 
 ![diff 預覽](site/assets/screenshot-diff.png)
 
@@ -22,8 +22,8 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 - **非破壞性寫入** —— 不經過序列化器重寫整份檔案。JSON 用自寫的語法樹定位位元組區間、TOML 用 `toml_edit` 保留格式，只替換目標值那一段文字。沒列進 diff 的內容一個位元組都不會變。
 - **套用前 diff** —— 按下套用不會立刻寫檔，先顯示「目前 → 套用後」的逐行差異與新增／刪除行數，確認後才寫。
 - **自動備份與一鍵還原** —— 每次寫入前把要動的檔案複製到時間戳快照，列表可還原到任一版本。
-- **接管狀態偵測** —— 偵測到 cc-switch 正以代理模式接管同一套設定時會提示，避免兩個工具互相覆蓋。
-- **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\SwitchTower`。
+- **接管狀態偵測** —— 偵測到其他代理工具正接管同一套設定時會提示，避免兩個工具互相覆蓋。
+- **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\kumoSwitch`。
 - **跨平台金鑰加密** —— Windows 使用 DPAPI；macOS／Linux 用 Keychain／Secret Service 保存隨機主金鑰，再以 AES-256-GCM 加密 `providers.json` 裡的金鑰。舊的明文檔會自動遷移，安全儲存不可用時拒絕寫入明文。
 - **一鍵導入既有供應商** —— 直接從各工具現有的設定檔讀出供應商清單，不必重新輸入。
 - **連線測試** —— 套用前可先打一次 `/models` 確認端點與金鑰，回報 HTTP 狀態與延遲。
@@ -62,9 +62,9 @@ cc-switch 與 Codex++ 已經很好用，但它們切換供應商時常把整份�
 
 ## 下載
 
-到 [Releases](https://github.com/cypwlp/SwitchTower/releases) 取得：
+到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
 
-- Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `SwitchTower-portable.exe`
+- Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `kumoSwitch-portable.exe`
 - macOS Apple Silicon／Intel：`.dmg`
 - Linux x64：`.AppImage` 或 `.deb`
 - Release 流程會自動產生並附加 `SHA256SUMS.txt`
@@ -110,7 +110,7 @@ cd src-tauri
 cargo test
 ```
 
-60 個測試（各平台依可用加密後端略有差異），分五類：
+Windows 60 個、macOS／Linux 61 個測試（非 Windows 多一項 AES-GCM 篡改測試），分五類：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
@@ -120,7 +120,7 @@ cargo test
 
 ## 授權
 
-MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research 等公司無關。
+MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research、Cloudflare 等公司無關；文中第三方產品名稱與商標屬各自所有者。
 
 
 ## 簽章（目前未啟用）

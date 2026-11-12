@@ -37,8 +37,17 @@ fn migrate_legacy_dir(legacy: &std::path::Path, current: &std::path::Path) {
 
 pub fn data_dir() -> PathBuf {
     let root = data_root();
-    let current = root.join("SwitchTower");
-    migrate_legacy_dir(&root.join("SwitchYard"), &current);
+    let current = root.join("kumoSwitch");
+    if !current.exists() {
+        // Prefer the most recent legacy brand when both directories exist.
+        for legacy in ["SwitchTower", "SwitchYard"] {
+            let legacy = root.join(legacy);
+            if legacy.exists() {
+                migrate_legacy_dir(&legacy, &current);
+                break;
+            }
+        }
+    }
     current
 }
 
@@ -219,11 +228,10 @@ pub fn make_config_id(tool: &str, name: &str) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn migrates_legacy_data_directory() {
-        let base = std::env::temp_dir().join(format!("switchtower-store-{}", stamp()));
-        let legacy = base.join("SwitchYard");
-        let current = base.join("SwitchTower");
+    fn assert_legacy_migration(legacy_name: &str) {
+        let base = std::env::temp_dir().join(format!("kumoswitch-store-{legacy_name}-{}", stamp()));
+        let legacy = base.join(legacy_name);
+        let current = base.join("kumoSwitch");
         std::fs::create_dir_all(legacy.join("backups")).unwrap();
         std::fs::write(legacy.join("providers.json"), "{\"providers\":{}}").unwrap();
         std::fs::write(legacy.join("backups").join("one.json"), "backup").unwrap();
@@ -234,5 +242,15 @@ mod tests {
         assert!(current.join("backups").join("one.json").exists());
         assert!(!legacy.exists());
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn migrates_legacy_switchtower_directory() {
+        assert_legacy_migration("SwitchTower");
+    }
+
+    #[test]
+    fn migrates_legacy_switchyard_directory() {
+        assert_legacy_migration("SwitchYard");
     }
 }

@@ -280,7 +280,7 @@ pub static TOOLS: &[ToolSpec] = &[
         steps: &[
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "api"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "key"], val: s("{{api_key}}"), when: When::Always },
-            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "key_env"], val: s("SWITCHTOWER_{{config_id}}_KEY"), when: When::IfMissing },
+            Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "key_env"], val: s("KUMOSWITCH_{{config_id}}_KEY"), when: When::IfMissing },
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "transport"], val: s("chat_completions"), when: When::IfMissing },
             Step { file: "config.yaml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "default_model"], val: s("{{model}}"), when: When::HasModel },
             Step {
@@ -1090,8 +1090,8 @@ mod real_config_checks {
     fn probe_provider() -> Provider {
         Provider {
             id: "selftest".into(),
-            config_id: "switchtower-selftest".into(),
-            name: "SwitchTower Selftest".into(),
+            config_id: "kumoswitch-selftest".into(),
+            name: "kumoSwitch Selftest".into(),
             base_url: "https://selftest.invalid/v1".into(),
             api_key: "sk-selftest".into(),
             api_key_enc: String::new(),
@@ -1175,7 +1175,7 @@ mod real_config_checks {
         for (k, v) in &pa {
             assert_eq!(Some(v), pb.get(k), "既有 provider `{k}` 被改動了");
         }
-        assert!(pb.contains_key("switchtower-selftest"));
+        assert!(pb.contains_key("kumoswitch-selftest"));
         assert_eq!(
             b.get("enabledPlugins").and_then(|v| v.as_object()).map(|m| m.len()),
             a.get("enabledPlugins").and_then(|v| v.as_object()).map(|m| m.len())
@@ -1193,7 +1193,7 @@ mod real_config_checks {
         for block in ["permission:", "ui-theme:", "agent-presets:"] {
             assert!(after.contains(block), "DSH 計畫把 `{block}` 吃掉了");
         }
-        assert!(after.contains("switchtower-selftest:"));
+        assert!(after.contains("kumoswitch-selftest:"));
     }
 
     #[test]

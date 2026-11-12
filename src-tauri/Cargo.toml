@@ -1,6 +1,6 @@
 [package]
-name = "switchtower"
-version = "0.7.0"
+name = "kumoswitch"
+version = "0.8.0"
 description = "Switch AI CLI providers without rewriting your config"
 edition = "2021"
 rust-version = "1.88"

@@ -2256,6 +2256,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "kumoswitch"
+version = "0.8.0"
+dependencies = [
+ "aes-gcm",
+ "keyring",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "similar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tiny_http",
+ "toml_edit 0.22.27",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "libappindicator"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4027,26 +4047,6 @@ dependencies = [
  "base64 0.21.7",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "switchtower"
-version = "0.7.0"
-dependencies = [
- "aes-gcm",
- "keyring",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "similar",
- "tauri",
- "tauri-build",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tiny_http",
- "toml_edit 0.22.27",
- "windows-sys 0.59.0",
 ]
 
 [[package]]

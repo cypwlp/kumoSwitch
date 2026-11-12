@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SwitchTower",
-  "version": "0.7.0",
-  "identifier": "io.github.cypwlp.switchtower",
+  "productName": "kumoSwitch",
+  "version": "0.8.0",
+  "identifier": "io.github.cypwlp.kumoswitch",
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:5173",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "SwitchTower — AI CLI 供應商切換器",
+        "title": "kumoSwitch — AI CLI 供應商切換器",
         "width": 1200,
         "height": 780,
         "minWidth": 980,
@@ -49,7 +49,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/cypwlp/SwitchTower/releases/latest/download/latest.json"
+        "https://github.com/cypwlp/kumoSwitch/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGMTFCODJCNDNEOURBMkMKUldRczJ0bERLN2dSdjRnQ2NTVm5BMnpyVXFyMkVwK0xNQ0dEREFQbTA2OUh0dENuY3pXVW5QUCsK",
       "windows": {

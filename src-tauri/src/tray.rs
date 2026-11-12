@@ -1,4 +1,4 @@
-//! System tray: keeps SwitchTower one click away and lets you switch a provider
+//! System tray: keeps kumoSwitch one click away and lets you switch a provider
 //! without opening the window.
 
 use crate::{adapters, store};
@@ -6,7 +6,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager};
 
-pub const TRAY_ID: &str = "switchtower-tray";
+pub const TRAY_ID: &str = "kumoswitch-tray";
 const APPLY_PREFIX: &str = "apply|";
 
 pub fn show_main(app: &AppHandle) {
@@ -49,7 +49,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let data = store::load();
     let menu = Menu::new(app)?;
 
-    menu.append(&MenuItem::with_id(app, "show", "開啟 SwitchTower", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "show", "開啟 kumoSwitch", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
 
     let mut any = false;
@@ -87,7 +87,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(app, "data", "開啟資料資料夾", true, None::<&str>)?)?;
-    menu.append(&MenuItem::with_id(app, "quit", "結束 SwitchTower", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "quit", "結束 kumoSwitch", true, None::<&str>)?)?;
     Ok(menu)
 }
 
@@ -106,7 +106,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .tooltip("SwitchTower — AI CLI 供應商切換器")
+        .tooltip("kumoSwitch — AI CLI 供應商切換器")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -127,8 +127,8 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                             Ok(message) => serde_json::json!({ "text": message, "kind": "ok" }),
                             Err(err) => serde_json::json!({ "text": err, "kind": "err" }),
                         };
-                        let _ = app.emit("switchtower://toast", payload);
-                        let _ = app.emit("switchtower://changed", ());
+                        let _ = app.emit("kumoswitch://toast", payload);
+                        let _ = app.emit("kumoswitch://changed", ());
                         refresh(app);
                     }
                 }

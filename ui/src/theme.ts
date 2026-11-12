@@ -3,18 +3,21 @@ import { useCallback, useEffect, useState } from "react";
 export type ThemeMode = "dark" | "light" | "system";
 export type Resolved = "dark" | "light";
 
-const KEY = "switchtower.theme";
-const LEGACY_KEY = "switchyard.theme";
+const KEY = "kumoswitch.theme";
+const LEGACY_KEYS = ["switchtower.theme", "switchyard.theme"];
 const QUERY = "(prefers-color-scheme: dark)";
 
 export function readStoredTheme(): ThemeMode {
   try {
     let raw = window.localStorage.getItem(KEY);
     if (raw === null) {
-      const legacy = window.localStorage.getItem(LEGACY_KEY);
-      if (legacy === "dark" || legacy === "light" || legacy === "system") {
-        window.localStorage.setItem(KEY, legacy);
-        raw = legacy;
+      for (const legacyKey of LEGACY_KEYS) {
+        const legacy = window.localStorage.getItem(legacyKey);
+        if (legacy === "dark" || legacy === "light" || legacy === "system") {
+          window.localStorage.setItem(KEY, legacy);
+          raw = legacy;
+          break;
+        }
       }
     }
     if (raw === "dark" || raw === "light" || raw === "system") return raw;

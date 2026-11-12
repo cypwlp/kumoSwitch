@@ -1,7 +1,7 @@
 {
-  "name": "switchtower",
+  "name": "kumoswitch",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Switch AI CLI providers without rewriting your config",
   "scripts": {
     "dev": "tauri dev",

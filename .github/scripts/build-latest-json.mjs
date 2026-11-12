@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 const [assetsDir = "release-assets", output = "latest.json", argTag] = process.argv.slice(2);
 const tag = argTag || process.env.RELEASE_TAG || "";
-const repo = process.env.RELEASE_REPO || "cypwlp/SwitchTower";
+const repo = process.env.RELEASE_REPO || "cypwlp/kumoSwitch";
 const version = process.env.RELEASE_VERSION || tag.replace(/^v/, "");
 
 if (!tag) throw new Error("release tag is required");

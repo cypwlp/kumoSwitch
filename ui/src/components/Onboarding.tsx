@@ -21,10 +21,10 @@ export function Onboarding({ tools, busy, onImport, onSkip }: Props) {
     return (
       <div className="onboard">
         <div className="onboard-card">
-          <h2>歡迎使用 SwitchTower</h2>
+          <h2>歡迎使用 kumoSwitch</h2>
           <p className="muted">
             沒偵測到任何既有的供應商設定。你可以先新增一個供應商，
-            SwitchTower 會把它寫進對應工具的設定檔。
+            kumoSwitch 會把它寫進對應工具的設定檔。
           </p>
           <div className="onboard-actions">
             <button className="primary" onClick={onSkip}>
@@ -42,7 +42,7 @@ export function Onboarding({ tools, busy, onImport, onSkip }: Props) {
         <span className="pill">第一次啟動</span>
         <h2>把你現有的供應商收進來</h2>
         <p className="muted">
-          以下工具已經有供應商設定。勾選後按一次匯入，SwitchTower 會讀取設定檔建立清單，
+          以下工具已經有供應商設定。勾選後按一次匯入，kumoSwitch 會讀取設定檔建立清單，
           <strong>不會改動你的設定檔</strong>。
         </p>
         <div className="onboard-list">

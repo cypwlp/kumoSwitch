@@ -4,9 +4,9 @@
 # Pulls the repo and publishes the landing page to the bare-IP nginx site.
 set -eu
 
-REPO_URL="https://github.com/cypwlp/SwitchTower.git"
-SRC_DIR="${HOME}/switchtower-src"
-WEB_ROOT="/var/www/switchtower"
+REPO_URL="https://github.com/cypwlp/kumoSwitch.git"
+SRC_DIR="${HOME}/kumoswitch-src"
+WEB_ROOT="/var/www/kumoswitch"
 
 if [ -d "$SRC_DIR/.git" ]; then
   git -C "$SRC_DIR" pull --ff-only
@@ -17,8 +17,8 @@ fi
 sudo mkdir -p "$WEB_ROOT"
 sudo cp -r "$SRC_DIR/site/." "$WEB_ROOT/"
 
-if [ ! -f /etc/nginx/conf.d/switchtower.conf ]; then
-  sudo cp "$SRC_DIR/deploy/nginx-switchtower.conf" /etc/nginx/conf.d/switchtower.conf
+if [ ! -f /etc/nginx/conf.d/kumoswitch.conf ]; then
+  sudo cp "$SRC_DIR/deploy/nginx-kumoswitch.conf" /etc/nginx/conf.d/kumoswitch.conf
 fi
 sudo nginx -t
 sudo systemctl reload nginx

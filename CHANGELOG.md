@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0 — 2026-11-12
+- 品牌更名：SwitchTower → kumoSwitch；GitHub repo、npm／Cargo 套件、安裝包、bundle identifier、資料目錄與 updater 全部遷移。
+- 舊資料會優先從 `%APPDATA%\SwitchTower`／`~/.config/SwitchTower` 遷移，找不到時再回溯 `SwitchYard`；主題、語言與引導狀態也會繼承 `switchtower.*`／`switchyard.*` local storage。
+- macOS Keychain／Linux Secret Service 的主金鑰會在改名後自動從舊 service 複製到 `io.github.cypwlp.kumoswitch`，不影響既有 API Key。
+- 官網移除直接點名競品的比較表，改為描述自身的非破壞性寫入、diff、備份與還原設計。
 ## 0.7.0 — 2026-11-11
 - 品牌更名：SwitchYard → SwitchTower；GitHub repo、安裝包、bundle identifier、資料目錄與 updater 全部遷移。
 - 舊資料會自動從 `%APPDATA%\SwitchYard`／`~/.config/SwitchYard` 遷移到 `SwitchTower`；主題、語言與引導狀態也會從舊 localStorage key 繼承。

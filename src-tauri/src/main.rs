@@ -269,7 +269,7 @@ fn preview(tool: String, provider_id: String) -> Result<Preview, String> {
 /// Write via a sibling temp file so an interrupted write can never leave the
 /// user's config truncated.
 fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    let tmp = path.with_extension("switchtower-tmp");
+    let tmp = path.with_extension("kumoswitch-tmp");
     std::fs::write(&tmp, text)?;
     std::fs::rename(&tmp, path)
 }
@@ -365,7 +365,7 @@ fn export_providers() -> Result<ExportResult, String> {
     let count = data.providers.values().map(|v| v.len()).sum();
     let dir = store::data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("switchtower-export-{}.json", store::stamp()));
+    let path = dir.join(format!("kumoswitch-export-{}.json", store::stamp()));
     let text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
     std::fs::write(&path, text).map_err(|e| format!("匯出失敗：{e}"))?;
     Ok(ExportResult { path: adapters::display_path(&path), count })
@@ -407,7 +407,7 @@ fn import_providers_json(
 fn export_diagnostics() -> Result<ExportResult, String> {
     let data = store::load();
     let mut report = String::new();
-    report.push_str(&format!("SwitchTower {}
+    report.push_str(&format!("kumoSwitch {}
 ", env!("CARGO_PKG_VERSION")));
     report.push_str(&format!("OS: {} {}
 ", std::env::consts::OS, std::env::consts::ARCH));
@@ -445,7 +445,7 @@ fn export_diagnostics() -> Result<ExportResult, String> {
     }
     let dir = store::data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("switchtower-diagnostics-{}.txt", store::stamp()));
+    let path = dir.join(format!("kumoswitch-diagnostics-{}.txt", store::stamp()));
     std::fs::write(&path, report).map_err(|e| format!("寫入失敗：{e}"))?;
     Ok(ExportResult { path: adapters::display_path(&path), count })
 }
@@ -470,10 +470,10 @@ fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, Stri
     let config = store::load().proxy;
     let provider = Provider {
         id: String::new(),
-        config_id: "switchtower-proxy".into(),
-        name: "SwitchTower 代理".into(),
+        config_id: "kumoswitch-proxy".into(),
+        name: "kumoSwitch 代理".into(),
         base_url: format!("http://127.0.0.1:{}/v1", config.port),
-        api_key: "switchtower-proxy".into(),
+        api_key: "kumoswitch-proxy".into(),
         api_key_enc: String::new(),
         model: String::new(),
         kind: String::new(),
@@ -532,7 +532,7 @@ fn spawn_health_loop(app: tauri::AppHandle) {
             }
         }
         if any {
-            let _ = app.emit("switchtower://changed", ());
+            let _ = app.emit("kumoswitch://changed", ());
         }
     });
 }
@@ -644,7 +644,7 @@ mod write_path_tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("switchtower-{tag}-{}", store::stamp()));
+        let dir = std::env::temp_dir().join(format!("kumoswitch-{tag}-{}", store::stamp()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -660,7 +660,7 @@ mod write_path_tests {
         let leftovers: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().contains("switchtower-tmp"))
+            .filter(|e| e.file_name().to_string_lossy().contains("kumoswitch-tmp"))
             .collect();
         assert!(leftovers.is_empty(), "暫存檔沒有被清掉");
         std::fs::remove_dir_all(&dir).ok();

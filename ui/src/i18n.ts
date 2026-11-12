@@ -10,12 +10,12 @@
 
 export type Lang = "zh" | "en";
 
-const KEY = "switchtower.lang";
-const LEGACY_KEY = "switchyard.lang";
+const KEY = "kumoswitch.lang";
+const LEGACY_KEYS = ["switchtower.lang", "switchyard.lang"];
 
 const DICT: Record<string, string> = {
   "AI CLI 供應商切換": "AI CLI provider switcher",
-  "SwitchTower 只改寫供應商相關的那幾個鍵，": "SwitchTower rewrites only the provider keys,",
+  "kumoSwitch 只改寫供應商相關的那幾個鍵，": "kumoSwitch rewrites only the provider keys,",
   "你的註解、外掛、MCP 與其他設定原樣保留。": "your comments, plugins, MCP and other settings stay untouched.",
   "cc-switch 正在接管這個工具": "cc-switch is managing this tool",
   "偵測到代理模式啟用中，套用後可能被 cc-switch 覆蓋。建議先切回直連模式。":
@@ -25,8 +25,8 @@ const DICT: Record<string, string> = {
   "亮色": "Light",
   "暗色": "Dark",
   "系統": "System",
-  "以下工具已經有供應商設定。勾選後按一次匯入，SwitchTower 會讀取設定檔建立清單，":
-    "These tools already have provider settings. Pick the ones to read; SwitchTower only creates its own list,",
+  "以下工具已經有供應商設定。勾選後按一次匯入，kumoSwitch 會讀取設定檔建立清單，":
+    "These tools already have provider settings. Pick the ones to read; kumoSwitch only creates its own list,",
   "不會改動你的設定檔": "your config files are not modified",
   "以下是實際會寫入的變更。只列出被修改的行；未列出的內容一個字都不會動。寫入前會自動建立時間戳備份。":
     "These are the exact changes. Only modified lines are shown; everything else stays byte-identical. A timestamped backup is created before writing.",
@@ -85,7 +85,7 @@ const DICT: Record<string, string> = {
   "格式未實測，請先看 diff": "Format unverified — check the diff first",
   "檔案不存在，將新建": "File missing, will be created",
   "檢查更新": "Check for updates",
-  "歡迎使用 SwitchTower": "Welcome to SwitchTower",
+  "歡迎使用 kumoSwitch": "Welcome to kumoSwitch",
   "此環境不支援自動更新": "Auto-update is unavailable here",
   "每次寫入自動建立時間戳備份，可一鍵還原": "A timestamped backup is taken before every write, restorable in one click",
   "沒有可安裝的更新": "No update to install",
@@ -123,8 +123,8 @@ const DICT: Record<string, string> = {
   "設定檔路徑": "Config path",
   "請先選擇一個工具": "Pick a tool first",
   "讀取檔案失敗": "Could not read the file",
-  "讀取這個工具現有的設定檔，把裡面的供應商收進 SwitchTower":
-    "Read this tool's config file and pull its providers into SwitchTower",
+  "讀取這個工具現有的設定檔，把裡面的供應商收進 kumoSwitch":
+    "Read this tool's config file and pull its providers into kumoSwitch",
   "跳到任何供應商…（輸入名稱、模型或工具）": "Jump to any provider… (name, model or tool)",
   "輸入即篩：名稱、URL、模型…（按 / 聚焦）": "Type to filter… (press /)",
   "送一個最小請求測試這組 Base URL / API Key": "Send one tiny request to test this base URL and key",
@@ -253,10 +253,13 @@ export function readLang(): Lang {
   try {
     let stored = window.localStorage.getItem(KEY);
     if (stored === null) {
-      const legacy = window.localStorage.getItem(LEGACY_KEY);
-      if (legacy === "zh" || legacy === "en") {
-        window.localStorage.setItem(KEY, legacy);
-        stored = legacy;
+      for (const legacyKey of LEGACY_KEYS) {
+        const legacy = window.localStorage.getItem(legacyKey);
+        if (legacy === "zh" || legacy === "en") {
+          window.localStorage.setItem(KEY, legacy);
+          stored = legacy;
+          break;
+        }
       }
     }
     if (stored === "zh" || stored === "en") return stored;
