@@ -57,7 +57,7 @@ fn human_time(secs: u64) -> String {
 pub fn snapshot(tool: &str, files: &[(PathBuf, String)]) -> Result<(String, String), String> {
     let (id, created) = now_stamp();
     let dir = root(tool).join(&id);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("無法建立備份目錄：{e}"))?;
+    crate::secure_fs::ensure_private_dir(&dir).map_err(|e| format!("無法建立備份目錄：{e}"))?;
     let mut entries = Vec::new();
     for (idx, (path, display)) in files.iter().enumerate() {
         if !path.exists() {
@@ -72,9 +72,9 @@ pub fn snapshot(tool: &str, files: &[(PathBuf, String)]) -> Result<(String, Stri
         entries.push(ManifestEntry { original: display.clone(), stored });
     }
     let manifest = Manifest { tool: tool.to_string(), created: created.clone(), entries };
-    std::fs::write(
-        dir.join("manifest.json"),
-        serde_json::to_string_pretty(&manifest).unwrap_or_default(),
+    crate::secure_fs::write_private(
+        &dir.join("manifest.json"),
+        &serde_json::to_string_pretty(&manifest).unwrap_or_default(),
     )
     .map_err(|e| format!("寫入備份清單失敗：{e}"))?;
     prune(tool, KEEP_SNAPSHOTS);

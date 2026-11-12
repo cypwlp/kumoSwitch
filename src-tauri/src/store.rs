@@ -48,6 +48,7 @@ pub fn data_dir() -> PathBuf {
             }
         }
     }
+    let _ = crate::secure_fs::ensure_private_dir(&current);
     current
 }
 
@@ -104,7 +105,7 @@ pub fn save(store: &Store) -> Result<(), String> {
         }
     }
     let text = serde_json::to_string_pretty(&outgoing).map_err(|e| e.to_string())?;
-    std::fs::write(store_path(), text).map_err(|e| format!("無法寫入供應商清單：{e}"))
+    crate::secure_fs::write_private(&store_path(), &text).map_err(|e| format!("無法寫入供應商清單：{e}"))
 }
 
 /// True when any stored key is still plaintext and can be protected.

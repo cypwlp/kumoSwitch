@@ -4,11 +4,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 /// How many samples to keep per provider.
 const KEEP: usize = 40;
 /// Window used for the success-rate figure.
 const WINDOW: usize = 20;
+
+static LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Sample {
@@ -44,10 +47,11 @@ fn save(store: &Store) -> Result<(), String> {
     let dir = crate::store::data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let text = serde_json::to_string(store).map_err(|e| e.to_string())?;
-    std::fs::write(path(), text).map_err(|e| format!("無法寫入測試歷史：{e}"))
+    crate::secure_fs::write_private(&path(), &text).map_err(|e| format!("無法寫入測試歷史：{e}"))
 }
 
 pub fn record(tool: &str, provider_id: &str, ok: bool, ms: u64, status: u16) -> Result<(), String> {
+    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut store = load();
     let bucket = store
         .entry(tool.to_string())
@@ -131,6 +135,7 @@ pub fn overview() -> HealthOverview {
 }
 
 pub fn forget(tool: &str, provider_id: &str) -> Result<(), String> {
+    let _guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut store = load();
     if let Some(bucket) = store.get_mut(tool) {
         bucket.remove(provider_id);

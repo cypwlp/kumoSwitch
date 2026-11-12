@@ -10,6 +10,7 @@ mod jsonc;
 mod net;
 mod presets;
 mod proxy;
+mod secure_fs;
 mod store;
 mod usage;
 mod tray;
@@ -269,9 +270,7 @@ fn preview(tool: String, provider_id: String) -> Result<Preview, String> {
 /// Write via a sibling temp file so an interrupted write can never leave the
 /// user's config truncated.
 fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    let tmp = path.with_extension("kumoswitch-tmp");
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, path)
+    secure_fs::write_preserving(path, text)
 }
 
 fn apply_core(tool: &str, provider_id: &str) -> Result<ApplyResult, String> {
@@ -367,7 +366,7 @@ fn export_providers() -> Result<ExportResult, String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("kumoswitch-export-{}.json", store::stamp()));
     let text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| format!("匯出失敗：{e}"))?;
+    secure_fs::write_private(&path, &text).map_err(|e| format!("匯出失敗：{e}"))?;
     Ok(ExportResult { path: adapters::display_path(&path), count })
 }
 
@@ -446,7 +445,7 @@ fn export_diagnostics() -> Result<ExportResult, String> {
     let dir = store::data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("kumoswitch-diagnostics-{}.txt", store::stamp()));
-    std::fs::write(&path, report).map_err(|e| format!("寫入失敗：{e}"))?;
+    secure_fs::write_private(&path, &report).map_err(|e| format!("寫入失敗：{e}"))?;
     Ok(ExportResult { path: adapters::display_path(&path), count })
 }
 

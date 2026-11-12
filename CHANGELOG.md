@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.1 — 2026-11-12
+- 可靠性：`providers.json`、`history.json`、備份 manifest 與匯出檔改為原子寫入，避免斷電或程序中斷造成半寫檔。
+- 安全性：Unix 上資料目錄收緊為 `0700`、應用檔案為 `0600`；寫回工具設定時保留原有權限位。
+- 併發：健康測試歷史的寫入改為序列化，避免自動檢查與手動測試同時寫入時遺失紀錄。
+- 供應鏈：新增 Dependabot、RustSec / npm production dependency audit、`SECURITY.md` 漏洞回報政策。
+
 ## 0.8.0 — 2026-11-12
 - 品牌更名：SwitchTower → kumoSwitch；GitHub repo、npm／Cargo 套件、安裝包、bundle identifier、資料目錄與 updater 全部遷移。
 - 舊資料會優先從 `%APPDATA%\SwitchTower`／`~/.config/SwitchTower` 遷移，找不到時再回溯 `SwitchYard`；主題、語言與引導狀態也會繼承 `switchtower.*`／`switchyard.*` local storage。

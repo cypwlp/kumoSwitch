@@ -23,7 +23,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **套用前 diff** —— 按下套用不會立刻寫檔，先顯示「目前 → 套用後」的逐行差異與新增／刪除行數，確認後才寫。
 - **自動備份與一鍵還原** —— 每次寫入前把要動的檔案複製到時間戳快照，列表可還原到任一版本。
 - **接管狀態偵測** —— 偵測到其他代理工具正接管同一套設定時會提示，避免兩個工具互相覆蓋。
-- **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\kumoSwitch`。
+- **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\kumoSwitch`；清單與歷史採原子寫入，Unix 上資料目錄為 `0700`、應用檔案為 `0600`。
 - **跨平台金鑰加密** —— Windows 使用 DPAPI；macOS／Linux 用 Keychain／Secret Service 保存隨機主金鑰，再以 AES-256-GCM 加密 `providers.json` 裡的金鑰。舊的明文檔會自動遷移，安全儲存不可用時拒絕寫入明文。
 - **一鍵導入既有供應商** —— 直接從各工具現有的設定檔讀出供應商清單，不必重新輸入。
 - **連線測試** —— 套用前可先打一次 `/models` 確認端點與金鑰，回報 HTTP 狀態與延遲。
@@ -91,6 +91,7 @@ src-tauri/src/
   jsonc.rs       保留格式的 JSON / JSONC 定點編輯器
   yamlpatch.rs   行導向的 YAML 編輯器
   backup.rs      時間戳快照與還原
+  secure_fs.rs   原子寫入與私有檔案權限
   proxy.rs       本機反向代理與有序故障轉移
   store.rs       供應商清單（本機）
   main.rs        Tauri 指令層
@@ -110,17 +111,17 @@ cd src-tauri
 cargo test
 ```
 
-Windows 60 個、macOS／Linux 61 個測試（非 Windows 多一項 AES-GCM 篡改測試），分五類：
+Windows 61 個、macOS／Linux 63 個測試（非 Windows 另含 AES-GCM 與檔案權限測試），分五類：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
 3. **沙箱端到端測試** —— 在暫存目錄真的寫檔再讀回，涵蓋「重複套用冪等」「從無到有建立設定」「Gemini 雙檔寫入」「重新套用不覆蓋自訂 `models[]`／`compat`」。
 4. **代理端到端故障轉移** —— 本機啟動 500／200 上游與代理監聽器，驗證 5xx 與連線失敗都會自動切到下一家，並檢查 header／method 轉發與連接埠重載。
-5. **金鑰加解密往返** —— Windows 驗證 DPAPI；macOS／Linux 的 AES-256-GCM 路徑由三平台 CI 編譯驗證。
+5. **金鑰與儲存安全** —— Windows 驗證 DPAPI；macOS／Linux 驗證 AES-256-GCM、原子寫入與 `0700/0600` 權限。
 
 ## 授權
 
-MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research、Cloudflare 等公司無關；文中第三方產品名稱與商標屬各自所有者。
+MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research、Cloudflare 等公司無關；文中第三方產品名稱與商標屬各自所有者。安全問題請依 [SECURITY.md](SECURITY.md) 私下回報。
 
 
 ## 簽章（目前未啟用）
