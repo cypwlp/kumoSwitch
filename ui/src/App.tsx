@@ -326,9 +326,9 @@ export default function App() {
     setBusy(true);
     try {
       const saved = await api.providerSave(selected.id, payload);
+      await reload(selected.id);
       setModal(null);
       push(`已儲存「${saved.name}」`, "ok");
-      await reload(selected.id);
     } catch (err) {
       push(errorText(err), "err");
     } finally {
@@ -560,9 +560,9 @@ export default function App() {
     setBusy(true);
     try {
       const copy = await api.providerClone(selected.id, modal.provider.id);
+      await reload(selected.id);
       setModal(null);
       push(`已建立完整副本「${copy.name}」`, "ok");
-      await reload(selected.id);
     } catch (err) {
       push(errorText(err), "err");
     } finally {
