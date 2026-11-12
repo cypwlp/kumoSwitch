@@ -106,7 +106,7 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }:
   return (
     <Modal
       narrow
-      title={`${provider ? "編輯供應商" : "新增供應商"} · ${tool.name}`}
+      title={`${provider ? "供應商詳情" : "新增供應商"} · ${tool.name}`}
       onClose={onCancel}
       footer={
         <>
@@ -136,6 +136,11 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }:
           submit();
         }}
       >
+        {provider ? (
+          <div className="note provider-detail-note">
+            {`${provider.name} · ${tool.name} Harness：模型與連線設定`}
+          </div>
+        ) : null}
         <div className="field">
           <label htmlFor="f-preset">從預設選擇（選完仍可修改）</label>
           <select id="f-preset" defaultValue="" onChange={(e) => applyPreset(e.target.value)}>
@@ -154,20 +159,30 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }:
             <label htmlFor="f-name">名稱</label>
             <input
               id="f-name"
-              data-autofocus
+              data-autofocus={provider ? undefined : true}
               value={form.name}
               placeholder="例：OpenCode Go"
               onChange={(e) => set("name")(e.target.value)}
             />
           </div>
           <div className="field">
-            <label htmlFor="f-model">模型</label>
+            <label htmlFor="f-model">預設模型</label>
             <input
               id="f-model"
+              data-autofocus={provider ? true : undefined}
+              list="model-suggestions"
               value={form.model}
               placeholder="例：glm-5.3-flash"
               onChange={(e) => set("model")(e.target.value)}
             />
+            <datalist id="model-suggestions">
+              {Array.from(new Set(presets.flatMap((preset) => preset.models)))
+                .sort((left, right) => left.localeCompare(right))
+                .map((model) => (
+                  <option key={model} value={model} />
+                ))}
+            </datalist>
+            <div className="hint">套用後 Harness 會使用這個模型；可從預設清單快速選取或自行輸入。</div>
           </div>
         </div>
 

@@ -1,10 +1,12 @@
+import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { HistoryMap, Provider, ToolView } from "../types";
-import { ProviderTable, type EditField, type TestState } from "./ProviderTable";
+import { ProviderTable, type TestState } from "./ProviderTable";
 import { WarnIcon } from "./Icons";
 
 interface PanelProps {
   tool: ToolView;
+  activeProvider: Provider | null;
   rows: Provider[];
   total: number;
   filter: string;
@@ -21,7 +23,6 @@ interface PanelProps {
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
   onTest: (provider: Provider) => void;
-  onInlineSave: (provider: Provider, field: EditField, value: string) => void;
   onPalette: () => void;
   onDiagnostics: () => void;
   onCheckUpdate: () => void;
@@ -33,6 +34,7 @@ interface PanelProps {
 
 export function ToolPanel({
   tool,
+  activeProvider,
   rows,
   total,
   filter,
@@ -49,7 +51,6 @@ export function ToolPanel({
   onEdit,
   onDelete,
   onTest,
-  onInlineSave,
   onPalette,
   onDiagnostics,
   onCheckUpdate,
@@ -58,11 +59,44 @@ export function ToolPanel({
   sort,
   onSort,
 }: PanelProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const moreTriggerRef = useRef<HTMLButtonElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !moreRef.current?.contains(event.target)) {
+        setMoreOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMoreOpen(false);
+      moreTriggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    requestAnimationFrame(() => moreMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [moreOpen]);
+
+  const menuAction = (action: () => void) => () => {
+    setMoreOpen(false);
+    action();
+  };
+
   return (
     <section className="panel" key={tool.id}>
       <header className="panel-head">
         <div className="title-row">
           <h2>{tool.name}</h2>
+          <span className="badge subtle">Harness</span>
           <span className="muted">{tool.blurb}</span>
           {tool.verified ? (
             <span className="badge ok">格式已驗證</span>
@@ -82,39 +116,33 @@ export function ToolPanel({
       {tool.takeover ? (
         <div className="banner warn">
           <strong>
-            <WarnIcon /> cc-switch 正在接管這個工具
+            <WarnIcon /> cc-switch 正在接管這個 Harness
           </strong>
           <span>偵測到代理模式啟用中，套用後可能被 cc-switch 覆蓋。建議先切回直連模式。</span>
         </div>
       ) : null}
 
-      <div className="state-card">
-        <div className="state-item">
-          <span className="k">目前 Base URL</span>
-          <span className="v mono">{tool.current.base_url || "—"}</span>
+      <div className="current-strip">
+        <div className="current-provider">
+          <span className="eyebrow">目前套用</span>
+          <strong>{activeProvider?.name || tool.current.model || "尚未選擇供應商"}</strong>
+          {tool.current.model ? <code>{tool.current.model}</code> : null}
         </div>
-        <div className="state-item">
-          <span className="k">目前模型</span>
-          <span className="v mono">{tool.current.model || "—"}</span>
+        <div className="current-meta">
+          <span className="current-url mono" title={tool.current.base_url || "尚未設定 Base URL"}>
+            {tool.current.base_url || "尚未設定 Base URL"}
+          </span>
+          <span>金鑰 {tool.current.api_key_tail || "—"}</span>
         </div>
-        <div className="state-item">
-          <span className="k">目前金鑰</span>
-          <span className="v mono">{tool.current.api_key_tail || "—"}</span>
+        <span className="current-restart">{tool.restart}</span>
+      </div>
+
+      <div className="provider-list-head">
+        <div>
+          <h3>已設定的供應商</h3>
+          <p>這裡列出 {tool.name} Harness 的供應商。點擊供應商即可查看它的模型、Base URL 與金鑰設定。</p>
         </div>
-        <div className="state-item">
-          <span className="k">重啟</span>
-          <span className="v small">{tool.restart}</span>
-        </div>
-        <div className="state-item state-source">
-          <span className="k">狀態來源</span>
-          {tool.current.source ? (
-            <span className="v mono" title="目前狀態是從這個鍵讀出來的">
-              {tool.current.source}
-            </span>
-          ) : (
-            <span className="v none">由工具介面選擇</span>
-          )}
-        </div>
+        <span className="badge subtle">{total} 個供應商</span>
       </div>
 
       <div className="toolbar">
@@ -122,7 +150,7 @@ export function ToolPanel({
           ref={searchRef}
           className="search"
           type="search"
-          placeholder="輸入即篩：名稱、URL、模型…（按 / 聚焦）"
+          placeholder="搜尋供應商名稱、URL 或模型…（按 / 聚焦）"
           autoComplete="off"
           value={filter}
           aria-label="篩選供應商"
@@ -146,39 +174,58 @@ export function ToolPanel({
           className="ghost"
           onClick={onImportConfig}
           disabled={busy}
-          title="讀取這個工具現有的設定檔，把裡面的供應商收進 kumoSwitch"
+          title="讀取這個 Harness 現有的設定檔，把裡面的供應商收進 kumoSwitch"
         >
           從設定檔導入
           {tool.importable > 0 ? <span className="cnt">{tool.importable}</span> : null}
         </button>
-        <details className="more">
-          <summary className="ghost">更多</summary>
-          <div className="more-menu">
-            <button onClick={onPalette}>快速切換 <kbd>Ctrl</kbd><kbd>K</kbd></button>
-            <button onClick={onBackups}>備份紀錄</button>
-            <button onClick={onDiagnostics}>匯出診斷摘要</button>
-            <button onClick={onCheckUpdate}>檢查更新</button>
-            <button onClick={onToggleAutoHealth}>
-              {autoHealth ? "✓ 自動健康檢查（10 分鐘）" : "自動健康檢查（關）"}
-            </button>
-          </div>
-        </details>
+        <div className={`more${moreOpen ? " open" : ""}`} ref={moreRef}>
+          <button
+            ref={moreTriggerRef}
+            type="button"
+            className="ghost more-trigger"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            aria-controls="harness-more-menu"
+            onClick={() => setMoreOpen((open) => !open)}
+          >
+            更多
+          </button>
+          {moreOpen ? (
+            <div className="more-menu" id="harness-more-menu" role="menu" ref={moreMenuRef}>
+              <button type="button" role="menuitem" onClick={menuAction(onPalette)}>
+                快速切換 <kbd>Ctrl</kbd><kbd>K</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onBackups)}>
+                備份紀錄
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onDiagnostics)}>
+                匯出診斷摘要
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onCheckUpdate)}>
+                檢查更新
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onToggleAutoHealth)}>
+                {autoHealth ? "✓ 自動健康檢查（10 分鐘）" : "自動健康檢查（關）"}
+              </button>
+            </div>
+          ) : null}
+        </div>
         <button className="primary" onClick={onAdd} title="新增供應商 (Ctrl+N)">
           ＋ 新增供應商
         </button>
       </div>
 
       <ProviderTable
-        tool={tool}
         rows={rows}
         total={total}
         tests={tests}
         history={history}
+        activeId={tool.active_id}
         onApply={onApply}
         onEdit={onEdit}
         onDelete={onDelete}
         onTest={onTest}
-        onInlineSave={onInlineSave}
       />
     </section>
   );

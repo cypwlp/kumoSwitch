@@ -234,6 +234,26 @@ const DICT: Record<string, string> = {
   "開啟所在資料夾": "Open containing folder",
   "把所有供應商加密匯出成 .kumoswitch": "Export every provider as an encrypted .kumoswitch backup",
   "從 .kumoswitch 加密備份或舊 JSON 匯入供應商": "Import an encrypted .kumoswitch backup or legacy JSON",
+  "篩選 Harness…": "Filter Harnesses…",
+  "篩選 Harness": "Filter Harnesses",
+  "Harness 清單": "Harness list",
+  "選擇左側的 Harness 開始": "Choose a Harness on the left",
+  "點擊供應商查看模型與設定 · 套用前先看 diff": "Click a provider to view its model and settings · review the diff before applying",
+  "已設定的供應商": "Configured providers",
+  "目前套用": "Currently applied",
+  "尚未選擇供應商": "No provider selected",
+  "尚未設定 Base URL": "No base URL configured",
+  "預設模型": "Default model",
+  "未指定，沿用 Harness 目前模型": "Not specified; inherits the Harness model",
+  "查看模型與連線設定": "View model and connection settings",
+  "重新套用": "Reapply",
+  "cc-switch 正在接管這個 Harness": "cc-switch is managing this Harness",
+  "供應商詳情": "Provider details",
+  "套用後 Harness 會使用這個模型；可從預設清單快速選取或自行輸入。":
+    "The Harness will use this model after applying. Pick a suggested model or enter one manually.",
+  "搜尋供應商名稱、URL 或模型…（按 / 聚焦）": "Search provider name, URL or model… (press /)",
+  "讀取這個 Harness 現有的設定檔，把裡面的供應商收進 kumoSwitch":
+    "Read this Harness config and import its providers into kumoSwitch",
 };
 
 interface Rule {
@@ -243,6 +263,10 @@ interface Rule {
 
 const RULES: Rule[] = [
   { re: /^已儲存「(.+)」$/, out: (m) => `Saved “${m[1]}”` },
+  { re: /^(.+) · (.+) Harness：模型與連線設定$/, out: (m) => `${m[1]} · ${m[2]} Harness: model and connection settings` },
+  { re: /^這裡列出 (.+) Harness 的供應商。點擊供應商即可查看它的模型、Base URL 與金鑰設定。$/, out: (m) => `Providers configured for the ${m[1]} Harness. Click one to view its model, base URL and key settings.` },
+  { re: /^查看供應商 (.+) 的模型與設定$/, out: (m) => `View model and settings for provider ${m[1]}` },
+  { re: /^供應商 (.+) 的操作$/, out: (m) => `Actions for provider ${m[1]}` },
   { re: /^已建立完整副本「(.+)」$/, out: (m) => `Created a complete copy of “${m[1]}”` },
   { re: /^已匯入舊明文格式 (\d+) 筆，略過 (\d+) 筆$/, out: (m) => `Imported ${m[1]} legacy plaintext entries; skipped ${m[2]}` },
   { re: /^已解密匯入 (\d+) 筆，略過 (\d+) 筆$/, out: (m) => `Decrypted and imported ${m[1]} entries; skipped ${m[2]}` },

@@ -25,7 +25,7 @@ import { Onboarding } from "./components/Onboarding";
 import { StatsView } from "./components/StatsView";
 import { ProxyView } from "./components/ProxyView";
 import { Toasts, useToasts } from "./components/Toasts";
-import type { EditField, TestState } from "./components/ProviderTable";
+import type { TestState } from "./components/ProviderTable";
 
 type ModalState =
   | { kind: "editor"; provider: Provider | null }
@@ -336,28 +336,6 @@ export default function App() {
     }
   };
 
-  const inlineSave = async (provider: Provider, field: EditField, value: string) => {
-    if (!selected) return;
-    const next = value.trim();
-    if (next === provider[field]) return;
-    if (field !== "model" && !next) {
-      push("名稱與 Base URL 不能空白", "err");
-      return;
-    }
-    try {
-      await api.providerSave(selected.id, { ...provider, [field]: next });
-      push(`已更新「${next}」`, "ok");
-      await reload(selected.id);
-      requestAnimationFrame(() => {
-        document
-          .querySelector<HTMLTableRowElement>(`tr[data-row="${provider.id}"]`)
-          ?.focus({ preventScroll: true });
-      });
-    } catch (err) {
-      push(errorText(err), "err");
-    }
-  };
-
   const askDelete = (provider: Provider) => {
     if (!selected) return;
     const toolId = selected.id;
@@ -665,6 +643,7 @@ export default function App() {
             <ToolPanel
               key={selected.id}
               tool={selected}
+              activeProvider={providers.find((provider) => provider.id === selected.active_id) ?? null}
               rows={rows}
               total={providers.length}
               filter={filter}
@@ -688,7 +667,6 @@ export default function App() {
               onEdit={(p) => openEditor(p)}
               onDelete={askDelete}
               onTest={(p) => void runTest(p)}
-              onInlineSave={(p, field, value) => void inlineSave(p, field, value)}
             />
           ) : showOnboarding ? (
             <Onboarding
@@ -700,7 +678,7 @@ export default function App() {
           ) : (
             <div className="welcome">
               <div className="welcome-card">
-                <h2>選擇左側的工具開始</h2>
+                <h2>選擇左側的 Harness 開始</h2>
                 <p>
                   kumoSwitch 只改寫供應商相關的那幾個鍵，
                   <br />
@@ -712,9 +690,7 @@ export default function App() {
                   <li>所有資料只留在本機</li>
                 </ul>
                 <div className="kbd-hint">
-                  <kbd>/</kbd> 聚焦搜尋 · <kbd>Ctrl</kbd>+<kbd>N</kbd> 新增供應商 ·{" "}
-                  <kbd>↑</kbd>
-                  <kbd>↓</kbd> 移動列 · <kbd>Enter</kbd> 看 diff · <kbd>F2</kbd> 行內編輯
+                  <kbd>/</kbd> 聚焦搜尋 · <kbd>Ctrl</kbd>+<kbd>N</kbd> 新增供應商 · 點擊供應商查看模型與設定 · 套用前先看 diff
                   {MOCK ? " · 預覽模式（假資料）" : ""}
                 </div>
               </div>

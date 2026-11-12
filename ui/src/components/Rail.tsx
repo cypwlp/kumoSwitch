@@ -69,14 +69,14 @@ export function Rail({
       <input
         className="rail-search"
         type="search"
-        placeholder="篩選工具…"
+        placeholder="篩選 Harness…"
         autoComplete="off"
         value={filter}
-        aria-label="篩選工具"
+        aria-label="篩選 Harness"
         onChange={(event) => onFilter(event.target.value)}
       />
 
-      <nav className="tools" aria-label="工具清單">
+      <nav className="tools" aria-label="Harness 清單">
         {visible.map((t) => (
           <button
             key={t.id}

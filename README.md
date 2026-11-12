@@ -28,7 +28,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **一鍵導入既有供應商** —— 直接從各工具現有的設定檔讀出供應商清單，不必重新輸入。
 - **連線測試** —— 套用前可先打一次 `/models` 確認端點與金鑰，回報 HTTP 狀態與延遲。
 - **加密清單備份** —— 換機時用 Argon2id＋AES-256-GCM 加密的 `.kumoswitch` 檔搬移供應商與金鑰；仍可匯入舊版明文 JSON。
-- **亮色／暗色／跟隨系統主題**、diff 語法高亮、鍵盤操作、表格行內編輯。
+- **亮色／暗色／跟隨系統主題**、diff 語法高亮、可點擊的 Harness 供應商卡片與供應商詳情。
 - **系統托盤常駐** —— 托盤右鍵可直接切換任一工具的任何供應商；關窗不退出，單一實例。
 - **Ctrl+K 命令面板** —— 跨 10 個工具搜尋供應商，Enter 直接看 diff。
 - **首次啟動引導** —— 自動偵測既有設定並一鍵導入，不必從零輸入。
@@ -114,14 +114,14 @@ cd src-tauri
 cargo test
 ```
 
-Windows 72 個、macOS／Linux 74 個 Rust 測試（非 Windows 另含平台金鑰與檔案權限測試），另有 5 個 Playwright Chromium UI E2E，分六類：
+Windows 72 個、macOS／Linux 74 個 Rust 測試（非 Windows 另含平台金鑰與檔案權限測試），另有 6 個 Playwright Chromium UI E2E，分六類：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
 3. **沙箱端到端測試** —— 在暫存目錄真的寫檔再讀回，涵蓋「重複套用冪等」「從無到有建立設定」「Gemini 雙檔寫入」「重新套用不覆蓋自訂 `models[]`／`compat`」。
 4. **代理端到端故障轉移與 SSE** —— 本機啟動 500／200 上游與代理監聽器，驗證 5xx／連線失敗換手、header／method 轉發、client 重用、413 body 上限，以及 SSE 在 upstream 結束前先送達、多條並行串流互不串線。
 5. **金鑰與儲存安全** —— Windows 驗證 DPAPI；macOS／Linux 驗證 AES-GCM、原子寫入與 `0700/0600` 權限；另測 Argon2id／AES-256-GCM 備份往返、錯誤密碼與 malformed envelope。
-6. **Playwright UI E2E** —— 在 mock backend 驗證 API Key 遮罩／明確查看／清除、加密匯出與匯入密碼流程，以及 Command Code 的非破壞性 diff。
+6. **Playwright UI E2E** —— 在 mock backend 驗證 Harness 供應商詳情、API Key 遮罩／查看／清除、「更多」選單關閉、加密匯出與匯入密碼流程，以及 Command Code 的非破壞性 diff。
 
 ## 授權
 

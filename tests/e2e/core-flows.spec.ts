@@ -5,15 +5,15 @@ const APP = "/?mock=1&onboarded=1#codex,lang=zh";
 test.beforeEach(async ({ page }) => {
   await page.goto(APP);
   await expect(page.getByRole("heading", { name: "Codex", exact: true })).toBeVisible();
-  await expect(page.getByRole("row", { name: "供應商 OpenCode Go" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" })).toBeVisible();
 });
 
-test("API Key stays masked until explicitly revealed", async ({ page }) => {
-  const row = page.getByRole("row", { name: "供應商 OpenCode Go" });
-  await row.getByRole("button", { name: "編輯", exact: true }).click();
+test("provider details show the model while keeping the API Key masked", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
 
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("heading", { name: "編輯供應商 · Codex" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "供應商詳情 · Codex" })).toBeVisible();
+  await expect(dialog.getByLabel("預設模型")).toHaveValue("glm-5.3-flash");
   const key = dialog.getByLabel("API Key");
   await expect(key).toHaveValue("");
   await expect(key).toHaveAttribute("type", "password");
@@ -26,8 +26,8 @@ test("API Key stays masked until explicitly revealed", async ({ page }) => {
 });
 
 test("API Key can be explicitly cleared without rewriting other fields", async ({ page }) => {
-  const row = page.getByRole("row", { name: "供應商 OpenCode Go" });
-  await row.getByRole("button", { name: "編輯", exact: true }).click();
+  const openProvider = page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" });
+  await openProvider.click();
 
   let dialog = page.getByRole("dialog");
   const key = dialog.getByLabel("API Key");
@@ -37,12 +37,28 @@ test("API Key can be explicitly cleared without rewriting other fields", async (
   await dialog.getByRole("button", { name: "儲存", exact: true }).click();
   await expect(dialog).toBeHidden();
 
-  await row.getByRole("button", { name: "編輯", exact: true }).click();
+  await openProvider.click();
   dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("API Key")).toHaveValue("");
   await expect(dialog.getByLabel("API Key")).toHaveAttribute("placeholder", "sk-...");
   await expect(dialog.getByRole("button", { name: "查看", exact: true })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "清除金鑰", exact: true })).toHaveCount(0);
+});
+
+test("Harness more menu closes on outside click and Escape", async ({ page }) => {
+  const trigger = page.getByRole("button", { name: /^更多/ });
+  await trigger.click();
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+
+  await page.getByRole("heading", { name: "已設定的供應商" }).click();
+  await expect(menu).toBeHidden();
+
+  await trigger.click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
 });
 
 test("encrypted export requires a confirmed password", async ({ page }) => {
@@ -82,8 +98,8 @@ test("encrypted backup import opens the password flow", async ({ page }) => {
 });
 
 test("Command Code preview shows the intended non-destructive diff", async ({ page }) => {
-  const row = page.getByRole("row", { name: "供應商 Command Code" });
-  await row.getByRole("button", { name: "套用", exact: true }).click();
+  const provider = page.getByRole("article", { name: "供應商 Command Code" });
+  await provider.getByRole("button", { name: "套用", exact: true }).click();
 
   const dialog = page.getByRole("dialog");
   await expect(
