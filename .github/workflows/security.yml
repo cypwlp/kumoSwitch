@@ -14,16 +14,13 @@ permissions:
 jobs:
   rust-audit:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: write
-      checks: write
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2.0.0
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: src-tauri
+          tool: cargo-audit
+      - name: Audit Rust dependencies
+        run: cargo audit --file src-tauri/Cargo.lock
 
   npm-audit:
     runs-on: ubuntu-latest
