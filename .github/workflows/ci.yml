@@ -44,10 +44,14 @@ jobs:
         shell: pwsh
         run: |
           $pattern = '^failures:|FAILED|panicked|assertion|^---- .* stdout ----'
-          Get-Content cargo-test.log |
-            Select-String -Pattern $pattern |
-            Select-Object -Last 40 |
-            ForEach-Object {
-              $message = $_.Line.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-              Write-Output "::error title=Rust test failure::$message"
-            }
+          $lines = Get-Content cargo-test.log
+          $matches = $lines | Select-String -Pattern $pattern | Select-Object -Last 40
+          if (-not $matches) {
+            # Compile errors and setup failures often do not match test panic patterns.
+            $matches = $lines | Select-Object -Last 80
+          }
+          $matches | ForEach-Object {
+            $line = if ($_.Line) { $_.Line } else { [string]$_ }
+            $message = $line.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Rust test failure::$message"
+          }
