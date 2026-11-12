@@ -48,25 +48,6 @@ test.beforeAll(async () => {
   mkdirSync(localAppData, { recursive: true });
   mkdirSync(join(root, "tmp"), { recursive: true });
   mkdirSync(join(home, ".codex"), { recursive: true });
-  writeFileSync(join(dataDir, "providers.json"), JSON.stringify({
-    providers: {
-      codex: [{
-        id: "e2e-provider",
-        config_id: "e2e-provider",
-        name: "E2E Provider",
-        base_url: "https://e2e.invalid/v1",
-        model: "e2e-model",
-        models: [{ id: "e2e-model", name: "E2E Model" }],
-        kind: "responses",
-        note: "real Tauri smoke test",
-        last_used: 0,
-      }],
-    },
-    active: {},
-    previous_active: {},
-    auto_health: false,
-    proxy: { enabled: false, port: 27891, stack: [], strategy: "ordered", policies: {} },
-  }, null, 2));
   writeFileSync(join(home, ".codex", "config.toml"), [
     'model = "e2e-model"',
     'model_provider = "e2e-provider"',
