@@ -105,16 +105,32 @@
         <div class="ico">⌘</div>
         <h3>Ctrl+K 直接跳到</h3>
         <p>
-          一個搜尋框橫跨 10 個工具的全部供應商。輸入名稱、模型或工具名，
+          一個搜尋框橫跨 13 個工具的全部供應商。輸入名稱、模型或工具名，
           Enter 就看 diff，確認後套用。
         </p>
       </article>
       <article class="card">
         <div class="ico">⇄</div>
-        <h3>供應商集中管理</h3>
+        <h3>供應商 → 多模型管理</h3>
         <p>
-          同一組 Base URL／Key／模型可以橫跨多個工具重複使用。清單支援打字即篩，
-          不用在下拉選單裡翻找。
+          每個供應商可以保存多個模型與能力資訊。點進詳情就能看模型清單、單獨測試延遲，
+          或直接切換模型並預覽 diff，不必重填整個供應商。
+        </p>
+      </article>
+      <article class="card">
+        <div class="ico">⌁</div>
+        <h3>智慧代理與可觀測性</h3>
+        <p>
+          固定順序、優先級、加權與健康優先路由；每個供應商可設定 timeout、429 退避、
+          熔斷與併發上限，並即時查看成功率、TTFB 與換手原因。
+        </p>
+      </article>
+      <article class="card">
+        <div class="ico">◇</div>
+        <h3>匯入前先解決衝突</h3>
+        <p>
+          掃描所有 Harness 後先預覽新增與衝突項目，再選保留本機、覆蓋、合併模型或建立副本，
+          不再只能默默跳過重複供應商。
         </p>
       </article>
       <article class="card">
@@ -173,7 +189,7 @@
           DSH 是 YAML 的 <code>llm-pi-ai.providers</code> 加 <code>agent-default-model</code>。
         </p>
         <p>
-          這些差異都寫在各自的轉接器裡，你只需要填名稱、Base URL、API Key 和模型。
+          這些差異都寫在各自的轉接器裡，你只需要填名稱、Base URL、API Key，接著管理這個供應商底下的一組模型。
         </p>
       </div>
     </div>
@@ -199,7 +215,7 @@
         <p>每次寫入建立時間戳快照。格式不符、端點失效或想改回舊供應商時，都能從同一份清單恢復。</p>
       </article>
     </div>
-    <p class="fineprint">kumoSwitch 的代理／故障轉移仍是 Beta；核心工作是安全、可稽核地切換供應商。</p>
+    <p class="fineprint">代理／故障轉移、逐模型健康度與匯入衝突處理都已整合進同一套可稽核流程；核心仍是安全地切換供應商。</p>
   </section>
 
   <section class="section wrap" id="dl">

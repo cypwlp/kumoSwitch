@@ -24,8 +24,10 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **自動備份與一鍵還原** —— 每次寫入前把要動的檔案複製到時間戳快照，列表可還原到任一版本。
 - **接管狀態偵測** —— 偵測到其他代理工具正接管同一套設定時會提示，避免兩個工具互相覆蓋。
 - **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\kumoSwitch`；清單與歷史採原子寫入，Unix 上資料目錄為 `0700`、應用檔案為 `0600`。
-- **跨平台金鑰加密＋遮罩** —— Windows 使用 DPAPI；macOS／Linux 用 Keychain／Secret Service 保存隨機主金鑰，再以 AES-256-GCM 加密 `providers.json` 裡的金鑰。清單與 diff 只顯示末四碼，完整金鑰必須在編輯器按下「查看」才會載入。舊的明文檔會自動遷移，安全儲存不可用時拒絕寫入明文。
-- **一鍵導入既有供應商** —— 直接從各工具現有的設定檔讀出供應商清單，不必重新輸入。
+- **跨平台金鑰加密＋遮罩** —— Windows 使用 DPAPI；macOS／Linux 用 Keychain／Secret Service 保存隨機主金鑰，再以 AES-256-GCM 加密 `providers.json` 裡的金鑰。清單與 diff 只顯示末四碼，完整金鑰必須在編輯器按下「查看」才會載入，並於 30 秒後自動隱藏；複製後也會嘗試在 30 秒清空剪貼簿。舊的明文檔會自動遷移，安全儲存不可用時拒絕寫入明文。
+- **供應商 → 多模型管理** —— 每個供應商可保存多個模型、顯示名稱、context window、max output、reasoning／vision／tools 能力與自訂 metadata；可單獨切換模型並直接預覽 diff，不必改動整個供應商。
+- **逐模型健康度** —— 每個模型可獨立檢查 `/models` 是否列出該 ID，保存最近 20 次狀態與延遲；測試不會送 prompt，也不產生推論費用。
+- **一鍵導入與衝突預覽** —— 掃描所有 Harness 後先顯示新增／衝突項目，可保留本機、用設定檔覆蓋、合併模型或建立副本。
 - **連線測試** —— 套用前可先打一次 `/models` 確認端點與金鑰，回報 HTTP 狀態與延遲。
 - **加密清單備份** —— 換機時用 Argon2id＋AES-256-GCM 加密的 `.kumoswitch` 檔搬移供應商與金鑰；仍可匯入舊版明文 JSON。
 - **亮色／暗色／跟隨系統主題**、diff 語法高亮、可點擊的 Harness 供應商卡片與供應商詳情。
@@ -36,7 +38,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **自動健康檢查** —— 可開啟每 10 分鐘重測已有歷史的供應商，健康度欄不用手動按。
 - **統計儀表板** —— 讀取 Claude Code／Codex 本機 session log，算 token 用量、每日趨勢與成本估算（只在本機計算）。
 - **預設供應商目錄** —— 16 個已知端點一鍵帶入，不用手打 base URL。
-- **代理／故障轉移（Beta）** —— 本地反向代理，依序備援、429/5xx 自動換下一個；共用連線池、32 MiB body 上限與真正即時 flush 的 SSE 串流。
+- **智慧代理／故障轉移** —— 本地反向代理支援固定順序、優先級、加權與健康優先路由；每個供應商可設定 timeout、429 退避、熔斷、最大併發，並提供成功率、TTFB、換手與脫敏失敗原因。共用連線池、32 MiB body 上限與真正即時 flush 的 SSE 串流。
 - **跨平台** —— Windows／Linux／macOS 皆由 CI 建置，main 每次推送跑三平台測試。
 - **跨平台自動更新** —— Windows 安裝版、macOS Apple Silicon／Intel 與 Linux AppImage 共用一份簽章驗證的 `latest.json`；可攜版與 Linux deb 仍建議手動替換。
 
@@ -94,9 +96,11 @@ src-tauri/src/
   yamlpatch.rs   行導向的 YAML 編輯器
   backup.rs      時間戳快照與還原
   secure_fs.rs   原子寫入與私有檔案權限
-  proxy.rs       本機反向代理、連線池與有序故障轉移
+  net.rs         連線與逐模型 /models 檢查
+  proxy.rs       本機反向代理、智慧路由、熔斷與觀測
   export_crypto.rs  Argon2id / AES-256-GCM 加密備份
-  store.rs       供應商清單（本機）
+  audit.rs       敏感操作稽核紀錄
+  store.rs       供應商清單、模型選擇與排序（本機）
   main.rs        Tauri 指令層
 ui/              React 18 + Vite + TypeScript 介面
 site/            GitHub Pages 落地頁
@@ -114,14 +118,14 @@ cd src-tauri
 cargo test
 ```
 
-Windows 72 個、macOS／Linux 74 個 Rust 測試（非 Windows 另含平台金鑰與檔案權限測試），另有 6 個 Playwright Chromium UI E2E，分六類：
+Windows 84、macOS／Linux 另含平台金鑰與檔案權限測試；另有 14 個 Playwright Chromium UI E2E，以及可在 Windows 建置產物上執行的真實 Tauri WebView E2E。主要涵蓋：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
 3. **沙箱端到端測試** —— 在暫存目錄真的寫檔再讀回，涵蓋「重複套用冪等」「從無到有建立設定」「Gemini 雙檔寫入」「重新套用不覆蓋自訂 `models[]`／`compat`」。
-4. **代理端到端故障轉移與 SSE** —— 本機啟動 500／200 上游與代理監聽器，驗證 5xx／連線失敗換手、header／method 轉發、client 重用、413 body 上限，以及 SSE 在 upstream 結束前先送達、多條並行串流互不串線。
+4. **代理端到端故障轉移與 SSE** —— 本機啟動 500／200 上游與代理監聽器，驗證策略排序、timeout、熔斷、最大併發、5xx／連線失敗換手、header／method 轉發、client 重用、413 body 上限，以及 SSE 先送達與多條並行串流互不串線。
 5. **金鑰與儲存安全** —— Windows 驗證 DPAPI；macOS／Linux 驗證 AES-GCM、原子寫入與 `0700/0600` 權限；另測 Argon2id／AES-256-GCM 備份往返、錯誤密碼與 malformed envelope。
-6. **Playwright UI E2E** —— 在 mock backend 驗證 Harness 供應商詳情、API Key 遮罩／查看／清除、「更多」選單關閉、加密匯出與匯入密碼流程，以及 Command Code 的非破壞性 diff。
+6. **Playwright UI E2E** —— 驗證 Harness 供應商詳情、多模型測試與快速切換、API Key 遮罩／查看／清除、窄視窗、視覺回歸、代理觀測、匯入衝突、加密匯出與匯入密碼流程，以及 Command Code 的非破壞性 diff。
 
 ## 授權
 
