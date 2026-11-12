@@ -1,6 +1,6 @@
 [package]
 name = "kumoswitch"
-version = "0.9.1"
+version = "0.10.0"
 description = "Switch AI CLI providers without rewriting your config"
 edition = "2021"
 rust-version = "1.88"
@@ -13,6 +13,7 @@ tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 toml_edit = "0.22"
@@ -22,6 +23,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 aes-gcm = { version = "0.10", features = ["zeroize"] }
 argon2 = "0.5"
 bytes = "1"
+zeroize = "1"
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

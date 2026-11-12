@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adapters;
+mod audit;
 mod backup;
 mod crypto;
 mod export_crypto;
@@ -17,8 +18,9 @@ mod usage;
 mod tray;
 mod yamlpatch;
 
-use adapters::{CurrentState, Fmt, Provider, ToolSpec, TOOLS};
+use adapters::{CurrentState, Fmt, ModelCheck, ModelProfile, Provider, ToolSpec, TOOLS};
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 #[derive(Serialize)]
 struct ToolView {
@@ -33,6 +35,7 @@ struct ToolView {
     takeover: bool,
     provider_count: usize,
     active_id: Option<String>,
+    previous_id: Option<String>,
     current: CurrentState,
     kind_choices: Vec<&'static str>,
     importable: usize,
@@ -52,6 +55,7 @@ struct FileDiff {
 struct Preview {
     files: Vec<FileDiff>,
     warnings: Vec<String>,
+    changed_fields: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -60,6 +64,12 @@ struct ApplyResult {
     backup_id: Option<String>,
     written: Vec<String>,
     message: String,
+}
+
+#[derive(Serialize)]
+struct ModelTestResult {
+    model: ModelProfile,
+    result: net::TestResult,
 }
 
 #[derive(Serialize)]
@@ -73,13 +83,15 @@ struct ProviderView {
     api_key_masked: String,
     has_api_key: bool,
     model: String,
+    models: Vec<ModelProfile>,
     kind: String,
     note: String,
     last_used: u64,
 }
 
 impl From<Provider> for ProviderView {
-    fn from(provider: Provider) -> Self {
+    fn from(mut provider: Provider) -> Self {
+        adapters::normalize_provider_models(&mut provider);
         let has_api_key = !provider.api_key.is_empty();
         let api_key_masked = mask_key(&provider.api_key);
         ProviderView {
@@ -91,6 +103,7 @@ impl From<Provider> for ProviderView {
             api_key_masked,
             has_api_key,
             model: provider.model,
+            models: provider.models,
             kind: provider.kind,
             note: provider.note,
             last_used: provider.last_used,
@@ -115,6 +128,8 @@ struct ProviderInput {
     #[serde(default)]
     model: String,
     #[serde(default)]
+    models: Vec<ModelProfile>,
+    #[serde(default)]
     kind: String,
     #[serde(default)]
     note: String,
@@ -124,7 +139,7 @@ struct ProviderInput {
 
 impl From<ProviderInput> for Provider {
     fn from(provider: ProviderInput) -> Self {
-        Provider {
+        let mut provider = Provider {
             id: provider.id,
             config_id: provider.config_id,
             name: provider.name,
@@ -132,10 +147,13 @@ impl From<ProviderInput> for Provider {
             api_key: provider.api_key,
             api_key_enc: String::new(),
             model: provider.model,
+            models: provider.models,
             kind: provider.kind,
             note: provider.note,
             last_used: provider.last_used,
-        }
+        };
+        adapters::normalize_provider_models(&mut provider);
+        provider
     }
 }
 
@@ -185,12 +203,41 @@ struct ImportResult {
 struct ExportResult {
     path: String,
     count: usize,
+    sha256: Option<String>,
 }
 
 #[derive(Serialize)]
 struct JsonImportResult {
     imported: usize,
     skipped: usize,
+}
+
+#[derive(Serialize)]
+struct ProviderConfigPreview {
+    file: String,
+    fmt: &'static str,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ImportCandidate {
+    tool: String,
+    tool_name: String,
+    config_id: String,
+    name: String,
+    base_url: String,
+    model: String,
+    models: Vec<ModelProfile>,
+    kind: String,
+    conflict: bool,
+    differences: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct ImportDecision {
+    tool: String,
+    config_id: String,
+    action: String,
 }
 
 fn takeover_state(tool: &str) -> bool {
@@ -243,6 +290,11 @@ fn tool_list() -> Vec<ToolView> {
                 })
                 .map(|p| p.id.clone())
                 .or_else(|| data.active.get(spec.id).cloned());
+            let previous_id = data
+                .previous_active
+                .get(spec.id)
+                .filter(|id| providers.iter().any(|provider| &provider.id == *id))
+                .cloned();
             let path = adapters::resolve_file(spec, spec.default_file);
             ToolView {
                 id: spec.id,
@@ -262,6 +314,7 @@ fn tool_list() -> Vec<ToolView> {
                 takeover: takeover_state(spec.id),
                 provider_count: providers.len(),
                 active_id,
+                previous_id,
                 current,
                 kind_choices: spec.kind_choices.to_vec(),
                 importable: adapters::discover(spec).len(),
@@ -295,6 +348,7 @@ fn provider_save(
     let mut provider: Provider = provider.into();
     configured_kind(spec, &mut provider);
     let saved = store::upsert_with_key_action(&tool, provider, clear_key)?;
+    audit::record("provider.save", format!("{tool}:{}", saved.id));
     tray::refresh(&app);
     Ok(saved.into())
 }
@@ -321,13 +375,82 @@ fn reveal_provider_key(tool: String, id: String) -> Result<String, String> {
     if provider.api_key.is_empty() {
         return Err("這個供應商沒有可用的 API Key".into());
     }
+    audit::record("provider.reveal_key", format!("{tool}:{id}"));
     Ok(provider.api_key)
+}
+
+#[tauri::command]
+fn provider_select_model(
+    tool: String,
+    id: String,
+    model: String,
+    app: tauri::AppHandle,
+) -> Result<ProviderView, String> {
+    let saved = store::select_model(&tool, &id, &model)?;
+    audit::record("provider.select_model", format!("{tool}:{id}:{model}"));
+    tray::refresh(&app);
+    Ok(saved.into())
+}
+
+#[tauri::command]
+fn test_model(tool: String, provider_id: String, model_id: String) -> Result<ModelTestResult, String> {
+    let (_, mut provider) = load_provider(&tool, &provider_id)?;
+    if !provider.models.iter().any(|model| model.id == model_id) {
+        provider.api_key.zeroize();
+        return Err(format!("這個供應商沒有模型「{model_id}」"));
+    }
+    let result = net::probe_model(
+        &provider.base_url,
+        &provider.api_key,
+        tool == "claude",
+        &model_id,
+    );
+    let recorded = store::record_model_check(
+        &tool,
+        &provider_id,
+        &model_id,
+        ModelCheck {
+            ts: store::stamp() as u64,
+            ok: result.ok,
+            ms: result.ms as u64,
+            status: result.status,
+        },
+    );
+    provider.api_key.zeroize();
+    let model = recorded?;
+    audit::record(
+        "model.test",
+        format!("{tool}:{provider_id}:{model_id}:{}:{}ms", result.status, result.ms),
+    );
+    Ok(ModelTestResult { model, result })
+}
+
+#[tauri::command]
+fn provider_reorder(tool: String, ids: Vec<String>, app: tauri::AppHandle) -> Result<Vec<ProviderView>, String> {
+    let ordered = store::reorder(&tool, &ids)?;
+    tray::refresh(&app);
+    Ok(ordered.into_iter().map(ProviderView::from).collect())
+}
+
+#[tauri::command]
+fn provider_config_preview(tool: String, id: String) -> Result<Vec<ProviderConfigPreview>, String> {
+    let (spec, provider) = load_provider(&tool, &id)?;
+    let keys = redaction_keys(&provider);
+    Ok(adapters::plan(spec, &provider)?
+        .into_iter()
+        .map(|change| ProviderConfigPreview {
+            file: change.file,
+            fmt: change.fmt,
+            content: redact_keys(&change.after, &keys),
+        })
+        .collect())
 }
 
 #[tauri::command]
 fn provider_delete(tool: String, id: String, app: tauri::AppHandle) -> Result<(), String> {
     store::remove(&tool, &id)?;
     history::forget(&tool, &id)?;
+    audit::record("provider.delete", format!("{tool}:{id}"));
     tray::refresh(&app);
     Ok(())
 }
@@ -383,6 +506,40 @@ fn build_diffs(spec: &ToolSpec, provider: &Provider) -> Result<Vec<FileDiff>, St
     Ok(out)
 }
 
+fn changed_field_labels(files: &[FileDiff]) -> Vec<String> {
+    let mut labels = Vec::new();
+    for file in files {
+        for line in file.diff.lines() {
+            let trimmed = line.trim_start_matches(['+', '-']).trim().to_ascii_lowercase();
+            if trimmed.is_empty() || trimmed.starts_with("+++") || trimmed.starts_with("---") {
+                continue;
+            }
+            let label = if trimmed.contains("base_url") || trimmed.contains("baseurl") || trimmed.contains("base url") {
+                Some("Base URL")
+            } else if trimmed.contains("api_key") || trimmed.contains("apikey") || trimmed.contains("auth_token") || trimmed.contains("bearer_token") || trimmed.starts_with("key =") {
+                Some("API Key")
+            } else if trimmed.contains("wire_api") || trimmed.contains("protocol") || trimmed.contains("transport") {
+                Some("協議")
+            } else if trimmed.contains("model") {
+                Some("模型")
+            } else if trimmed.contains("provider") {
+                Some("供應商")
+            } else {
+                None
+            };
+            if let Some(label) = label {
+                if !labels.iter().any(|existing| existing == label) {
+                    labels.push(label.to_string());
+                }
+            }
+        }
+    }
+    if labels.is_empty() {
+        labels.push("設定檔".into());
+    }
+    labels
+}
+
 fn build_warnings(spec: &ToolSpec, provider: &Provider) -> Vec<String> {
     let mut warnings = Vec::new();
     let current = adapters::read_current(spec);
@@ -407,9 +564,12 @@ fn build_warnings(spec: &ToolSpec, provider: &Provider) -> Vec<String> {
 #[tauri::command]
 fn preview(tool: String, provider_id: String) -> Result<Preview, String> {
     let (spec, provider) = load_provider(&tool, &provider_id)?;
+    let files = build_diffs(spec, &provider)?;
+    let changed_fields = changed_field_labels(&files);
     Ok(Preview {
-        files: build_diffs(spec, &provider)?,
+        files,
         warnings: build_warnings(spec, &provider),
+        changed_fields,
     })
 }
 
@@ -464,6 +624,7 @@ fn apply_provider(
     app: tauri::AppHandle,
 ) -> Result<ApplyResult, String> {
     let result = apply_core(&tool, &provider_id)?;
+    audit::record("provider.apply", format!("{tool}:{provider_id}"));
     tray::refresh(&app);
     Ok(result)
 }
@@ -471,6 +632,124 @@ fn apply_provider(
 /// Entry point used by the tray menu, where there is no window to reply to.
 pub fn apply_from_tray(tool: &str, provider_id: &str) -> Result<String, String> {
     apply_core(tool, provider_id).map(|r| r.message)
+}
+
+fn provider_differences(existing: &Provider, incoming: &Provider) -> Vec<String> {
+    let mut out = Vec::new();
+    if existing.name != incoming.name {
+        out.push("名稱".into());
+    }
+    if existing.base_url.trim_end_matches('/') != incoming.base_url.trim_end_matches('/') {
+        out.push("Base URL".into());
+    }
+    if existing.model != incoming.model {
+        out.push("目前模型".into());
+    }
+    if existing.kind != incoming.kind {
+        out.push("協議".into());
+    }
+    let existing_models: std::collections::BTreeSet<_> = existing.models.iter().map(|model| model.id.as_str()).collect();
+    let incoming_models: std::collections::BTreeSet<_> = incoming.models.iter().map(|model| model.id.as_str()).collect();
+    if existing_models != incoming_models {
+        out.push("模型清單".into());
+    }
+    out
+}
+
+#[tauri::command]
+fn import_scan() -> Vec<ImportCandidate> {
+    let current = store::load();
+    let mut out = Vec::new();
+    for spec in TOOLS {
+        let existing = current.providers.get(spec.id).cloned().unwrap_or_default();
+        for mut provider in adapters::discover(spec) {
+            adapters::normalize_provider_models(&mut provider);
+            let found = existing.iter().find(|item| item.config_id == provider.config_id);
+            out.push(ImportCandidate {
+                tool: spec.id.into(),
+                tool_name: spec.name.into(),
+                config_id: provider.config_id.clone(),
+                name: provider.name.clone(),
+                base_url: provider.base_url.clone(),
+                model: provider.model.clone(),
+                models: provider.models.clone(),
+                kind: provider.kind.clone(),
+                conflict: found.is_some(),
+                differences: found.map(|item| provider_differences(item, &provider)).unwrap_or_default(),
+            });
+        }
+    }
+    out
+}
+
+fn merge_import_provider(existing: &Provider, mut incoming: Provider) -> Provider {
+    let mut models = existing.models.clone();
+    for model in incoming.models.drain(..) {
+        if let Some(current) = models.iter_mut().find(|item| item.id == model.id) {
+            if current.name.trim().is_empty() {
+                current.name = model.name;
+            }
+        } else {
+            models.push(model);
+        }
+    }
+    incoming.id = existing.id.clone();
+    incoming.config_id = existing.config_id.clone();
+    incoming.name = if incoming.name.trim().is_empty() { existing.name.clone() } else { incoming.name };
+    incoming.base_url = if incoming.base_url.trim().is_empty() { existing.base_url.clone() } else { incoming.base_url };
+    incoming.model = if incoming.model.trim().is_empty() { existing.model.clone() } else { incoming.model };
+    incoming.kind = if incoming.kind.trim().is_empty() { existing.kind.clone() } else { incoming.kind };
+    incoming.api_key = existing.api_key.clone();
+    incoming.api_key_enc = existing.api_key_enc.clone();
+    incoming.last_used = existing.last_used;
+    incoming.models = models;
+    adapters::normalize_provider_models(&mut incoming);
+    incoming
+}
+
+#[tauri::command]
+fn import_apply(decisions: Vec<ImportDecision>, app: tauri::AppHandle) -> Result<JsonImportResult, String> {
+    let decisions: std::collections::BTreeMap<(String, String), String> = decisions
+        .into_iter()
+        .map(|decision| ((decision.tool, decision.config_id), decision.action))
+        .collect();
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    for spec in TOOLS {
+        let existing = store::list(spec.id);
+        for mut provider in adapters::discover(spec) {
+            adapters::normalize_provider_models(&mut provider);
+            let key = (spec.id.to_string(), provider.config_id.clone());
+            let action = decisions.get(&key).map(String::as_str).unwrap_or("skip");
+            if action == "skip" {
+                skipped += 1;
+                continue;
+            }
+            let found = existing.iter().find(|item| item.config_id == provider.config_id).cloned();
+            match (action, found) {
+                ("merge", Some(current)) => {
+                    provider = merge_import_provider(&current, provider);
+                }
+                ("overwrite", Some(current)) => {
+                    provider.id = current.id;
+                }
+                ("copy", Some(_)) => {
+                    provider.id.clear();
+                    provider.config_id.clear();
+                    provider.name = format!("{} 副本", provider.name);
+                }
+                (_, Some(current)) if action != "overwrite" => {
+                    provider.id = current.id;
+                }
+                _ => {}
+            }
+            store::upsert(spec.id, provider)?;
+            imported += 1;
+        }
+    }
+    audit::record("import.apply", format!("imported={imported};skipped={skipped}"));
+    tray::refresh(&app);
+    Ok(JsonImportResult { imported, skipped })
 }
 
 #[tauri::command]
@@ -494,8 +773,9 @@ fn import_from_config(tool: String, app: tauri::AppHandle) -> Result<ImportResul
 
 #[tauri::command]
 fn test_provider(tool: String, provider_id: String) -> Result<net::TestResult, String> {
-    let (_, provider) = load_provider(&tool, &provider_id)?;
+    let (_, mut provider) = load_provider(&tool, &provider_id)?;
     let result = net::probe(&provider.base_url, &provider.api_key, tool == "claude");
+    provider.api_key.zeroize();
     let _ = history::record(&tool, &provider_id, result.ok, result.ms as u64, result.status);
     Ok(result)
 }
@@ -528,15 +808,29 @@ fn exportable_store() -> Result<(store::Store, usize), String> {
 }
 
 #[tauri::command]
-fn export_providers_encrypted(password: String) -> Result<ExportResult, String> {
-    let (data, count) = exportable_store()?;
-    let plaintext = serde_json::to_string(&data).map_err(|error| error.to_string())?;
-    let encrypted = export_crypto::encrypt(&password, &plaintext)?;
+fn export_providers_encrypted(mut password: String, destination: Option<String>) -> Result<ExportResult, String> {
+    let (mut data, count) = exportable_store()?;
+    let mut plaintext = serde_json::to_string(&data).map_err(|error| error.to_string())?;
+    let encrypted = export_crypto::encrypt(&password, &plaintext, count);
+    plaintext.zeroize();
+    for provider in data.providers.values_mut().flatten() {
+        provider.api_key.zeroize();
+    }
+    password.zeroize();
+    let encrypted = encrypted?;
     let dir = store::data_dir();
-    let path = dir.join(format!("kumoswitch-backup-{}.kumoswitch", store::stamp()));
+    let path = destination
+        .filter(|value| !value.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| dir.join(format!("kumoswitch-backup-{}.kumoswitch", store::stamp())));
     secure_fs::write_private(&path, &encrypted)
         .map_err(|error| format!("匯出加密備份失敗：{error}"))?;
-    Ok(ExportResult { path: adapters::display_path(&path), count })
+    audit::record("backup.export", format!("providers={count}"));
+    Ok(ExportResult {
+        path: adapters::display_path(&path),
+        count,
+        sha256: Some(export_crypto::checksum(&encrypted)),
+    })
 }
 
 fn merge_providers(current: &mut store::Store, incoming: store::Store) -> (usize, usize) {
@@ -563,42 +857,57 @@ fn merge_providers(current: &mut store::Store, incoming: store::Store) -> (usize
 
 #[tauri::command]
 fn import_providers_json(
-    text: String,
+    mut text: String,
     app: tauri::AppHandle,
 ) -> Result<JsonImportResult, String> {
     if text.len() > 64 * 1024 * 1024 {
+        text.zeroize();
         return Err("匯入檔過大，已拒絕載入".into());
     }
-    let incoming: store::Store =
-        serde_json::from_str(&text).map_err(|error| format!("檔案格式不符：{error}"))?;
+    let parsed = serde_json::from_str::<store::Store>(&text);
+    text.zeroize();
+    let incoming = parsed.map_err(|error| format!("檔案格式不符：{error}"))?;
     let mut current = store::load();
     let (imported, skipped) = merge_providers(&mut current, incoming);
     store::save(&current)?;
+    audit::record("import.json", format!("imported={imported};skipped={skipped}"));
     tray::refresh(&app);
     Ok(JsonImportResult { imported, skipped })
+}
+
+#[tauri::command]
+fn inspect_encrypted_backup(text: String) -> Result<export_crypto::ExportInfo, String> {
+    if text.len() > 64 * 1024 * 1024 {
+        return Err("備份檔過大，已拒絕載入".into());
+    }
+    export_crypto::inspect(&text)
 }
 
 #[tauri::command]
 fn import_providers_encrypted(
     text: String,
-    password: String,
+    mut password: String,
     app: tauri::AppHandle,
 ) -> Result<JsonImportResult, String> {
     if text.len() > 64 * 1024 * 1024 {
         return Err("備份檔過大，已拒絕匯入".into());
     }
-    let plaintext = export_crypto::decrypt(&password, &text)?;
-    let incoming: store::Store =
-        serde_json::from_str(&plaintext).map_err(|_| "解密後的備份內容格式錯誤".to_string())?;
+    let decrypted = export_crypto::decrypt(&password, &text);
+    password.zeroize();
+    let mut plaintext = decrypted?;
+    let parsed = serde_json::from_str::<store::Store>(&plaintext);
+    plaintext.zeroize();
+    let incoming = parsed.map_err(|_| "解密後的備份內容格式錯誤".to_string())?;
     let mut current = store::load();
     let (imported, skipped) = merge_providers(&mut current, incoming);
     store::save(&current)?;
+    audit::record("import.encrypted", format!("imported={imported};skipped={skipped}"));
     tray::refresh(&app);
     Ok(JsonImportResult { imported, skipped })
 }
 
 #[tauri::command]
-fn export_diagnostics() -> Result<ExportResult, String> {
+fn export_diagnostics(destination: Option<String>) -> Result<ExportResult, String> {
     let data = store::load();
     let mut report = String::new();
     report.push_str(&format!("kumoSwitch {}
@@ -643,9 +952,16 @@ fn export_diagnostics() -> Result<ExportResult, String> {
     }
     let dir = store::data_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("kumoswitch-diagnostics-{}.txt", store::stamp()));
+    let path = destination
+        .filter(|value| !value.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| dir.join(format!("kumoswitch-diagnostics-{}.txt", store::stamp())));
     secure_fs::write_private(&path, &report).map_err(|e| format!("寫入失敗：{e}"))?;
-    Ok(ExportResult { path: adapters::display_path(&path), count })
+    Ok(ExportResult {
+        path: adapters::display_path(&path),
+        count,
+        sha256: Some(export_crypto::checksum(&report)),
+    })
 }
 
 #[tauri::command]
@@ -654,11 +970,22 @@ fn proxy_status() -> proxy::ProxyConfig {
 }
 
 #[tauri::command]
+fn proxy_metrics() -> proxy::ProxyMetrics {
+    proxy::metrics()
+}
+
+#[tauri::command]
+fn proxy_reset_metrics() {
+    proxy::reset_metrics();
+}
+
+#[tauri::command]
 fn proxy_save(config: proxy::ProxyConfig) -> Result<proxy::ProxyConfig, String> {
     let mut data = store::load();
     data.proxy = config.clone();
     store::save(&data)?;
     proxy::start().map_err(|error| format!("代理啟動失敗：{error}"))?;
+    audit::record("proxy.save", format!("enabled={};targets={}", config.enabled, config.stack.len()));
     Ok(config)
 }
 
@@ -674,6 +1001,7 @@ fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, Stri
         api_key: "kumoswitch-proxy".into(),
         api_key_enc: String::new(),
         model: String::new(),
+        models: Vec::new(),
         kind: String::new(),
         note: "經本地代理＋故障轉移".into(),
         last_used: 0,
@@ -791,6 +1119,11 @@ fn reveal_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn audit_log(limit: usize) -> Vec<audit::AuditEntry> {
+    audit::tail(limit.clamp(1, 200))
+}
+
+#[tauri::command]
 fn app_info() -> serde_json::Value {
     serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
@@ -806,6 +1139,7 @@ fn main() {
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             tray::show_main(app);
@@ -829,10 +1163,16 @@ fn main() {
             provider_save,
             provider_clone,
             reveal_provider_key,
+            provider_config_preview,
+            provider_select_model,
+            test_model,
+            provider_reorder,
             provider_delete,
             preview,
             apply_provider,
             import_from_config,
+            import_scan,
+            import_apply,
             test_provider,
             test_history,
             set_auto_health,
@@ -840,16 +1180,20 @@ fn main() {
             provider_presets,
             health_overview,
             proxy_status,
+            proxy_metrics,
+            proxy_reset_metrics,
             proxy_save,
             proxy_attach,
             export_providers_encrypted,
             export_diagnostics,
             import_providers_json,
+            inspect_encrypted_backup,
             import_providers_encrypted,
             backup_list,
             backup_restore,
             reveal_config,
             reveal_path,
+            audit_log,
             app_info
         ])
         .run(tauri::generate_context!())
@@ -926,6 +1270,7 @@ mod redaction_tests {
             api_key: "sk-very-secret-9876".into(),
             api_key_enc: String::new(),
             model: "demo".into(),
+            models: vec![ModelProfile::new("demo")],
             kind: "openai".into(),
             note: String::new(),
             last_used: 0,
@@ -948,5 +1293,51 @@ mod redaction_tests {
         assert!(!redacted.contains("sk-a-much-longer-secret-9876"));
         assert!(redacted.contains("••••1234"));
         assert!(redacted.contains("••••9876"));
+    }
+}
+
+
+#[cfg(test)]
+mod import_merge_tests {
+    use super::*;
+
+    fn sample(id: &str, model: &str) -> Provider {
+        Provider {
+            id: id.into(),
+            config_id: "shared".into(),
+            name: "Same".into(),
+            base_url: "https://example.invalid/v1".into(),
+            api_key: "existing-secret".into(),
+            model: model.into(),
+            models: vec![ModelProfile::new(model)],
+            kind: "responses".into(),
+            ..Provider::default()
+        }
+    }
+
+    #[test]
+    fn merge_import_keeps_existing_key_and_unions_models() {
+        let existing = sample("local", "model-a");
+        let mut incoming = sample("remote", "model-b");
+        incoming.api_key = "remote-secret".into();
+        let merged = merge_import_provider(&existing, incoming);
+        assert_eq!(merged.id, "local");
+        assert_eq!(merged.api_key, "existing-secret");
+        assert_eq!(merged.models.len(), 2);
+        assert!(merged.models.iter().any(|model| model.id == "model-a"));
+        assert!(merged.models.iter().any(|model| model.id == "model-b"));
+    }
+
+    #[test]
+    fn import_differences_are_human_readable() {
+        let existing = sample("one", "model-a");
+        let mut incoming = sample("two", "model-b");
+        incoming.name = "Different".into();
+        incoming.base_url = "https://different.invalid/v1".into();
+        let differences = provider_differences(&existing, &incoming);
+        assert!(differences.iter().any(|field| field == "名稱"));
+        assert!(differences.iter().any(|field| field == "Base URL"));
+        assert!(differences.iter().any(|field| field == "目前模型"));
+        assert!(differences.iter().any(|field| field == "模型清單"));
     }
 }

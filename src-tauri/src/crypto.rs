@@ -72,6 +72,7 @@ mod imp {
     use aes_gcm::aead::{rand_core::RngCore, Aead, KeyInit, OsRng};
     use aes_gcm::{Aes256Gcm, Nonce};
     use std::sync::Mutex;
+    use zeroize::Zeroizing;
 
     const SERVICE: &str = "io.github.cypwlp.kumoswitch";
     const LEGACY_SERVICE: &str = "io.github.cypwlp.switchtower";
@@ -80,45 +81,53 @@ mod imp {
     const NONCE_BYTES: usize = 12;
     const ENC_PREFIX: &str = "tower:v1:";
 
-    static MASTER: Mutex<Option<[u8; KEY_BYTES]>> = Mutex::new(None);
+    static MASTER: Mutex<Option<Zeroizing<[u8; KEY_BYTES]>>> = Mutex::new(None);
 
     fn entry_for(service: &str) -> Result<keyring::Entry, String> {
         keyring::Entry::new(service, MASTER_ACCOUNT)
             .map_err(|error| format!("無法連線到系統金鑰庫：{error}"))
     }
 
-    fn decode_master(encoded: &str) -> Result<[u8; KEY_BYTES], String> {
-        let bytes = super::from_hex(encoded)
-            .ok_or_else(|| "系統金鑰庫中的主金鑰格式無效".to_string())?;
+    fn decode_master(encoded: &str) -> Result<Zeroizing<[u8; KEY_BYTES]>, String> {
+        let bytes = Zeroizing::new(
+            super::from_hex(encoded)
+                .ok_or_else(|| "系統金鑰庫中的主金鑰格式無效".to_string())?,
+        );
         if bytes.len() != KEY_BYTES {
             return Err("系統金鑰庫中的主金鑰長度無效".to_string());
         }
-        let mut key = [0u8; KEY_BYTES];
+        let mut key = Zeroizing::new([0u8; KEY_BYTES]);
         key.copy_from_slice(&bytes);
         Ok(key)
     }
 
-    fn create_master(entry: &keyring::Entry) -> Result<[u8; KEY_BYTES], String> {
-        let mut key = [0u8; KEY_BYTES];
-        OsRng.fill_bytes(&mut key);
+    fn create_master(entry: &keyring::Entry) -> Result<Zeroizing<[u8; KEY_BYTES]>, String> {
+        let mut key = Zeroizing::new([0u8; KEY_BYTES]);
+        OsRng.fill_bytes(&mut *key);
+        let encoded = Zeroizing::new(super::to_hex(&key));
         entry
-            .set_password(&super::to_hex(&key))
+            .set_password(encoded.as_str())
             .map_err(|error| format!("無法建立系統主金鑰：{error}"))?;
         Ok(key)
     }
 
-    fn load_or_create_master() -> Result<[u8; KEY_BYTES], String> {
+    fn load_or_create_master() -> Result<Zeroizing<[u8; KEY_BYTES]>, String> {
         let entry = entry_for(SERVICE)?;
         match entry.get_password() {
-            Ok(encoded) => decode_master(&encoded),
+            Ok(encoded) => {
+                let encoded = Zeroizing::new(encoded);
+                decode_master(encoded.as_str())
+            }
             Err(keyring::Error::NoEntry) => {
                 // 0.7.x stored the master key under the SwitchTower service.
                 let legacy = entry_for(LEGACY_SERVICE)?;
                 match legacy.get_password() {
                     Ok(encoded) => {
-                        let key = decode_master(&encoded)?;
+                        let encoded = Zeroizing::new(encoded);
+                        let key = decode_master(encoded.as_str())?;
+                        let migrated = Zeroizing::new(super::to_hex(&key));
                         entry
-                            .set_password(&super::to_hex(&key))
+                            .set_password(migrated.as_str())
                             .map_err(|error| format!("無法遷移系統主金鑰：{error}"))?;
                         Ok(key)
                     }
@@ -130,15 +139,15 @@ mod imp {
         }
     }
 
-    fn master_key() -> Result<[u8; KEY_BYTES], String> {
+    fn master_key() -> Result<Zeroizing<[u8; KEY_BYTES]>, String> {
         let mut cached = MASTER
             .lock()
             .map_err(|_| "系統金鑰庫鎖定狀態異常".to_string())?;
-        if let Some(key) = *cached {
-            return Ok(key);
+        if let Some(key) = cached.as_ref() {
+            return Ok(key.clone());
         }
         let key = load_or_create_master()?;
-        *cached = Some(key);
+        *cached = Some(key.clone());
         Ok(key)
     }
 

@@ -4,9 +4,11 @@
 //! to the configured stack of providers in order, failing over on connection
 //! errors, 429 and 5xx. Responses stream straight through.
 
+use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, Read};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_REQUEST_BODY_BYTES: usize = 32 * 1024 * 1024;
 
@@ -57,6 +59,60 @@ fn runtime() -> MutexGuard<'static, Runtime> {
     RUNTIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RoutingStrategy {
+    Ordered,
+    Priority,
+    Weighted,
+    Health,
+}
+
+impl Default for RoutingStrategy {
+    fn default() -> Self {
+        Self::Ordered
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ProxyTargetPolicy {
+    #[serde(default = "default_weight")]
+    pub weight: u32,
+    #[serde(default)]
+    pub priority: i32,
+    #[serde(default = "default_target_timeout")]
+    pub timeout_secs: u64,
+    #[serde(default = "default_failure_cooldown")]
+    pub failure_cooldown_secs: u64,
+    #[serde(default = "default_429_cooldown")]
+    pub backoff_429_secs: u64,
+    #[serde(default = "default_failure_threshold")]
+    pub failure_threshold: u32,
+    #[serde(default = "default_max_concurrency")]
+    pub max_concurrency: usize,
+}
+
+fn default_weight() -> u32 { 100 }
+fn default_target_timeout() -> u64 { 30 }
+fn default_failure_cooldown() -> u64 { 60 }
+fn default_429_cooldown() -> u64 { 30 }
+fn default_failure_threshold() -> u32 { 3 }
+fn default_max_concurrency() -> usize { 16 }
+
+impl Default for ProxyTargetPolicy {
+    fn default() -> Self {
+        Self {
+            weight: default_weight(),
+            priority: 0,
+            timeout_secs: default_target_timeout(),
+            failure_cooldown_secs: default_failure_cooldown(),
+            backoff_429_secs: default_429_cooldown(),
+            failure_threshold: default_failure_threshold(),
+            max_concurrency: default_max_concurrency(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
     #[serde(default)]
@@ -66,6 +122,11 @@ pub struct ProxyConfig {
     /// Ordered stack of "tool:provider_id" refs.
     #[serde(default)]
     pub stack: Vec<String>,
+    #[serde(default)]
+    pub strategy: RoutingStrategy,
+    /// Per-target routing and resiliency policy, keyed by "tool:provider_id".
+    #[serde(default)]
+    pub policies: BTreeMap<String, ProxyTargetPolicy>,
 }
 
 fn default_port() -> u16 {
@@ -74,7 +135,13 @@ fn default_port() -> u16 {
 
 impl Default for ProxyConfig {
     fn default() -> Self {
-        ProxyConfig { enabled: false, port: default_port(), stack: Vec::new() }
+        ProxyConfig {
+            enabled: false,
+            port: default_port(),
+            stack: Vec::new(),
+            strategy: RoutingStrategy::Ordered,
+            policies: BTreeMap::new(),
+        }
     }
 }
 
@@ -93,9 +160,75 @@ pub fn upstream_url(base: &str, path: &str) -> String {
 
 #[derive(Clone, Debug)]
 struct Target {
+    reference: String,
     base_url: String,
     api_key: String,
     anthropic: bool,
+    policy: ProxyTargetPolicy,
+}
+
+#[derive(Clone, Default)]
+struct TargetState {
+    active: usize,
+    requests: u64,
+    successes: u64,
+    failures: u64,
+    failovers: u64,
+    consecutive_failures: u32,
+    open_until_ms: u64,
+    total_ttfb_ms: u64,
+    ttfb_samples: u64,
+    last_ttfb_ms: u64,
+    last_status: u16,
+    last_used_ms: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ProxyLogEntry {
+    pub ts: u64,
+    pub target: String,
+    pub event: String,
+    pub status: Option<u16>,
+    pub ttfb_ms: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct TargetMetrics {
+    pub active: usize,
+    pub requests: u64,
+    pub successes: u64,
+    pub failures: u64,
+    pub failovers: u64,
+    pub success_rate: f64,
+    pub consecutive_failures: u32,
+    pub circuit_open_until: u64,
+    pub last_ttfb_ms: u64,
+    pub avg_ttfb_ms: u64,
+    pub last_status: u16,
+    pub last_used: u64,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct ProxyMetrics {
+    pub strategy: String,
+    pub targets: BTreeMap<String, TargetMetrics>,
+    pub logs: Vec<ProxyLogEntry>,
+}
+
+static TARGET_STATE: Mutex<BTreeMap<String, TargetState>> = Mutex::new(BTreeMap::new());
+static PROXY_LOGS: Mutex<VecDeque<ProxyLogEntry>> = Mutex::new(VecDeque::new());
+static ROUTE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn target_states() -> MutexGuard<'static, BTreeMap<String, TargetState>> {
+    TARGET_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn resolve_stack(config: &ProxyConfig) -> Vec<Target> {
@@ -106,12 +239,226 @@ fn resolve_stack(config: &ProxyConfig) -> Vec<Target> {
         let Some(list) = store.providers.get(tool) else { continue };
         let Some(p) = list.iter().find(|p| p.id == id) else { continue };
         out.push(Target {
+            reference: reference.clone(),
             base_url: p.base_url.clone(),
             api_key: p.api_key.clone(),
             anthropic: tool == "claude",
+            policy: config.policies.get(reference).cloned().unwrap_or_default(),
         });
     }
     out
+}
+
+fn strategy_label(strategy: &RoutingStrategy) -> &'static str {
+    match strategy {
+        RoutingStrategy::Ordered => "ordered",
+        RoutingStrategy::Priority => "priority",
+        RoutingStrategy::Weighted => "weighted",
+        RoutingStrategy::Health => "health",
+    }
+}
+
+fn push_proxy_log(target: &str, event: &str, status: Option<u16>, ttfb_ms: Option<u64>, message: impl Into<String>) {
+    let mut logs = PROXY_LOGS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if logs.len() >= 200 {
+        logs.pop_front();
+    }
+    logs.push_back(ProxyLogEntry {
+        ts: now_ms(),
+        target: target.to_string(),
+        event: event.to_string(),
+        status,
+        ttfb_ms,
+        message: message.into(),
+    });
+}
+
+fn record_result(
+    reference: &str,
+    status: u16,
+    ttfb_ms: u64,
+    ok: bool,
+    policy: &ProxyTargetPolicy,
+    reason: Option<&str>,
+) {
+    let now = now_ms();
+    let mut states = target_states();
+    let state = states.entry(reference.to_string()).or_default();
+    state.requests += 1;
+    state.last_status = status;
+    state.last_ttfb_ms = ttfb_ms;
+    state.total_ttfb_ms += ttfb_ms;
+    state.ttfb_samples += 1;
+    state.last_used_ms = now;
+    if ok {
+        state.successes += 1;
+        state.consecutive_failures = 0;
+        state.open_until_ms = 0;
+    } else {
+        state.failures += 1;
+        state.consecutive_failures = state.consecutive_failures.saturating_add(1);
+        let cooldown = if status == 429 {
+            policy.backoff_429_secs
+        } else if state.consecutive_failures >= policy.failure_threshold.max(1) {
+            policy.failure_cooldown_secs
+        } else {
+            0
+        };
+        if cooldown > 0 {
+            state.open_until_ms = now.saturating_add(cooldown.saturating_mul(1000));
+        }
+    }
+    drop(states);
+    push_proxy_log(
+        reference,
+        if ok { "success" } else { "failure" },
+        Some(status),
+        Some(ttfb_ms),
+        reason.unwrap_or(if ok { "OK" } else { "upstream failed" }),
+    );
+}
+
+fn record_failover(reference: &str, reason: &str) {
+    let mut states = target_states();
+    if let Some(state) = states.get_mut(reference) {
+        state.failovers += 1;
+    }
+    drop(states);
+    push_proxy_log(reference, "failover", None, None, reason);
+}
+
+fn target_available(reference: &str, now: u64) -> bool {
+    target_states()
+        .get(reference)
+        .map(|state| state.open_until_ms <= now)
+        .unwrap_or(true)
+}
+
+fn ordered_targets(strategy: RoutingStrategy, targets: &[Target]) -> Vec<Target> {
+    let mut ordered = targets.to_vec();
+    let states = target_states();
+    match strategy {
+        RoutingStrategy::Priority => ordered.sort_by(|left, right| {
+            right
+                .policy
+                .priority
+                .cmp(&left.policy.priority)
+                .then_with(|| right.policy.weight.cmp(&left.policy.weight))
+        }),
+        RoutingStrategy::Weighted => {
+            let sequence = ROUTE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let count = ordered.len().max(1) as u64;
+            ordered.sort_by_key(|target| {
+                let requests = states.get(&target.reference).map(|state| state.requests).unwrap_or(0);
+                let weight = u64::from(target.policy.weight.max(1));
+                ((requests + 1) * 1_000 / weight, sequence % count)
+            });
+        }
+        RoutingStrategy::Health => ordered.sort_by(|left, right| {
+            let l = states.get(&left.reference).cloned().unwrap_or_default();
+            let r = states.get(&right.reference).cloned().unwrap_or_default();
+            l.consecutive_failures
+                .cmp(&r.consecutive_failures)
+                .then_with(|| {
+                    let lr = if l.requests == 0 { 0.5 } else { l.successes as f64 / l.requests as f64 };
+                    let rr = if r.requests == 0 { 0.5 } else { r.successes as f64 / r.requests as f64 };
+                    rr.partial_cmp(&lr).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| {
+                    let la = if l.ttfb_samples == 0 { u64::MAX } else { l.total_ttfb_ms / l.ttfb_samples };
+                    let ra = if r.ttfb_samples == 0 { u64::MAX } else { r.total_ttfb_ms / r.ttfb_samples };
+                    la.cmp(&ra)
+                })
+        }),
+        RoutingStrategy::Ordered => {}
+    }
+    drop(states);
+    let now = now_ms();
+    let available: Vec<Target> = ordered
+        .iter()
+        .filter(|target| target_available(&target.reference, now))
+        .cloned()
+        .collect();
+    if available.is_empty() { ordered } else { available }
+}
+
+struct TargetPermit {
+    reference: String,
+}
+
+impl Drop for TargetPermit {
+    fn drop(&mut self) {
+        let mut states = target_states();
+        if let Some(state) = states.get_mut(&self.reference) {
+            state.active = state.active.saturating_sub(1);
+        }
+    }
+}
+
+fn acquire_target(reference: &str, max_concurrency: usize) -> Option<TargetPermit> {
+    let mut states = target_states();
+    let state = states.entry(reference.to_string()).or_default();
+    if state.active >= max_concurrency.max(1) {
+        return None;
+    }
+    state.active += 1;
+    Some(TargetPermit { reference: reference.to_string() })
+}
+
+pub fn metrics() -> ProxyMetrics {
+    let config = crate::store::load().proxy;
+    let states = target_states();
+    let targets = states
+        .iter()
+        .map(|(reference, state)| {
+            let success_rate = if state.requests == 0 {
+                0.0
+            } else {
+                state.successes as f64 / state.requests as f64
+            };
+            let avg_ttfb_ms = if state.ttfb_samples == 0 {
+                0
+            } else {
+                state.total_ttfb_ms / state.ttfb_samples
+            };
+            (
+                reference.clone(),
+                TargetMetrics {
+                    active: state.active,
+                    requests: state.requests,
+                    successes: state.successes,
+                    failures: state.failures,
+                    failovers: state.failovers,
+                    success_rate,
+                    consecutive_failures: state.consecutive_failures,
+                    circuit_open_until: state.open_until_ms,
+                    last_ttfb_ms: state.last_ttfb_ms,
+                    avg_ttfb_ms,
+                    last_status: state.last_status,
+                    last_used: state.last_used_ms,
+                },
+            )
+        })
+        .collect();
+    let logs = PROXY_LOGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .cloned()
+        .collect();
+    ProxyMetrics {
+        strategy: strategy_label(&config.strategy).into(),
+        targets,
+        logs,
+    }
+}
+
+pub fn reset_metrics() {
+    target_states().clear();
+    PROXY_LOGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
 }
 
 fn is_hop_by_hop(name: &str) -> bool {
@@ -220,16 +567,23 @@ fn relay_response(
 
 fn handle(request: tiny_http::Request, config: ProxyConfig) {
     let targets = resolve_stack(&config);
-    handle_with_targets(request, config.enabled, targets);
+    handle_with_routing_limit(request, config.enabled, config.strategy, targets, MAX_REQUEST_BODY_BYTES);
 }
 
+#[cfg(test)]
 fn handle_with_targets(request: tiny_http::Request, enabled: bool, targets: Vec<Target>) {
-    handle_with_targets_limit(request, enabled, targets, MAX_REQUEST_BODY_BYTES);
+    handle_with_routing_limit(request, enabled, RoutingStrategy::Ordered, targets, MAX_REQUEST_BODY_BYTES);
 }
 
-fn handle_with_targets_limit(
+#[cfg(test)]
+fn handle_with_targets_limit(request: tiny_http::Request, enabled: bool, targets: Vec<Target>, max_body_bytes: usize) {
+    handle_with_routing_limit(request, enabled, RoutingStrategy::Ordered, targets, max_body_bytes);
+}
+
+fn handle_with_routing_limit(
     mut request: tiny_http::Request,
     enabled: bool,
+    strategy: RoutingStrategy,
     targets: Vec<Target>,
     max_body_bytes: usize,
 ) {
@@ -291,10 +645,23 @@ fn handle_with_targets_limit(
     let has_content_type = forwarded_headers.iter().any(|(name, _)| name == "content-type");
     let has_anthropic_version = forwarded_headers.iter().any(|(name, _)| name == "anthropic-version");
 
+    let targets = ordered_targets(strategy, &targets);
+    let all_unavailable = targets.iter().all(|target| !target_available(&target.reference, now_ms()));
     let mut last_status = 502u16;
     for target in &targets {
+        if !all_unavailable && !target_available(&target.reference, now_ms()) {
+            record_failover(&target.reference, "circuit open; skipped");
+            continue;
+        }
+        let Some(_permit) = acquire_target(&target.reference, target.policy.max_concurrency) else {
+            record_failover(&target.reference, "max concurrency reached; skipped");
+            continue;
+        };
+
         let upstream = format!("{}{}", upstream_url(&target.base_url, &path), query);
-        let mut req = client.request(reqwest_method.clone(), &upstream);
+        let mut req = client
+            .request(reqwest_method.clone(), &upstream)
+            .timeout(Duration::from_secs(target.policy.timeout_secs.max(1)));
         for (name, value) in &forwarded_headers {
             req = req.header(name, value);
         }
@@ -313,16 +680,38 @@ fn handle_with_targets_limit(
             req = req.body(body.clone());
         }
 
-        let sent = req.send();
-        let resp = match sent {
-            Ok(r) => r,
-            Err(_) => { last_status = 502; continue; }
+        let started = Instant::now();
+        let resp = match req.send() {
+            Ok(response) => response,
+            Err(error) => {
+                let ttfb = started.elapsed().as_millis() as u64;
+                let reason = if error.is_timeout() {
+                    "upstream timeout"
+                } else if error.is_connect() {
+                    "upstream connection failed"
+                } else {
+                    "upstream request failed"
+                };
+                record_result(&target.reference, 0, ttfb, false, &target.policy, Some(reason));
+                record_failover(&target.reference, reason);
+                last_status = 502;
+                continue;
+            }
         };
+        let ttfb = started.elapsed().as_millis() as u64;
         let status = resp.status().as_u16();
         if status == 429 || status >= 500 {
+            let reason = if status == 429 {
+                "upstream rate limited (429); cooling down"
+            } else {
+                "upstream server error; failing over"
+            };
+            record_result(&target.reference, status, ttfb, false, &target.policy, Some(reason));
+            record_failover(&target.reference, reason);
             last_status = status;
-            continue; // fail over to the next provider
+            continue;
         }
+        record_result(&target.reference, status, ttfb, true, &target.policy, None);
         relay_response(request, resp, &method);
         return;
     }
@@ -585,12 +974,48 @@ mod tests {
         (url, join)
     }
 
+    fn spawn_stalling_upstream() -> (String, Arc<Mutex<Vec<CapturedRequest>>>, thread::JoinHandle<()>) {
+        let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
+        let url = local_url(&server);
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&captured);
+        let join = thread::spawn(move || {
+            let mut request = server
+                .recv_timeout(Duration::from_secs(10))
+                .expect("stall upstream receive")
+                .expect("stall upstream request");
+            let method = request.method().as_str().to_string();
+            let headers = request.headers().iter().map(|header| {
+                (header.field.as_str().as_str().to_ascii_lowercase(), header.value.as_str().to_string())
+            }).collect();
+            let url = request.url().to_string();
+            let mut body = String::new();
+            request.as_reader().read_to_string(&mut body).unwrap();
+            seen.lock().unwrap().push(CapturedRequest { method, url, headers, body });
+            thread::sleep(Duration::from_millis(2200));
+            let _ = request.respond(tiny_http::Response::from_string("late").with_status_code(200));
+        });
+        (url, captured, join)
+    }
+
     fn target(base_url: String, api_key: &str) -> Target {
-        Target { base_url, api_key: api_key.into(), anthropic: false }
+        Target {
+            reference: base_url.clone(),
+            base_url,
+            api_key: api_key.into(),
+            anthropic: false,
+            policy: ProxyTargetPolicy::default(),
+        }
     }
 
     fn anthropic_target(base_url: String, api_key: &str) -> Target {
-        Target { base_url, api_key: api_key.into(), anthropic: true }
+        Target {
+            reference: base_url.clone(),
+            base_url,
+            api_key: api_key.into(),
+            anthropic: true,
+            policy: ProxyTargetPolicy::default(),
+        }
     }
 
     fn send_through_proxy(proxy_url: &str) -> reqwest::blocking::Response {
@@ -764,6 +1189,105 @@ mod tests {
 
         proxy_join.join().unwrap();
         upstream_join.join().unwrap();
+    }
+
+    #[test]
+    fn target_timeout_fails_over_to_the_next_provider() {
+        let (slow_url, _slow_seen, slow_join) = spawn_stalling_upstream();
+        let (good_url, good_seen, good_join) = spawn_upstream(200, "good");
+        let mut slow = target(slow_url, "slow-key");
+        slow.policy.timeout_secs = 1;
+        let (proxy_url, proxy_join) = spawn_proxy(vec![slow, target(good_url, "good-key")]);
+
+        let response = send_through_proxy(&proxy_url);
+        assert_eq!(response.status().as_u16(), 200);
+        assert!(response.text().unwrap().contains(r#""mock":"good""#));
+
+        proxy_join.join().unwrap();
+        good_join.join().unwrap();
+        slow_join.join().unwrap();
+        assert_eq!(good_seen.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn routing_strategy_orders_by_priority() {
+        let mut low = target("http://low.invalid".into(), "low");
+        low.reference = "test:low".into();
+        low.policy.priority = 1;
+        let mut high = target("http://high.invalid".into(), "high");
+        high.reference = "test:high".into();
+        high.policy.priority = 10;
+        let ordered = ordered_targets(RoutingStrategy::Priority, &[low, high]);
+        assert_eq!(ordered[0].reference, "test:high");
+    }
+
+    #[test]
+    fn health_strategy_prefers_successful_known_targets() {
+        let steady = target("http://steady.invalid".into(), "steady");
+        let shaky = target("http://shaky.invalid".into(), "shaky");
+        let fresh = target("http://fresh.invalid".into(), "fresh");
+        let fresh_reference = fresh.reference.clone();
+        let references = [&steady.reference, &shaky.reference, &fresh.reference];
+        {
+            let mut states = target_states();
+            for reference in references {
+                states.remove(reference.as_str());
+            }
+            states.insert(steady.reference.clone(), TargetState {
+                requests: 10,
+                successes: 10,
+                total_ttfb_ms: 900,
+                ttfb_samples: 10,
+                ..TargetState::default()
+            });
+            states.insert(shaky.reference.clone(), TargetState {
+                requests: 10,
+                successes: 6,
+                failures: 4,
+                total_ttfb_ms: 500,
+                ttfb_samples: 10,
+                ..TargetState::default()
+            });
+        }
+        let ordered = ordered_targets(RoutingStrategy::Health, &[shaky.clone(), fresh, steady.clone()]);
+        assert_eq!(ordered[0].reference, steady.reference);
+        assert_eq!(ordered[1].reference, shaky.reference);
+        assert_eq!(ordered[2].reference, fresh_reference);
+    }
+
+    #[test]
+    fn rate_limit_opens_backoff_even_below_failure_threshold() {
+        let mut item = target("http://rate-limit.invalid".into(), "rate-limit");
+        item.reference = "test:rate-limit".into();
+        item.policy.failure_threshold = 10;
+        item.policy.backoff_429_secs = 30;
+        record_result(&item.reference, 429, 12, false, &item.policy, Some("rate limited"));
+        assert!(!target_available(&item.reference, now_ms()));
+        assert!(metrics().targets.get("test:rate-limit").unwrap().circuit_open_until > now_ms());
+    }
+
+    #[test]
+    fn circuit_breaker_opens_and_cooldown_is_reported() {
+        let mut item = target("http://circuit.invalid".into(), "circuit");
+        item.reference = "test:circuit".into();
+        item.policy.failure_threshold = 2;
+        item.policy.failure_cooldown_secs = 60;
+        record_result(&item.reference, 500, 20, false, &item.policy, Some("boom"));
+        assert!(target_available(&item.reference, now_ms()));
+        record_result(&item.reference, 500, 20, false, &item.policy, Some("boom"));
+        assert!(!target_available(&item.reference, now_ms()));
+        let metrics = metrics();
+        let metric = metrics.targets.get("test:circuit").unwrap();
+        assert_eq!(metric.failures, 2);
+        assert!(metric.circuit_open_until > now_ms());
+    }
+
+    #[test]
+    fn max_concurrency_rejects_parallel_target_attempts() {
+        let first = acquire_target("test:concurrency", 1).expect("first permit");
+        assert!(acquire_target("test:concurrency", 1).is_none());
+        drop(first);
+        assert!(acquire_target("test:concurrency", 1).is_some());
     }
 
     #[test]

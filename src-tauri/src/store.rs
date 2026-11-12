@@ -1,5 +1,6 @@
 use crate::adapters::Provider;
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -58,6 +59,9 @@ pub struct Store {
     pub providers: BTreeMap<String, Vec<Provider>>,
     #[serde(default)]
     pub active: BTreeMap<String, String>,
+    /// Previous active provider per tool, for one-click rollback.
+    #[serde(default)]
+    pub previous_active: BTreeMap<String, String>,
     /// Re-test providers that already have history, on a timer.
     #[serde(default)]
     pub auto_health: bool,
@@ -82,6 +86,7 @@ pub fn load() -> Store {
                     provider.api_key = key;
                 }
             }
+            crate::adapters::normalize_provider_models(provider);
         }
     }
     store
@@ -93,6 +98,7 @@ pub fn save(store: &Store) -> Result<(), String> {
     let mut outgoing = store.clone();
     for list in outgoing.providers.values_mut() {
         for provider in list.iter_mut() {
+            crate::adapters::normalize_provider_models(provider);
             if provider.api_key.is_empty() {
                 continue;
             }
@@ -101,7 +107,7 @@ pub fn save(store: &Store) -> Result<(), String> {
             let blob = crate::crypto::seal(&provider.api_key)
                 .map_err(|error| format!("無法加密 API Key：{error}"))?;
             provider.api_key_enc = blob;
-            provider.api_key.clear();
+            provider.api_key.zeroize();
         }
     }
     let text = serde_json::to_string_pretty(&outgoing).map_err(|e| e.to_string())?;
@@ -150,6 +156,7 @@ pub fn upsert_with_key_action(
     if provider.config_id.is_empty() {
         provider.config_id = make_config_id(tool, &provider.name);
     }
+    crate::adapters::normalize_provider_models(&mut provider);
     // Two providers sharing a config_id would overwrite each other inside the
     // tool's own config file, so keep the identifiers distinct.
     let entry = store.providers.entry(tool.to_string()).or_default();
@@ -162,8 +169,8 @@ pub fn upsert_with_key_action(
     match entry.iter_mut().find(|p| p.id == provider.id) {
         Some(existing) => {
             if clear_key {
-                provider.api_key.clear();
-                provider.api_key_enc.clear();
+                provider.api_key.zeroize();
+                provider.api_key_enc.zeroize();
             } else if provider.api_key.is_empty() && !existing.api_key_enc.is_empty() {
                 provider.api_key = existing.api_key.clone();
                 provider.api_key_enc = existing.api_key_enc.clone();
@@ -184,7 +191,73 @@ pub fn remove(tool: &str, id: &str) -> Result<(), String> {
     if store.active.get(tool).map(|a| a == id).unwrap_or(false) {
         store.active.remove(tool);
     }
+    if store.previous_active.get(tool).map(|a| a == id).unwrap_or(false) {
+        store.previous_active.remove(tool);
+    }
     save(&store)
+}
+
+/// Persist the provider card order. Unknown ids are ignored and any item not
+/// named by the UI is appended in its previous relative order.
+pub fn reorder(tool: &str, ids: &[String]) -> Result<Vec<Provider>, String> {
+    let mut store = load();
+    let entry = store.providers.entry(tool.to_string()).or_default();
+    entry.sort_by_key(|provider| {
+        ids.iter()
+            .position(|id| id == &provider.id)
+            .unwrap_or(usize::MAX)
+    });
+    let ordered = entry.clone();
+    save(&store)?;
+    Ok(ordered)
+}
+
+/// Change only the provider's selected model. The caller can then preview the
+/// targeted config diff without rewriting the provider metadata by hand.
+pub fn select_model(tool: &str, id: &str, model_id: &str) -> Result<Provider, String> {
+    let mut store = load();
+    let provider = store
+        .providers
+        .get_mut(tool)
+        .and_then(|list| list.iter_mut().find(|provider| provider.id == id))
+        .ok_or_else(|| "找不到這個供應商".to_string())?;
+    crate::adapters::normalize_provider_models(provider);
+    if !provider.models.iter().any(|model| model.id == model_id) {
+        return Err(format!("這個供應商沒有模型「{model_id}」"));
+    }
+    provider.model = model_id.to_string();
+    let selected = provider.clone();
+    save(&store)?;
+    Ok(selected)
+}
+
+/// Append a model-specific endpoint check while retaining a short local trend.
+pub fn record_model_check(
+    tool: &str,
+    id: &str,
+    model_id: &str,
+    check: crate::adapters::ModelCheck,
+) -> Result<crate::adapters::ModelProfile, String> {
+    let mut store = load();
+    let provider = store
+        .providers
+        .get_mut(tool)
+        .and_then(|list| list.iter_mut().find(|provider| provider.id == id))
+        .ok_or_else(|| "找不到這個供應商".to_string())?;
+    crate::adapters::normalize_provider_models(provider);
+    let model = provider
+        .models
+        .iter_mut()
+        .find(|model| model.id == model_id)
+        .ok_or_else(|| format!("這個供應商沒有模型「{model_id}」"))?;
+    model.checks.push(check);
+    if model.checks.len() > 20 {
+        let cut = model.checks.len() - 20;
+        model.checks.drain(..cut);
+    }
+    let updated = model.clone();
+    save(&store)?;
+    Ok(updated)
 }
 
 /// Mark a provider as applied: remembers it as active and stamps the time.
@@ -198,7 +271,11 @@ pub fn touch(tool: &str, id: &str) {
             }
         }
     }
-    store.active.insert(tool.to_string(), id.to_string());
+    if let Some(previous) = store.active.insert(tool.to_string(), id.to_string()) {
+        if previous != id {
+            store.previous_active.insert(tool.to_string(), previous);
+        }
+    }
     let _ = save(&store);
 }
 

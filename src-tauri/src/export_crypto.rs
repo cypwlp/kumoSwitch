@@ -2,6 +2,8 @@ use aes_gcm::aead::{rand_core::RngCore, Aead, KeyInit, OsRng, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use argon2::{Algorithm, Argon2, Params, Version};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use zeroize::Zeroizing;
 
 const FORMAT: &str = "kumoswitch-export";
 const VERSION: u8 = 1;
@@ -19,9 +21,34 @@ struct Envelope {
     version: u8,
     kdf: String,
     cipher: String,
+    #[serde(default)]
+    created_at: u64,
+    #[serde(default)]
+    provider_count: usize,
+    #[serde(default)]
+    plaintext_sha256: String,
     salt: String,
     nonce: String,
     ciphertext: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExportInfo {
+    pub format: String,
+    pub version: u8,
+    pub created_at: u64,
+    pub provider_count: usize,
+    pub plaintext_sha256: String,
+    pub has_checksum: bool,
+}
+
+pub fn checksum(text: &str) -> String {
+    sha256_hex(text.as_bytes())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    to_hex(&digest)
 }
 
 fn to_hex(bytes: &[u8]) -> String {
@@ -52,7 +79,7 @@ fn from_hex(text: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; KEY_BYTES], String> {
+fn derive_key(password: &str, salt: &[u8]) -> Result<Zeroizing<[u8; KEY_BYTES]>, String> {
     let params = Params::new(
         KDF_MEMORY_KIB,
         KDF_ITERATIONS,
@@ -61,14 +88,14 @@ fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; KEY_BYTES], String> {
     )
     .map_err(|error| format!("無效的備份金鑰參數：{error}"))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-    let mut key = [0u8; KEY_BYTES];
+    let mut key = Zeroizing::new([0u8; KEY_BYTES]);
     argon2
-        .hash_password_into(password.as_bytes(), salt, &mut key)
+        .hash_password_into(password.as_bytes(), salt, &mut *key)
         .map_err(|error| format!("無法派生備份金鑰：{error}"))?;
     Ok(key)
 }
 
-pub fn encrypt(password: &str, plaintext: &str) -> Result<String, String> {
+pub fn encrypt(password: &str, plaintext: &str, provider_count: usize) -> Result<String, String> {
     if password.chars().count() < 8 {
         return Err("備份密碼至少需要 8 個字元".into());
     }
@@ -77,10 +104,9 @@ pub fn encrypt(password: &str, plaintext: &str) -> Result<String, String> {
     OsRng.fill_bytes(&mut salt);
     OsRng.fill_bytes(&mut nonce);
 
-    let mut key = derive_key(password, &salt)?;
-    let cipher = Aes256Gcm::new_from_slice(&key)
+    let key = derive_key(password, &salt)?;
+    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
         .map_err(|_| "無法初始化備份加密".to_string())?;
-    key.fill(0);
     let ciphertext = cipher
         .encrypt(
             Nonce::from_slice(&nonce),
@@ -93,11 +119,33 @@ pub fn encrypt(password: &str, plaintext: &str) -> Result<String, String> {
         version: VERSION,
         kdf: "argon2id".into(),
         cipher: "aes-256-gcm".into(),
+        created_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0),
+        provider_count,
+        plaintext_sha256: sha256_hex(plaintext.as_bytes()),
         salt: to_hex(&salt),
         nonce: to_hex(&nonce),
         ciphertext: to_hex(&ciphertext),
     };
     serde_json::to_string_pretty(&envelope).map_err(|error| error.to_string())
+}
+
+pub fn inspect(serialized: &str) -> Result<ExportInfo, String> {
+    let envelope: Envelope =
+        serde_json::from_str(serialized).map_err(|_| "不是有效的 kumoSwitch 加密備份".to_string())?;
+    if envelope.format != FORMAT || envelope.version != VERSION {
+        return Err("不支援的備份格式或版本".into());
+    }
+    Ok(ExportInfo {
+        format: envelope.format,
+        version: envelope.version,
+        created_at: envelope.created_at,
+        provider_count: envelope.provider_count,
+        has_checksum: !envelope.plaintext_sha256.is_empty(),
+        plaintext_sha256: envelope.plaintext_sha256,
+    })
 }
 
 pub fn decrypt(password: &str, serialized: &str) -> Result<String, String> {
@@ -120,16 +168,20 @@ pub fn decrypt(password: &str, serialized: &str) -> Result<String, String> {
     let ciphertext = from_hex(&envelope.ciphertext)
         .ok_or_else(|| "備份 ciphertext 格式錯誤".to_string())?;
 
-    let mut key = derive_key(password, &salt)?;
-    let cipher = Aes256Gcm::new_from_slice(&key)
+    let key = derive_key(password, &salt)?;
+    let cipher = Aes256Gcm::new_from_slice(key.as_slice())
         .map_err(|_| "無法初始化備份解密".to_string())?;
-    key.fill(0);
     let plaintext = cipher
         .decrypt(
             Nonce::from_slice(&nonce),
             Payload { msg: &ciphertext, aad: AAD },
         )
         .map_err(|_| "密碼錯誤或備份檔案已損毀".to_string())?;
+    if !envelope.plaintext_sha256.is_empty()
+        && sha256_hex(&plaintext) != envelope.plaintext_sha256.to_ascii_lowercase()
+    {
+        return Err("備份內容 SHA-256 校驗失敗".into());
+    }
     String::from_utf8(plaintext).map_err(|_| "備份內容不是有效文字".to_string())
 }
 
@@ -140,20 +192,30 @@ mod tests {
     #[test]
     fn encrypted_export_roundtrip_hides_plaintext() {
         let plain = r#"{"providers":{"codex":[{"api_key":"sk-secret"}]}}"#;
-        let sealed = encrypt("correct horse battery", plain).unwrap();
+        let sealed = encrypt("correct horse battery", plain, 1).unwrap();
         assert!(!sealed.contains("sk-secret"));
         assert_eq!(decrypt("correct horse battery", &sealed).unwrap(), plain);
     }
 
     #[test]
+    fn export_metadata_and_checksum_are_embedded() {
+        let sealed = encrypt("correct horse battery", "secret", 3).unwrap();
+        let info = inspect(&sealed).unwrap();
+        assert_eq!(info.provider_count, 3);
+        assert!(info.has_checksum);
+        assert_eq!(info.plaintext_sha256.len(), 64);
+        assert_eq!(decrypt("correct horse battery", &sealed).unwrap(), "secret");
+    }
+
+    #[test]
     fn wrong_password_is_rejected() {
-        let sealed = encrypt("correct horse battery", "secret").unwrap();
+        let sealed = encrypt("correct horse battery", "secret", 0).unwrap();
         assert!(decrypt("wrong password", &sealed).is_err());
     }
 
     #[test]
     fn short_password_is_rejected() {
-        assert!(encrypt("short", "data").is_err());
+        assert!(encrypt("short", "data", 0).is_err());
     }
 
     #[test]

@@ -9,6 +9,71 @@ use crate::{jsonc, yamlpatch};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ModelCheck {
+    #[serde(default)]
+    pub ts: u64,
+    #[serde(default)]
+    pub ok: bool,
+    #[serde(default)]
+    pub ms: u64,
+    #[serde(default)]
+    pub status: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ModelProfile {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_output: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<bool>,
+    /// Tool-specific model metadata. Unknown keys are preserved for display and
+    /// future adapters instead of being discarded by a fixed schema.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub metadata: Value,
+    /// Recent low-cost endpoint checks for this exact model. Kept in the
+    /// provider record so model switching and its health data travel together.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<ModelCheck>,
+}
+
+impl ModelProfile {
+    pub fn new(id: impl Into<String>) -> Self {
+        let id = id.into();
+        Self {
+            name: id.clone(),
+            id,
+            ..Self::default()
+        }
+    }
+}
+
+impl Default for ModelProfile {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            context_window: None,
+            max_output: None,
+            reasoning: None,
+            vision: None,
+            tools: None,
+            metadata: Value::Null,
+            checks: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Provider {
     #[serde(default)]
@@ -26,8 +91,14 @@ pub struct Provider {
     /// master key stored in Keychain or Secret Service.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub api_key_enc: String,
+    /// The model currently selected for this provider. Kept as a scalar for
+    /// backward compatibility with the adapter step templates and v0.9 data.
     #[serde(default)]
     pub model: String,
+    /// All known models exposed by this provider. Older rows are upgraded from
+    /// `model` during load, so existing backups continue to work.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<ModelProfile>,
     /// wire_api / protocol / api flavour, meaning depends on the tool.
     #[serde(default)]
     pub kind: String,
@@ -37,6 +108,35 @@ pub struct Provider {
     #[serde(default)]
     pub last_used: u64,
 }
+
+/// Normalize legacy and edited model data without dropping metadata.
+pub fn normalize_provider_models(provider: &mut Provider) {
+    provider.model = provider.model.trim().to_string();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut models = Vec::with_capacity(provider.models.len() + 1);
+    for mut model in provider.models.drain(..) {
+        model.id = model.id.trim().to_string();
+        model.name = model.name.trim().to_string();
+        if model.id.is_empty() {
+            continue;
+        }
+        if model.name.is_empty() {
+            model.name = model.id.clone();
+        }
+        if seen.insert(model.id.clone()) {
+            models.push(model);
+        }
+    }
+    if provider.model.is_empty() {
+        if let Some(first) = models.first() {
+            provider.model = first.id.clone();
+        }
+    } else if !seen.contains(&provider.model) {
+        models.insert(0, ModelProfile::new(provider.model.clone()));
+    }
+    provider.models = models;
+}
+
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Fmt {
@@ -830,8 +930,86 @@ fn map_keys(spec: &ToolSpec, file: &str, fmt: Fmt, path: &[&str]) -> Vec<String>
     }
 }
 
+fn model_profile_from_value(id: String, value: &Value) -> ModelProfile {
+    let number = |paths: &[&str]| -> Option<u64> {
+        paths.iter().find_map(|pointer| {
+            value
+                .pointer(pointer)
+                .and_then(|item| item.as_u64().or_else(|| item.as_str().and_then(|text| text.parse().ok())))
+        })
+    };
+    let boolean = |paths: &[&str]| -> Option<bool> {
+        paths.iter().find_map(|pointer| value.pointer(pointer).and_then(Value::as_bool))
+    };
+    ModelProfile {
+        name: value
+            .get("name")
+            .or_else(|| value.get("displayName"))
+            .and_then(Value::as_str)
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or(&id)
+            .to_string(),
+        id,
+        context_window: number(&["/context_window", "/contextWindow", "/context_length", "/limit/context"]),
+        max_output: number(&["/max_output", "/maxOutput", "/max_tokens", "/limit/output"]),
+        reasoning: boolean(&["/reasoning", "/capabilities/reasoning", "/supports_reasoning"]),
+        vision: boolean(&["/vision", "/capabilities/vision", "/attachment"]),
+        tools: boolean(&["/tools", "/tool_call", "/capabilities/tools"]),
+        metadata: value.clone(),
+        checks: Vec::new(),
+    }
+}
+
+fn json_model_profiles(spec: &ToolSpec, file: &str, path: &[&str]) -> Vec<ModelProfile> {
+    let full = resolve_file(spec, file);
+    let Ok(text) = std::fs::read_to_string(full) else {
+        return Vec::new();
+    };
+    let Some(value) = jsonc::get(&text, &p(path)) else {
+        return Vec::new();
+    };
+    match value {
+        Value::Object(map) => map
+            .into_iter()
+            .map(|(id, value)| model_profile_from_value(id, &value))
+            .collect(),
+        Value::Array(items) => items
+            .into_iter()
+            .filter_map(|value| {
+                let id = value
+                    .get("id")
+                    .or_else(|| value.get("model"))
+                    .and_then(Value::as_str)?
+                    .to_string();
+                Some(model_profile_from_value(id, &value))
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn yaml_model_profiles(spec: &ToolSpec, file: &str, path: &[&str]) -> Vec<ModelProfile> {
+    map_keys(spec, file, Fmt::Yaml, path)
+        .into_iter()
+        .map(ModelProfile::new)
+        .collect()
+}
+
+fn with_models(mut provider: Provider, models: Vec<ModelProfile>) -> Provider {
+    if !models.is_empty() {
+        provider.models = models;
+        normalize_provider_models(&mut provider);
+    }
+    provider
+}
+
 fn imported(config_id: &str, name: String, base_url: String, api_key: String, model: String, kind: String) -> Provider {
-    Provider {
+    let models = if model.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![ModelProfile::new(model.clone())]
+    };
+    let mut provider = Provider {
         id: String::new(),
         config_id: config_id.to_string(),
         name: if name.is_empty() { config_id.to_string() } else { name },
@@ -839,10 +1017,13 @@ fn imported(config_id: &str, name: String, base_url: String, api_key: String, mo
         api_key,
         api_key_enc: String::new(),
         model,
+        models,
         kind,
         note: "從設定檔導入".into(),
         last_used: 0,
-    }
+    };
+    normalize_provider_models(&mut provider);
+    provider
 }
 
 /// Read every provider already present in the tool's config file.
@@ -898,14 +1079,18 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                     .filter(|(pid, _)| *pid == id)
                     .map(|(_, m)| m.to_string())
                     .unwrap_or_default();
-                out.push(imported(
-                    &id,
-                    rd("opencode.json", Fmt::Json, &["provider", &id, "name"]),
-                    base,
-                    rd("opencode.json", Fmt::Json, &["provider", &id, "options", "apiKey"]),
-                    model,
-                    String::new(),
-                ));
+                let provider = with_models(
+                    imported(
+                        &id,
+                        rd("opencode.json", Fmt::Json, &["provider", &id, "name"]),
+                        base,
+                        rd("opencode.json", Fmt::Json, &["provider", &id, "options", "apiKey"]),
+                        model,
+                        String::new(),
+                    ),
+                    json_model_profiles(spec, "opencode.json", &["provider", &id, "models"]),
+                );
+                out.push(provider);
             }
         }
         "qoder" => {
@@ -914,14 +1099,18 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                 if base.is_empty() {
                     continue;
                 }
-                out.push(imported(
-                    &id,
-                    rd("settings.json", Fmt::Json, &["providers", &id, "displayName"]),
-                    base,
-                    rd("settings.json", Fmt::Json, &["providers", &id, "apiKey"]),
-                    rd("settings.json", Fmt::Json, &["providers", &id, "model"]),
-                    rd("settings.json", Fmt::Json, &["providers", &id, "protocol"]),
-                ));
+                let provider = with_models(
+                    imported(
+                        &id,
+                        rd("settings.json", Fmt::Json, &["providers", &id, "displayName"]),
+                        base,
+                        rd("settings.json", Fmt::Json, &["providers", &id, "apiKey"]),
+                        rd("settings.json", Fmt::Json, &["providers", &id, "model"]),
+                        rd("settings.json", Fmt::Json, &["providers", &id, "protocol"]),
+                    ),
+                    json_model_profiles(spec, "settings.json", &["providers", &id, "models"]),
+                );
+                out.push(provider);
             }
         }
         "zcode" => {
@@ -971,14 +1160,18 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                 if base.is_empty() {
                     continue;
                 }
-                out.push(imported(
-                    &id,
-                    id.clone(),
-                    base,
-                    rd("crush.json", Fmt::Json, &["providers", &id, "api_key"]),
-                    String::new(),
-                    String::new(),
-                ));
+                let provider = with_models(
+                    imported(
+                        &id,
+                        id.clone(),
+                        base,
+                        rd("crush.json", Fmt::Json, &["providers", &id, "api_key"]),
+                        String::new(),
+                        String::new(),
+                    ),
+                    json_model_profiles(spec, "crush.json", &["providers", &id, "models"]),
+                );
+                out.push(provider);
             }
         }
         "kilo" => {
@@ -993,14 +1186,18 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                     .filter(|(pid, _)| *pid == id)
                     .map(|(_, m)| m.to_string())
                     .unwrap_or_default();
-                out.push(imported(
-                    &id,
-                    rd("kilo.jsonc", Fmt::Json, &["provider", &id, "name"]),
-                    base,
-                    rd("kilo.jsonc", Fmt::Json, &["provider", &id, "options", "apiKey"]),
-                    model,
-                    String::new(),
-                ));
+                let provider = with_models(
+                    imported(
+                        &id,
+                        rd("kilo.jsonc", Fmt::Json, &["provider", &id, "name"]),
+                        base,
+                        rd("kilo.jsonc", Fmt::Json, &["provider", &id, "options", "apiKey"]),
+                        model,
+                        String::new(),
+                    ),
+                    json_model_profiles(spec, "kilo.jsonc", &["provider", &id, "models"]),
+                );
+                out.push(provider);
             }
         }
         "qwen" => {
@@ -1048,14 +1245,18 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                 if base.is_empty() {
                     continue;
                 }
-                out.push(imported(
-                    &id,
-                    id.clone(),
-                    base,
-                    rd("config.yaml", Fmt::Yaml, &["providers", &id, "key"]),
-                    rd("config.yaml", Fmt::Yaml, &["providers", &id, "default_model"]),
-                    String::new(),
-                ));
+                let provider = with_models(
+                    imported(
+                        &id,
+                        id.clone(),
+                        base,
+                        rd("config.yaml", Fmt::Yaml, &["providers", &id, "key"]),
+                        rd("config.yaml", Fmt::Yaml, &["providers", &id, "default_model"]),
+                        String::new(),
+                    ),
+                    yaml_model_profiles(spec, "config.yaml", &["providers", &id, "models"]),
+                );
+                out.push(provider);
             }
         }
         "commandcode" => {
@@ -1064,14 +1265,18 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                 if base.is_empty() {
                     continue;
                 }
-                out.push(imported(
-                    &id,
-                    rd("providers.json", Fmt::Json, &["provider", &id, "name"]),
-                    base,
-                    rd("providers.json", Fmt::Json, &["provider", &id, "apiKey"]),
-                    String::new(),
-                    rd("providers.json", Fmt::Json, &["provider", &id, "api"]),
-                ));
+                let provider = with_models(
+                    imported(
+                        &id,
+                        rd("providers.json", Fmt::Json, &["provider", &id, "name"]),
+                        base,
+                        rd("providers.json", Fmt::Json, &["provider", &id, "apiKey"]),
+                        String::new(),
+                        rd("providers.json", Fmt::Json, &["provider", &id, "api"]),
+                    ),
+                    json_model_profiles(spec, "providers.json", &["provider", &id, "models"]),
+                );
+                out.push(provider);
             }
         }
         _ => {}
@@ -1096,6 +1301,7 @@ mod real_config_checks {
             api_key: "sk-selftest".into(),
             api_key_enc: String::new(),
             model: "selftest-model".into(),
+            models: vec![ModelProfile::new("selftest-model")],
             kind: "responses".into(),
             note: String::new(),
             last_used: 0,
@@ -1264,5 +1470,39 @@ mod real_config_checks {
                 assert!(!provider.config_id.is_empty(), "{} 導入的 config_id 是空的", spec.id);
             }
         }
+    }
+}
+
+
+#[cfg(test)]
+mod model_profile_tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_legacy_and_multi_model_data_without_losing_metadata() {
+        let mut provider = Provider {
+            model: "active-model".into(),
+            models: vec![
+                ModelProfile {
+                    id: "other".into(),
+                    name: String::new(),
+                    context_window: Some(128000),
+                    max_output: Some(16384),
+                    reasoning: Some(true),
+                    metadata: serde_json::json!({"keep": true}),
+                    ..ModelProfile::default()
+                },
+                ModelProfile::new("other"),
+                ModelProfile::new("active-model"),
+            ],
+            ..Provider::default()
+        };
+        normalize_provider_models(&mut provider);
+        assert_eq!(provider.models.len(), 2);
+        assert_eq!(provider.models[0].id, "other");
+        assert_eq!(provider.models[0].name, "other");
+        assert_eq!(provider.models[0].context_window, Some(128000));
+        assert_eq!(provider.models[0].reasoning, Some(true));
+        assert_eq!(provider.models[1].id, "active-model");
     }
 }
