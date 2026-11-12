@@ -43,7 +43,7 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
-          $pattern = '^failures:|FAILED|panicked|assertion|^---- .* stdout ----'
+          $pattern = '^failures:|FAILED|panicked|assertion|^---- .* stdout ----|^error(?:\[|:)|could not compile|cannot find|mismatched types|unresolved import|no method named|trait .* not implemented'
           $lines = Get-Content cargo-test.log
           $matches = $lines | Select-String -Pattern $pattern | Select-Object -Last 40
           if (-not $matches) {
