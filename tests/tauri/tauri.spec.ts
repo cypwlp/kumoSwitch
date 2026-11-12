@@ -119,8 +119,12 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   await page.reload();
   await expect(page).toHaveTitle(/kumoSwitch/i);
   await page.getByRole("button", { name: /Codex/ }).first().click();
-  await expect(page.getByRole("button", { name: "查看供應商 E2E Provider 的模型與設定" })).toBeVisible();
-  await page.getByRole("button", { name: "查看供應商 E2E Provider 的模型與設定" }).click();
+  const providerButton = page.getByRole("button", { name: "查看供應商 E2E Provider 的模型與設定" });
+  const skipOnboarding = page.getByRole("button", { name: "略過，稍後再說" });
+  await expect(providerButton.or(skipOnboarding)).toBeVisible();
+  if (await skipOnboarding.isVisible()) await skipOnboarding.click();
+  await expect(providerButton).toBeVisible();
+  await providerButton.click();
   await expect(page.getByRole("heading", { name: "供應商詳情 · Codex" })).toBeVisible();
   await expect(page.getByRole("tab", { name: /^模型/ })).toBeVisible();
 });
