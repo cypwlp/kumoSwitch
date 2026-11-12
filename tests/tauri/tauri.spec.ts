@@ -108,6 +108,9 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   const context = browser!.contexts()[0];
   const page = context.pages()[0] ?? await context.waitForEvent("page");
   await expect(page).toHaveTitle(/kumoSwitch/i);
+  await page.evaluate(() => localStorage.setItem("kumoswitch.onboarded", "1"));
+  await page.reload();
+  await expect(page).toHaveTitle(/kumoSwitch/i);
   await page.getByRole("button", { name: /Codex/ }).first().click();
   await expect(page.getByRole("button", { name: "查看供應商 E2E Provider 的模型與設定" })).toBeVisible();
   await page.getByRole("button", { name: "查看供應商 E2E Provider 的模型與設定" }).click();
