@@ -1,16 +1,18 @@
 {
   "name": "kumoswitch",
   "private": true,
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Switch AI CLI providers without rewriting your config",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
     "ui:dev": "npm run dev --prefix ui",
     "ui:build": "npm run build --prefix ui",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@tauri-apps/cli": "^2"
   }
 }

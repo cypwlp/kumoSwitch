@@ -422,7 +422,7 @@ function tomlPreview(tool: string, target: Provider): FileDiff {
     `+experimental_bearer_token = "${target.api_key}"`,
     " requires_openai_auth = false",
   ];
-  return fileDiff(displayPath(seed.file), "TOML", body);
+  return fileDiff(displayPath(seed.file), "TOML", redactPreviewKeys(body));
 }
 
 function jsonPreview(tool: string, target: Provider): FileDiff {
@@ -470,7 +470,7 @@ function jsonPreview(tool: string, target: Provider): FileDiff {
       " }",
     ];
   }
-  return fileDiff(displayPath(seed.file), "JSON", body);
+  return fileDiff(displayPath(seed.file), "JSON", redactPreviewKeys(body));
 }
 
 function yamlPreview(tool: string, target: Provider): FileDiff {
@@ -500,7 +500,20 @@ function yamlPreview(tool: string, target: Provider): FileDiff {
     " telemetry:",
     "   enabled: false",
   ];
-  return fileDiff(displayPath(seed.file), "YAML", body);
+  return fileDiff(displayPath(seed.file), "YAML", redactPreviewKeys(body));
+}
+
+function redactPreviewKeys(lines: string[]): string[] {
+  const keys = Object.values(PROVIDERS)
+    .flat()
+    .map((provider) => provider.api_key)
+    .filter((key) => key.length >= 4)
+    .sort((left, right) => right.length - left.length);
+  return lines.map((line) => {
+    let redacted = line;
+    for (const key of keys) redacted = redacted.split(key).join(maskKey(key));
+    return redacted;
+  });
 }
 
 function buildPreview(tool: string, providerId: string): Preview {
@@ -547,6 +560,21 @@ function slug(text: string): string {
   return base || `provider-${counter}`;
 }
 
+function maskKey(key: string): string {
+  if (!key) return "";
+  return `••••${key.slice(-4)}`;
+}
+
+function providerView(provider: Provider): Provider {
+  return {
+    ...provider,
+    api_key: "",
+    api_key_masked: maskKey(provider.api_key),
+    has_api_key: provider.api_key.length > 0,
+    clear_api_key: false,
+  };
+}
+
 export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
   await delay(60);
   const tool = typeof args.tool === "string" ? args.tool : "";
@@ -554,7 +582,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   switch (cmd) {
     case "app_info":
       return {
-        version: "0.8.1",
+        version: "0.9.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
       } satisfies AppInfo;
@@ -568,7 +596,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     }
 
     case "provider_list":
-      return listOf(tool);
+      return listOf(tool).map(providerView);
 
     case "provider_save": {
       const incoming = args.provider as Provider;
@@ -576,16 +604,47 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       if (!incoming.base_url.trim()) throw new Error("請填寫 Base URL");
       const seed = seedOf(tool);
       const bucket = PROVIDERS[tool] ?? (PROVIDERS[tool] = []);
+      const id = incoming.id || `mock-${++counter}`;
+      const existing = bucket.find((provider) => provider.id === id);
+      let apiKey = incoming.api_key.trim();
+      if (incoming.clear_api_key) apiKey = "";
+      else if (!apiKey && existing) apiKey = existing.api_key;
       const saved: Provider = {
         ...incoming,
-        id: incoming.id || `mock-${++counter}`,
+        id,
         config_id: incoming.config_id || slug(incoming.name),
+        api_key: apiKey,
         kind: incoming.kind || seed.kinds[0] || "",
+        clear_api_key: false,
       };
       const at = bucket.findIndex((x) => x.id === saved.id);
       if (at >= 0) bucket[at] = saved;
       else bucket.push(saved);
-      return { ...saved };
+      return providerView(saved);
+    }
+
+    case "provider_clone": {
+      const id = String(args.id ?? "");
+      const source = findProvider(tool, id);
+      const seed = seedOf(tool);
+      const bucket = PROVIDERS[tool] ?? (PROVIDERS[tool] = []);
+      const saved: Provider = {
+        ...source,
+        id: `mock-${++counter}`,
+        config_id: slug(`${source.name}-copy-${counter}`),
+        name: `${source.name} 副本`,
+        kind: source.kind || seed.kinds[0] || "",
+        last_used: 0,
+      };
+      bucket.push(saved);
+      return providerView(saved);
+    }
+
+    case "reveal_provider_key": {
+      const id = String(args.id ?? "");
+      const provider = findProvider(tool, id);
+      if (!provider.api_key) throw new Error("這個供應商沒有可用的 API Key");
+      return provider.api_key;
     }
 
     case "provider_delete": {
@@ -723,13 +782,26 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         count: 6,
       } satisfies ExportResult;
 
-    case "export_providers": {
+    case "export_providers_encrypted": {
+      const password = String(args.password ?? "");
+      if (password.length < 8) throw new Error("備份密碼至少需要 8 個字元");
       const count = Object.values(PROVIDERS).reduce((n, list) => n + list.length, 0);
       return {
-        path: `${HOME}\\Documents\\kumoswitch-providers-20261110.json`,
+        path: `${HOME}\\Documents\\kumoswitch-backup-20261110.kumoswitch`,
         count,
       } satisfies ExportResult;
     }
+
+    case "import_providers_encrypted": {
+      const password = String(args.password ?? "");
+      const text = String(args.text ?? "");
+      if (password.length < 8) throw new Error("備份密碼至少需要 8 個字元");
+      if (!text.includes("kumoswitch-export")) throw new Error("密碼錯誤或備份檔案已損毀");
+      return { imported: 3, skipped: 1 } satisfies JsonImportResult;
+    }
+
+    case "reveal_path":
+      return undefined;
 
     case "import_providers_json": {
       const text = String(args.text ?? "");

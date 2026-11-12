@@ -3,6 +3,7 @@
 mod adapters;
 mod backup;
 mod crypto;
+mod export_crypto;
 mod history;
 #[cfg(test)]
 mod e2e_tests;
@@ -17,7 +18,7 @@ mod tray;
 mod yamlpatch;
 
 use adapters::{CurrentState, Fmt, Provider, ToolSpec, TOOLS};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 struct ToolView {
@@ -62,8 +63,121 @@ struct ApplyResult {
 }
 
 #[derive(Serialize)]
+struct ProviderView {
+    id: String,
+    config_id: String,
+    name: String,
+    base_url: String,
+    /// Always empty on the IPC boundary; use `reveal_provider_key` explicitly.
+    api_key: String,
+    api_key_masked: String,
+    has_api_key: bool,
+    model: String,
+    kind: String,
+    note: String,
+    last_used: u64,
+}
+
+impl From<Provider> for ProviderView {
+    fn from(provider: Provider) -> Self {
+        let has_api_key = !provider.api_key.is_empty();
+        let api_key_masked = mask_key(&provider.api_key);
+        ProviderView {
+            id: provider.id,
+            config_id: provider.config_id,
+            name: provider.name,
+            base_url: provider.base_url,
+            api_key: String::new(),
+            api_key_masked,
+            has_api_key,
+            model: provider.model,
+            kind: provider.kind,
+            note: provider.note,
+            last_used: provider.last_used,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ProviderInput {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    config_id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    base_url: String,
+    #[serde(default)]
+    api_key: String,
+    #[serde(default)]
+    clear_api_key: bool,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    note: String,
+    #[serde(default)]
+    last_used: u64,
+}
+
+impl From<ProviderInput> for Provider {
+    fn from(provider: ProviderInput) -> Self {
+        Provider {
+            id: provider.id,
+            config_id: provider.config_id,
+            name: provider.name,
+            base_url: provider.base_url,
+            api_key: provider.api_key,
+            api_key_enc: String::new(),
+            model: provider.model,
+            kind: provider.kind,
+            note: provider.note,
+            last_used: provider.last_used,
+        }
+    }
+}
+
+fn mask_key(key: &str) -> String {
+    let count = key.chars().count();
+    if count == 0 {
+        return String::new();
+    }
+    let tail: String = key.chars().skip(count.saturating_sub(4)).collect();
+    format!("••••{tail}")
+}
+
+fn redaction_keys(provider: &Provider) -> Vec<String> {
+    let mut keys: Vec<String> = store::load()
+        .providers
+        .values()
+        .flatten()
+        .map(|item| item.api_key.clone())
+        .filter(|key| key.chars().count() >= 4)
+        .collect();
+    if provider.api_key.chars().count() >= 4 {
+        keys.push(provider.api_key.clone());
+    }
+    keys.sort();
+    keys.dedup();
+    keys.sort_by(|left, right| right.len().cmp(&left.len()));
+    keys
+}
+
+fn redact_keys(text: &str, keys: &[String]) -> String {
+    let mut redacted = text.to_string();
+    for key in keys {
+        if redacted.contains(key) {
+            redacted = redacted.replace(key, &mask_key(key));
+        }
+    }
+    redacted
+}
+
+#[derive(Serialize)]
 struct ImportResult {
-    imported: Vec<Provider>,
+    imported: Vec<ProviderView>,
     skipped: usize,
 }
 
@@ -157,16 +271,19 @@ fn tool_list() -> Vec<ToolView> {
 }
 
 #[tauri::command]
-fn provider_list(tool: String) -> Vec<Provider> {
+fn provider_list(tool: String) -> Vec<ProviderView> {
     store::list(&tool)
+        .into_iter()
+        .map(ProviderView::from)
+        .collect()
 }
 
 #[tauri::command]
 fn provider_save(
     tool: String,
-    provider: Provider,
+    provider: ProviderInput,
     app: tauri::AppHandle,
-) -> Result<Provider, String> {
+) -> Result<ProviderView, String> {
     let spec = spec(&tool)?;
     if provider.name.trim().is_empty() {
         return Err("請填寫供應商名稱".into());
@@ -174,11 +291,37 @@ fn provider_save(
     if provider.base_url.trim().is_empty() {
         return Err("請填寫 Base URL".into());
     }
-    let mut provider = provider;
+    let clear_key = provider.clear_api_key;
+    let mut provider: Provider = provider.into();
     configured_kind(spec, &mut provider);
+    let saved = store::upsert_with_key_action(&tool, provider, clear_key)?;
+    tray::refresh(&app);
+    Ok(saved.into())
+}
+
+#[tauri::command]
+fn provider_clone(
+    tool: String,
+    id: String,
+    app: tauri::AppHandle,
+) -> Result<ProviderView, String> {
+    let (_, mut provider) = load_provider(&tool, &id)?;
+    provider.id.clear();
+    provider.config_id.clear();
+    provider.name = format!("{} 副本", provider.name);
+    provider.last_used = 0;
     let saved = store::upsert(&tool, provider)?;
     tray::refresh(&app);
-    Ok(saved)
+    Ok(saved.into())
+}
+
+#[tauri::command]
+fn reveal_provider_key(tool: String, id: String) -> Result<String, String> {
+    let (_, provider) = load_provider(&tool, &id)?;
+    if provider.api_key.is_empty() {
+        return Err("這個供應商沒有可用的 API Key".into());
+    }
+    Ok(provider.api_key)
 }
 
 #[tauri::command]
@@ -201,12 +344,15 @@ fn load_provider(tool: &str, provider_id: &str) -> Result<(&'static ToolSpec, Pr
 
 fn build_diffs(spec: &ToolSpec, provider: &Provider) -> Result<Vec<FileDiff>, String> {
     let changes = adapters::plan(spec, provider)?;
+    let keys = redaction_keys(provider);
     let mut out = Vec::new();
     for change in changes {
         if change.before == change.after {
             continue;
         }
-        let diff = similar::TextDiff::from_lines(&change.before, &change.after);
+        let before = redact_keys(&change.before, &keys);
+        let after = redact_keys(&change.after, &keys);
+        let diff = similar::TextDiff::from_lines(&before, &after);
         let mut added = 0;
         let mut removed = 0;
         for op in diff.ops() {
@@ -339,7 +485,8 @@ fn import_from_config(tool: String, app: tauri::AppHandle) -> Result<ImportResul
             continue;
         }
         configured_kind(spec, &mut provider);
-        imported.push(store::upsert(&tool, provider)?);
+        let saved = store::upsert(&tool, provider)?;
+        imported.push(ProviderView::from(saved));
     }
     tray::refresh(&app);
     Ok(ImportResult { imported, skipped })
@@ -358,26 +505,41 @@ fn test_history(tool: String) -> std::collections::BTreeMap<String, history::Sum
     history::summaries(&tool)
 }
 
-#[tauri::command]
-fn export_providers() -> Result<ExportResult, String> {
-    let data = store::load();
-    let count = data.providers.values().map(|v| v.len()).sum();
-    let dir = store::data_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("kumoswitch-export-{}.json", store::stamp()));
-    let text = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-    secure_fs::write_private(&path, &text).map_err(|e| format!("匯出失敗：{e}"))?;
-    Ok(ExportResult { path: adapters::display_path(&path), count })
+fn exportable_store() -> Result<(store::Store, usize), String> {
+    let mut data = store::load();
+    let missing = data
+        .providers
+        .values()
+        .flatten()
+        .filter(|provider| !provider.api_key_enc.is_empty() && provider.api_key.is_empty())
+        .count();
+    if missing > 0 {
+        return Err(format!(
+            "有 {missing} 個 API Key 無法從系統安全儲存解密，為避免備份缺漏，已取消匯出"
+        ));
+    }
+    let count = data.providers.values().map(Vec::len).sum();
+    for provider in data.providers.values_mut().flatten() {
+        // The encrypted archive carries the decrypted value; keeping ciphertext
+        // here would only tie the backup to the current machine.
+        provider.api_key_enc.clear();
+    }
+    Ok((data, count))
 }
 
 #[tauri::command]
-fn import_providers_json(
-    text: String,
-    app: tauri::AppHandle,
-) -> Result<JsonImportResult, String> {
-    let incoming: store::Store =
-        serde_json::from_str(&text).map_err(|e| format!("檔案格式不符：{e}"))?;
-    let mut current = store::load();
+fn export_providers_encrypted(password: String) -> Result<ExportResult, String> {
+    let (data, count) = exportable_store()?;
+    let plaintext = serde_json::to_string(&data).map_err(|error| error.to_string())?;
+    let encrypted = export_crypto::encrypt(&password, &plaintext)?;
+    let dir = store::data_dir();
+    let path = dir.join(format!("kumoswitch-backup-{}.kumoswitch", store::stamp()));
+    secure_fs::write_private(&path, &encrypted)
+        .map_err(|error| format!("匯出加密備份失敗：{error}"))?;
+    Ok(ExportResult { path: adapters::display_path(&path), count })
+}
+
+fn merge_providers(current: &mut store::Store, incoming: store::Store) -> (usize, usize) {
     let mut imported = 0usize;
     let mut skipped = 0usize;
     for (tool, list) in incoming.providers {
@@ -386,17 +548,50 @@ fn import_providers_json(
             continue;
         }
         let entry = current.providers.entry(tool).or_default();
-        for provider in list {
-            if entry.iter().any(|p| p.config_id == provider.config_id) {
+        for mut provider in list {
+            if entry.iter().any(|existing| existing.config_id == provider.config_id) {
                 skipped += 1;
                 continue;
             }
-            let mut provider = provider;
             provider.id = format!("p{}", store::stamp() + imported as u128);
             entry.push(provider);
             imported += 1;
         }
     }
+    (imported, skipped)
+}
+
+#[tauri::command]
+fn import_providers_json(
+    text: String,
+    app: tauri::AppHandle,
+) -> Result<JsonImportResult, String> {
+    if text.len() > 64 * 1024 * 1024 {
+        return Err("匯入檔過大，已拒絕載入".into());
+    }
+    let incoming: store::Store =
+        serde_json::from_str(&text).map_err(|error| format!("檔案格式不符：{error}"))?;
+    let mut current = store::load();
+    let (imported, skipped) = merge_providers(&mut current, incoming);
+    store::save(&current)?;
+    tray::refresh(&app);
+    Ok(JsonImportResult { imported, skipped })
+}
+
+#[tauri::command]
+fn import_providers_encrypted(
+    text: String,
+    password: String,
+    app: tauri::AppHandle,
+) -> Result<JsonImportResult, String> {
+    if text.len() > 64 * 1024 * 1024 {
+        return Err("備份檔過大，已拒絕匯入".into());
+    }
+    let plaintext = export_crypto::decrypt(&password, &text)?;
+    let incoming: store::Store =
+        serde_json::from_str(&plaintext).map_err(|_| "解密後的備份內容格式錯誤".to_string())?;
+    let mut current = store::load();
+    let (imported, skipped) = merge_providers(&mut current, incoming);
     store::save(&current)?;
     tray::refresh(&app);
     Ok(JsonImportResult { imported, skipped })
@@ -437,7 +632,11 @@ fn export_diagnostics() -> Result<ExportResult, String> {
         report.push_str(&format!("{:<14} 路徑={}
 ", "", adapters::display_path(&adapters::resolve_file(spec, spec.default_file))));
         for provider in providers {
-            let tail = if provider.api_key.is_empty() { "金鑰=無".to_string() } else { format!("金鑰尾={}", &provider.api_key[provider.api_key.len().saturating_sub(4)..]) };
+            let tail = if provider.api_key.is_empty() {
+                "金鑰=無".to_string()
+            } else {
+                format!("金鑰={}", mask_key(&provider.api_key))
+            };
             report.push_str(&format!("{:<14}   - {} | {} | {} | {}
 ", "", provider.name, provider.base_url, provider.model, tail));
         }
@@ -568,11 +767,27 @@ fn reveal_path(path: String) -> Result<(), String> {
     } else {
         expanded.parent().map(|p| p.to_path_buf()).unwrap_or(expanded)
     };
-    std::process::Command::new("explorer")
+    #[cfg(target_os = "windows")]
+    let spawned = std::process::Command::new("explorer")
         .arg(format!("/select,{}", target.display()))
-        .spawn()
+        .spawn();
+
+    #[cfg(target_os = "macos")]
+    let spawned = std::process::Command::new("open").arg("-R").arg(&target).spawn();
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let spawned = {
+        let parent = if target.is_dir() {
+            target.as_path()
+        } else {
+            target.parent().unwrap_or(target.as_path())
+        };
+        std::process::Command::new("xdg-open").arg(parent).spawn()
+    };
+
+    spawned
         .map(|_| ())
-        .map_err(|e| format!("無法開啟檔案總管：{e}"))
+        .map_err(|error| format!("無法開啟檔案位置：{error}"))
 }
 
 #[tauri::command]
@@ -612,6 +827,8 @@ fn main() {
             tool_list,
             provider_list,
             provider_save,
+            provider_clone,
+            reveal_provider_key,
             provider_delete,
             preview,
             apply_provider,
@@ -625,9 +842,10 @@ fn main() {
             proxy_status,
             proxy_save,
             proxy_attach,
-            export_providers,
+            export_providers_encrypted,
             export_diagnostics,
             import_providers_json,
+            import_providers_encrypted,
             backup_list,
             backup_restore,
             reveal_config,
@@ -691,5 +909,44 @@ mod write_path_tests {
     fn endpoint_comparison_ignores_trailing_slash() {
         assert!(same_endpoint("https://a/v1/", "https://a/v1"));
         assert!(!same_endpoint("", ""));
+    }
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+
+    #[test]
+    fn provider_view_never_serializes_the_full_key() {
+        let provider = Provider {
+            id: "p1".into(),
+            config_id: "demo".into(),
+            name: "Demo".into(),
+            base_url: "https://example.com/v1".into(),
+            api_key: "sk-very-secret-9876".into(),
+            api_key_enc: String::new(),
+            model: "demo".into(),
+            kind: "openai".into(),
+            note: String::new(),
+            last_used: 0,
+        };
+        let view = ProviderView::from(provider);
+        assert_eq!(view.api_key, "");
+        assert_eq!(view.api_key_masked, "••••9876");
+        let serialized = serde_json::to_string(&view).unwrap();
+        assert!(!serialized.contains("sk-very-secret-9876"));
+        assert!(serialized.contains("••••9876"));
+    }
+
+    #[test]
+    fn provider_keys_are_masked_in_preview_text() {
+        let keys = vec!["sk-short-1234".to_string(), "sk-a-much-longer-secret-9876".to_string()];
+        let preview = "api_key = \"sk-short-1234\"\nold = \"sk-a-much-longer-secret-9876\"\n";
+        let redacted = redact_keys(preview, &keys);
+
+        assert!(!redacted.contains("sk-short-1234"));
+        assert!(!redacted.contains("sk-a-much-longer-secret-9876"));
+        assert!(redacted.contains("••••1234"));
+        assert!(redacted.contains("••••9876"));
     }
 }

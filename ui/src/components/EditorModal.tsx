@@ -10,7 +10,7 @@ interface EditorProps {
   busy: boolean;
   onCancel: () => void;
   onSave: (payload: Provider) => void;
-  onClone?: (payload: Provider) => void;
+  onClone?: () => void;
 }
 
 const EMPTY: Provider = {
@@ -27,6 +27,9 @@ const EMPTY: Provider = {
 export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }: EditorProps) {
   const [form, setForm] = useState<Provider>(() => ({ ...EMPTY, ...(provider ?? {}) }));
   const [showKey, setShowKey] = useState(false);
+  const [clearKey, setClearKey] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+  const [keyError, setKeyError] = useState("");
   const [presets, setPresets] = useState<Preset[]>([]);
 
   useEffect(() => {
@@ -49,15 +52,51 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }:
     }));
   };
 
-  const set = (key: keyof Provider) => (value: string) =>
+  const set = (key: keyof Provider) => (value: string) => {
+    if (key === "api_key") {
+      setClearKey(false);
+      setKeyError("");
+    }
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const toggleKey = async () => {
+    if (!provider || form.api_key) {
+      setShowKey((value) => !value);
+      return;
+    }
+    setRevealing(true);
+    setKeyError("");
+    try {
+      const key = await api.revealProviderKey(tool.id, provider.id);
+      setForm((prev) => ({ ...prev, api_key: key }));
+      setShowKey(true);
+    } catch (error) {
+      setKeyError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRevealing(false);
+    }
+  };
+
+  const toggleClearKey = () => {
+    setClearKey((value) => {
+      const next = !value;
+      if (next) {
+        setForm((prev) => ({ ...prev, api_key: "" }));
+        setShowKey(false);
+      }
+      setKeyError("");
+      return next;
+    });
+  };
 
   const submit = () => {
     onSave({
       ...form,
       name: form.name.trim(),
       base_url: form.base_url.trim(),
-      api_key: form.api_key.trim(),
+      api_key: clearKey ? "" : form.api_key.trim(),
+      clear_api_key: clearKey,
       model: form.model.trim(),
       note: form.note.trim(),
       kind: form.kind || tool.kind_choices[0] || "",
@@ -74,9 +113,9 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }:
           {provider && onClone ? (
             <button
               className="ghost"
-              onClick={() => onClone(form)}
+              onClick={onClone}
               disabled={busy}
-              title="用目前欄位內容建立一個新供應商"
+              title="建立一份包含 API Key 的完整副本"
             >
               另存為副本
             </button>
@@ -150,16 +189,33 @@ export function EditorModal({ tool, provider, busy, onCancel, onSave, onClone }:
               id="f-key"
               type={showKey ? "text" : "password"}
               value={form.api_key}
-              placeholder="sk-..."
+              disabled={clearKey}
+              placeholder={
+                clearKey
+                  ? "儲存後清除"
+                  : provider?.has_api_key
+                    ? provider.api_key_masked || "已儲存"
+                    : "sk-..."
+              }
               onChange={(e) => set("api_key")(e.target.value)}
             />
-            <button className="ghost" type="button" onClick={() => setShowKey((v) => !v)}>
-              {showKey ? "隱藏" : "顯示"}
+            <button className="ghost" type="button" onClick={() => void toggleKey()} disabled={revealing || clearKey}>
+              {revealing ? "讀取中…" : showKey ? "隱藏" : provider?.has_api_key && !form.api_key ? "查看" : "顯示"}
             </button>
+            {provider?.has_api_key ? (
+              <button className="ghost" type="button" onClick={toggleClearKey} disabled={busy || revealing}>
+                {clearKey ? "保留金鑰" : "清除金鑰"}
+              </button>
+            ) : null}
           </div>
           <div className="hint">
-            {provider ? "留空會保留現有金鑰；刪除整個供應商才會移除它。" : "金鑰會以系統安全儲存加密後留在本機。"}
+            {clearKey
+              ? "儲存後會移除這個供應商的 API Key。"
+              : provider
+                ? "留空會保留現有金鑰；按「查看」才會把完整金鑰載入編輯器。"
+                : "金鑰會以系統安全儲存加密後留在本機。"}
           </div>
+          {keyError ? <div className="hint" style={{ color: "var(--danger)" }}>{keyError}</div> : null}
         </div>
 
         {tool.kind_choices.length ? (

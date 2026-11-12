@@ -124,10 +124,10 @@ export function Rail({
           <button className={`ghost small${proxyActive ? " on" : ""}`} onClick={onProxy} title="本地代理與故障轉移">
             代理
           </button>
-          <button className="ghost small" onClick={onExport} title="把所有供應商匯出成 JSON">
+          <button className="ghost small" onClick={onExport} title="把所有供應商加密匯出成 .kumoswitch">
             匯出清單
           </button>
-          <button className="ghost small" onClick={onImport} title="從 JSON 檔案匯入供應商">
+          <button className="ghost small" onClick={onImport} title="從 .kumoswitch 加密備份或舊 JSON 匯入供應商">
             匯入清單
           </button>
         </div>

@@ -31,6 +31,8 @@ export const api = {
   toolList: () => call<ToolView[]>("tool_list"),
   providerList: (tool: string) => call<Provider[]>("provider_list", { tool }),
   providerSave: (tool: string, provider: Provider) => call<Provider>("provider_save", { tool, provider }),
+  providerClone: (tool: string, id: string) => call<Provider>("provider_clone", { tool, id }),
+  revealProviderKey: (tool: string, id: string) => call<string>("reveal_provider_key", { tool, id }),
   providerDelete: (tool: string, id: string) => call<void>("provider_delete", { tool, id }),
   preview: (tool: string, providerId: string) => call<Preview>("preview", { tool, providerId }),
   applyProvider: (tool: string, providerId: string) => call<ApplyResult>("apply_provider", { tool, providerId }),
@@ -47,9 +49,11 @@ export const api = {
   proxyStatus: () => call<ProxyConfig>("proxy_status"),
   proxySave: (config: ProxyConfig) => call<ProxyConfig>("proxy_save", { config }),
   proxyAttach: (tool: string) => call<ApplyResult>("proxy_attach", { tool }),
-  exportProviders: () => call<ExportResult>("export_providers"),
+  exportProvidersEncrypted: (password: string) => call<ExportResult>("export_providers_encrypted", { password }),
   exportDiagnostics: () => call<ExportResult>("export_diagnostics"),
   importProvidersJson: (text: string) => call<JsonImportResult>("import_providers_json", { text }),
+  importProvidersEncrypted: (text: string, password: string) => call<JsonImportResult>("import_providers_encrypted", { text, password }),
+  revealPath: (path: string) => call<void>("reveal_path", { path }),
 };
 
 export function errorText(err: unknown): string {

@@ -19,6 +19,7 @@ import { DiffModal } from "./components/DiffModal";
 import { BackupModal } from "./components/BackupModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ExportModal } from "./components/ExportModal";
+import { EncryptedBackupModal } from "./components/EncryptedBackupModal";
 import { CommandPalette } from "./components/CommandPalette";
 import { Onboarding } from "./components/Onboarding";
 import { StatsView } from "./components/StatsView";
@@ -30,7 +31,8 @@ type ModalState =
   | { kind: "editor"; provider: Provider | null }
   | { kind: "diff"; provider: Provider; preview: Preview }
   | { kind: "backups"; backups: BackupInfo[] }
-  | { kind: "export"; result: ExportResult }
+  | { kind: "export"; result: ExportResult; variant: "encrypted" | "diagnostics" }
+  | { kind: "encrypted"; mode: "export" | "import"; fileName?: string }
   | null;
 
 interface ConfirmState {
@@ -62,13 +64,16 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [showProxy, setShowProxy] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
+  const [pendingImport, setPendingImport] = useState<{ text: string; name: string } | null>(null);
   const [palette, setPalette] = useState(false);
   const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
   const [update, setUpdate] = useState<UpdateCheck>({ kind: "idle" });
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [onboarded, setOnboarded] = useState<boolean>(() => {
-    if (MOCK) return false;
+    if (MOCK) {
+      return new URLSearchParams(window.location.search).get("onboarded") === "1";
+    }
     try {
       let value = window.localStorage.getItem("kumoswitch.onboarded");
       if (value === null) {
@@ -452,22 +457,23 @@ export default function App() {
     }
   };
 
-  const exportList = async () => {
-    try {
-      const result = await api.exportProviders();
-      setModal({ kind: "export", result });
-    } catch (err) {
-      push(errorText(err), "err");
-    }
+  const exportList = () => {
+    setModal({ kind: "encrypted", mode: "export" });
   };
 
-  const readJsonFile = (file: File) => {
+  const readImportFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
       void (async () => {
+        const text = String(reader.result ?? "");
+        if (file.name.toLowerCase().endsWith(".kumoswitch")) {
+          setPendingImport({ text, name: file.name });
+          setModal({ kind: "encrypted", mode: "import", fileName: file.name });
+          return;
+        }
         try {
-          const result = await api.importProvidersJson(String(reader.result ?? ""));
-          push(`匯入 ${result.imported} 筆，略過 ${result.skipped} 筆`, "ok");
+          const result = await api.importProvidersJson(text);
+          push(`已匯入舊明文格式 ${result.imported} 筆，略過 ${result.skipped} 筆`, "ok");
           await refreshTools();
           if (selectedId) await loadProviders(selectedId);
         } catch (err) {
@@ -477,6 +483,22 @@ export default function App() {
     };
     reader.onerror = () => push("讀取檔案失敗", "err");
     reader.readAsText(file);
+  };
+
+  const handleEncryptedSubmit = async (password: string) => {
+    if (modal?.kind !== "encrypted") return;
+    if (modal.mode === "export") {
+      const result = await api.exportProvidersEncrypted(password);
+      setModal({ kind: "export", result, variant: "encrypted" });
+      return;
+    }
+    if (!pendingImport) throw new Error("找不到要匯入的備份檔");
+    const result = await api.importProvidersEncrypted(pendingImport.text, password);
+    setPendingImport(null);
+    setModal(null);
+    push(`已解密匯入 ${result.imported} 筆，略過 ${result.skipped} 筆`, "ok");
+    await refreshTools();
+    if (selectedId) await loadProviders(selectedId);
   };
 
   const reveal = async (toolId: string | null) => {
@@ -533,18 +555,13 @@ export default function App() {
     }
   };
 
-  const cloneProvider = async (provider: Provider) => {
-    if (!selected) return;
+  const cloneProvider = async () => {
+    if (!selected || modal?.kind !== "editor" || !modal.provider) return;
     setBusy(true);
     try {
-      const copy = await api.providerSave(selected.id, {
-        ...provider,
-        id: "",
-        config_id: "",
-        name: `${provider.name} 副本`,
-        last_used: 0,
-      });
-      push(`已建立「${copy.name}」`, "ok");
+      const copy = await api.providerClone(selected.id, modal.provider.id);
+      setModal(null);
+      push(`已建立完整副本「${copy.name}」`, "ok");
       await reload(selected.id);
     } catch (err) {
       push(errorText(err), "err");
@@ -568,7 +585,7 @@ export default function App() {
     try {
       const result = await api.exportDiagnostics();
       push(`診斷已匯出（${result.count} 個供應商摘要）`, "ok");
-      setModal({ kind: "export", result });
+      setModal({ kind: "export", result, variant: "diagnostics" });
     } catch (err) {
       push(errorText(err), "err");
     }
@@ -711,12 +728,12 @@ export default function App() {
       <input
         ref={fileRef}
         type="file"
-        accept="application/json,.json"
+        accept=".kumoswitch,application/json,.json"
         hidden
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          if (file) readJsonFile(file);
+          if (file) readImportFile(file);
         }}
       />
 
@@ -739,7 +756,7 @@ export default function App() {
           busy={busy}
           onCancel={() => setModal(null)}
           onSave={(payload) => void saveProvider(payload)}
-          onClone={(payload) => void cloneProvider(payload)}
+          onClone={() => void cloneProvider()}
         />
       ) : null}
 
@@ -764,11 +781,24 @@ export default function App() {
         />
       ) : null}
 
+      {modal?.kind === "encrypted" ? (
+        <EncryptedBackupModal
+          mode={modal.mode}
+          fileName={modal.fileName}
+          onCancel={() => {
+            setModal(null);
+            setPendingImport(null);
+          }}
+          onSubmit={handleEncryptedSubmit}
+        />
+      ) : null}
+
       {modal?.kind === "export" ? (
         <ExportModal
           result={modal.result}
+          variant={modal.variant}
           onClose={() => setModal(null)}
-          onReveal={() => void reveal(selectedId ?? tools[0]?.id ?? null)}
+          onReveal={() => void api.revealPath(modal.result.path)}
         />
       ) : null}
 

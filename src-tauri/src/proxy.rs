@@ -4,8 +4,47 @@
 //! to the configured stack of providers in order, failing over on connection
 //! errors, 429 and 5xx. Responses stream straight through.
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::io::{self, Read};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
+
+const MAX_REQUEST_BODY_BYTES: usize = 32 * 1024 * 1024;
+
+static HTTP_CLIENT: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+
+fn shared_client() -> Result<&'static reqwest::blocking::Client, String> {
+    HTTP_CLIENT
+        .get_or_init(|| {
+            reqwest::blocking::Client::builder()
+                .connect_timeout(Duration::from_secs(15))
+                .pool_idle_timeout(Duration::from_secs(90))
+                .pool_max_idle_per_host(32)
+                .tcp_keepalive(Duration::from_secs(60))
+                .build()
+                .map_err(|error| format!("無法建立代理 HTTP client：{error}"))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum BodyReadError {
+    TooLarge,
+    Io(String),
+}
+
+fn read_body_limited<R: Read + ?Sized>(reader: &mut R, limit: usize) -> Result<Vec<u8>, BodyReadError> {
+    let mut body = Vec::new();
+    reader
+        .take((limit as u64).saturating_add(1))
+        .read_to_end(&mut body)
+        .map_err(|error| BodyReadError::Io(error.to_string()))?;
+    if body.len() > limit {
+        Err(BodyReadError::TooLarge)
+    } else {
+        Ok(body)
+    }
+}
 
 struct Runtime {
     server: Option<Arc<tiny_http::Server>>,
@@ -118,21 +157,114 @@ fn response_headers(response: &reqwest::blocking::Response) -> Vec<(String, Stri
         .collect()
 }
 
+fn relay_response(
+    request: tiny_http::Request,
+    mut upstream: reqwest::blocking::Response,
+    method: &str,
+) {
+    let status = upstream.status().as_u16();
+    let version = request.http_version().clone();
+    let headers = response_headers(&upstream);
+    let suppress_body = method == "HEAD" || matches!(status, 100..=199 | 204 | 304);
+    let chunked = version >= tiny_http::HTTPVersion(1, 1) && !suppress_body;
+    let reason = reqwest::StatusCode::from_u16(status)
+        .ok()
+        .and_then(|code| code.canonical_reason())
+        .unwrap_or("Proxy Response");
+
+    // tiny_http::Response buffers the reader and only flushes after EOF. A raw
+    // writer lets SSE chunks reach the CLI as soon as the upstream emits them.
+    let mut writer = request.into_writer();
+    let relay = (|| -> io::Result<()> {
+        write!(writer, "HTTP/{}.{} {status} {reason}\r\n", version.0, version.1)?;
+        for (name, value) in headers {
+            write!(writer, "{name}: {value}\r\n")?;
+        }
+        if suppress_body {
+            writer.write_all(b"Content-Length: 0\r\n")?;
+        } else if chunked {
+            writer.write_all(b"Transfer-Encoding: chunked\r\n")?;
+        } else {
+            writer.write_all(b"Connection: close\r\n")?;
+        }
+        writer.write_all(b"\r\n")?;
+        writer.flush()?;
+
+        if suppress_body {
+            return Ok(());
+        }
+
+        let mut buffer = [0u8; 16 * 1024];
+        loop {
+            let count = match upstream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => count,
+                Err(error) => return Err(error),
+            };
+            if chunked {
+                write!(writer, "{count:x}\r\n")?;
+                writer.write_all(&buffer[..count])?;
+                writer.write_all(b"\r\n")?;
+            } else {
+                writer.write_all(&buffer[..count])?;
+            }
+            writer.flush()?;
+        }
+        if chunked {
+            writer.write_all(b"0\r\n\r\n")?;
+        }
+        writer.flush()
+    })();
+    let _ = relay;
+}
+
 fn handle(request: tiny_http::Request, config: ProxyConfig) {
     let targets = resolve_stack(&config);
     handle_with_targets(request, config.enabled, targets);
 }
 
-fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: Vec<Target>) {
+fn handle_with_targets(request: tiny_http::Request, enabled: bool, targets: Vec<Target>) {
+    handle_with_targets_limit(request, enabled, targets, MAX_REQUEST_BODY_BYTES);
+}
+
+fn handle_with_targets_limit(
+    mut request: tiny_http::Request,
+    enabled: bool,
+    targets: Vec<Target>,
+    max_body_bytes: usize,
+) {
     let method = request.method().as_str().to_string();
     let forwarded_headers = request_headers(request.headers());
     let url = request.url().to_string();
     let path = url.split('?').next().unwrap_or("/").to_string();
     let query = url.split_once('?').map(|(_, q)| format!("?{q}")).unwrap_or_default();
 
-    let mut body = Vec::new();
     let reader = request.as_reader();
-    let _ = reader.read_to_end(&mut body);
+    let body = match read_body_limited(reader, max_body_bytes) {
+        Ok(body) => body,
+        Err(BodyReadError::TooLarge) => {
+            // Drain the rest without buffering it so tiny_http can keep the
+            // connection framing intact before returning a clean 413.
+            let _ = io::copy(reader, &mut io::sink());
+            let response = tiny_http::Response::from_string(format!(
+                r#"{{"error":"request body too large","limit_bytes":{max_body_bytes}}}"#
+            ))
+            .with_status_code(413)
+            .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
+            let _ = request.respond(response);
+            return;
+        }
+        Err(BodyReadError::Io(error)) => {
+            let response = tiny_http::Response::from_string(format!(
+                r#"{{"error":"failed to read request body","detail":"{error}"}}"#
+            ))
+            .with_status_code(400)
+            .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
+            let _ = request.respond(response);
+            return;
+        }
+    };
+    let body = bytes::Bytes::from(body);
 
     if !enabled || targets.is_empty() {
         let resp = tiny_http::Response::from_string("{\"error\":\"kumoswitch proxy disabled or empty stack\"}")
@@ -142,16 +274,15 @@ fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: 
         return;
     }
 
-    // Keep a generous idle timeout for long SSE streams, but fail fast when
-    // connecting to an unreachable provider.
-    let client = reqwest::blocking::Client::builder()
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(Duration::from_secs(30 * 60))
-        .build();
-    let client = match client {
-        Ok(c) => c,
-        Err(_) => {
-            let _ = request.respond(tiny_http::Response::from_string("client error").with_status_code(500));
+    let client = match shared_client() {
+        Ok(client) => client,
+        Err(error) => {
+            let response = tiny_http::Response::from_string(format!(
+                r#"{{"error":"proxy client unavailable","detail":"{error}"}}"#
+            ))
+            .with_status_code(500)
+            .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
+            let _ = request.respond(response);
             return;
         }
     };
@@ -192,19 +323,7 @@ fn handle_with_targets(mut request: tiny_http::Request, enabled: bool, targets: 
             last_status = status;
             continue; // fail over to the next provider
         }
-        let headers = response_headers(&resp);
-        let mut builder = tiny_http::Response::new(
-            tiny_http::StatusCode(status),
-            headers
-                .into_iter()
-                .filter_map(|(k, v)| format!("{k}: {v}").parse::<tiny_http::Header>().ok())
-                .collect::<Vec<_>>(),
-            resp, // blocking::Response implements Read -> streams through
-            None,
-            None,
-        );
-        builder = builder.with_chunked_threshold(0);
-        let _ = request.respond(builder);
+        relay_response(request, resp, &method);
         return;
     }
 
@@ -258,8 +377,9 @@ fn stop_listener() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader, Write};
     use std::net::{SocketAddr, TcpListener, TcpStream};
-    use std::sync::{Arc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -323,6 +443,13 @@ mod tests {
     }
 
     fn spawn_proxy(targets: Vec<Target>) -> (String, thread::JoinHandle<()>) {
+        spawn_proxy_with_limit(targets, MAX_REQUEST_BODY_BYTES)
+    }
+
+    fn spawn_proxy_with_limit(
+        targets: Vec<Target>,
+        max_body_bytes: usize,
+    ) -> (String, thread::JoinHandle<()>) {
         let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
         let url = local_url(&server);
         let join = thread::spawn(move || {
@@ -330,7 +457,130 @@ mod tests {
                 .recv_timeout(Duration::from_secs(10))
                 .expect("proxy receive")
                 .expect("proxy request");
-            handle_with_targets(request, true, targets);
+            handle_with_targets_limit(request, true, targets, max_body_bytes);
+        });
+        (url, join)
+    }
+
+    fn write_sse_chunk(stream: &mut TcpStream, payload: &[u8]) {
+        write!(stream, "{:x}\r\n", payload.len()).unwrap();
+        stream.write_all(payload).unwrap();
+        stream.write_all(b"\r\n").unwrap();
+    }
+
+    /// Minimal chunked SSE upstream. It sends the first event and then waits
+    /// for the test to release the second event, proving the proxy did not
+    /// buffer the whole response before forwarding it.
+    fn spawn_sse_upstream() -> (String, mpsc::Sender<()>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (finish_tx, finish_rx) = mpsc::channel();
+        let join = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("SSE client");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 1024];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let read = stream.read(&mut buffer).expect("upstream request read");
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..read]);
+                assert!(request.len() < 64 * 1024, "request headers too large");
+            }
+
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+            write_sse_chunk(&mut stream, b"data: first\n\n");
+            stream.flush().unwrap();
+
+            finish_rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("release second SSE event");
+            write_sse_chunk(&mut stream, b"data: second\n\n");
+            stream.write_all(b"0\r\n\r\n").unwrap();
+            stream.flush().unwrap();
+        });
+        (url, finish_tx, join)
+    }
+
+    fn spawn_sse_stress_upstream(
+        connections: usize,
+        events: usize,
+    ) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let join = thread::spawn(move || {
+            let mut workers = Vec::new();
+            for _ in 0..connections {
+                let (mut stream, _) = listener.accept().expect("stress SSE client");
+                workers.push(thread::spawn(move || {
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    stream
+                        .set_write_timeout(Some(Duration::from_secs(5)))
+                        .unwrap();
+                    let mut request = Vec::new();
+                    let mut buffer = [0u8; 1024];
+                    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        let read = stream.read(&mut buffer).expect("stress request read");
+                        if read == 0 {
+                            break;
+                        }
+                        request.extend_from_slice(&buffer[..read]);
+                    }
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+                        )
+                        .unwrap();
+                    for index in 0..events {
+                        let event = format!("data: event-{index}\n\n");
+                        write_sse_chunk(&mut stream, event.as_bytes());
+                        stream.flush().unwrap();
+                    }
+                    stream.write_all(b"0\r\n\r\n").unwrap();
+                    stream.flush().unwrap();
+                }));
+            }
+            for worker in workers {
+                worker.join().unwrap();
+            }
+        });
+        (url, join)
+    }
+
+    fn spawn_proxy_many(
+        targets: Vec<Target>,
+        requests: usize,
+    ) -> (String, thread::JoinHandle<()>) {
+        let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").unwrap());
+        let url = local_url(&server);
+        let join = thread::spawn(move || {
+            let mut workers = Vec::new();
+            for _ in 0..requests {
+                let request = server
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("stress proxy receive")
+                    .expect("stress proxy request");
+                let targets = targets.clone();
+                workers.push(thread::spawn(move || {
+                    handle_with_targets(request, true, targets);
+                }));
+            }
+            for worker in workers {
+                worker.join().unwrap();
+            }
         });
         (url, join)
     }
@@ -395,6 +645,124 @@ mod tests {
         assert_eq!(upstream_url("https://x/v1/", "/v1/responses"), "https://x/v1/responses");
         assert_eq!(upstream_url("https://x", "/v1/messages"), "https://x/v1/messages");
         assert_eq!(upstream_url("https://x/v1", "/v1"), "https://x/v1");
+    }
+
+    #[test]
+    fn body_reader_enforces_the_configured_limit() {
+        let mut exact = std::io::Cursor::new(b"1234".to_vec());
+        assert_eq!(read_body_limited(&mut exact, 4).unwrap(), b"1234");
+
+        let mut oversized = std::io::Cursor::new(b"12345".to_vec());
+        assert_eq!(
+            read_body_limited(&mut oversized, 4),
+            Err(BodyReadError::TooLarge)
+        );
+    }
+
+    #[test]
+    fn proxy_rejects_oversized_body_with_413() {
+        let (proxy_url, proxy_join) = spawn_proxy_with_limit(Vec::new(), 4);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let response = client
+            .post(format!("{proxy_url}/v1/chat/completions"))
+            .body("12345")
+            .send()
+            .expect("413 response");
+        assert_eq!(response.status().as_u16(), 413);
+        let body = response.text().unwrap();
+        assert!(body.contains(r#""limit_bytes":4"#), "unexpected body: {body}");
+        proxy_join.join().unwrap();
+    }
+
+    #[test]
+    fn shared_http_client_is_reused() {
+        let first = shared_client().unwrap();
+        let second = shared_client().unwrap();
+        assert!(std::ptr::eq(first, second));
+    }
+
+    #[test]
+    fn sse_is_streamed_before_upstream_finishes() {
+        let (upstream_url, release_upstream, upstream_join) = spawn_sse_upstream();
+        let (proxy_url, proxy_join) = spawn_proxy(vec![target(upstream_url, "sse-key")]);
+        let (first_tx, first_rx) = mpsc::channel();
+        let client_join = thread::spawn(move || {
+            let client = reqwest::blocking::Client::builder()
+                .connect_timeout(Duration::from_secs(5))
+                .timeout(Duration::from_secs(10))
+                .build()
+                .unwrap();
+            let response = client
+                .post(format!("{proxy_url}/v1/responses"))
+                .header("Content-Type", "application/json")
+                .body(r#"{"stream":true}"#)
+                .send()
+                .expect("SSE response");
+            assert_eq!(response.status().as_u16(), 200);
+            let mut reader = BufReader::new(response);
+            let mut first = String::new();
+            reader.read_line(&mut first).expect("first SSE line");
+            first_tx.send(first.clone()).expect("report first SSE line");
+            let mut rest = String::new();
+            reader.read_to_string(&mut rest).expect("remaining SSE body");
+            (first, rest)
+        });
+
+        let first = first_rx.recv_timeout(Duration::from_secs(2));
+        release_upstream.send(()).expect("release SSE upstream");
+        upstream_join.join().unwrap();
+        proxy_join.join().unwrap();
+        let (line, rest) = client_join.join().unwrap();
+
+        assert_eq!(
+            first.expect("proxy buffered SSE until the upstream completed"),
+            "data: first\n"
+        );
+        assert_eq!(line, "data: first\n");
+        assert!(rest.contains("data: second\n"), "unexpected tail: {rest}");
+    }
+
+    #[test]
+    fn concurrent_sse_streams_complete_without_cross_talk() {
+        const CONNECTIONS: usize = 6;
+        const EVENTS: usize = 8;
+        let (upstream_url, upstream_join) = spawn_sse_stress_upstream(CONNECTIONS, EVENTS);
+        let (proxy_url, proxy_join) = spawn_proxy_many(
+            vec![target(upstream_url, "stress-key")],
+            CONNECTIONS,
+        );
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .unwrap();
+        let mut workers = Vec::new();
+        for index in 0..CONNECTIONS {
+            let client = client.clone();
+            let proxy_url = proxy_url.clone();
+            workers.push(thread::spawn(move || {
+                let response = client
+                    .post(format!("{proxy_url}/v1/responses"))
+                    .header("Content-Type", "application/json")
+                    .body(format!(r#"{{"stream":true,"request":{index}}}"#))
+                    .send()
+                    .expect("stress proxy response");
+                assert_eq!(response.status().as_u16(), 200);
+                response.text().expect("stress SSE body")
+            }));
+        }
+
+        for body in workers.into_iter().map(|worker| worker.join().unwrap()) {
+            for index in 0..EVENTS {
+                assert!(body.contains(&format!("data: event-{index}\n")), "missing event {index}: {body}");
+            }
+            assert!(body.contains("data: event-7\n"));
+        }
+
+        proxy_join.join().unwrap();
+        upstream_join.join().unwrap();
     }
 
     #[test]

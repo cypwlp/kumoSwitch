@@ -204,6 +204,36 @@ const DICT: Record<string, string> = {
   "此供應商未填模型": "This provider has no model",
   "同一組 Base URL／Key／模型可以橫跨多個工具重複使用": "One base URL / key / model can be reused across tools",
   "下載中": "Downloading",
+  "加密匯出供應商": "Encrypted provider export",
+  "匯入加密備份": "Import encrypted backup",
+  "建立加密備份": "Create encrypted backup",
+  "解密並匯入": "Decrypt & import",
+  "備份密碼": "Backup password",
+  "再次輸入密碼": "Confirm password",
+  "至少 8 個字元": "At least 8 characters",
+  "密碼至少需要 8 個字元": "Password must be at least 8 characters",
+  "備份密碼至少需要 8 個字元": "Backup password must be at least 8 characters",
+  "兩次輸入的密碼不一致": "The passwords do not match",
+  "加密備份完成": "Encrypted backup complete",
+  "診斷匯出完成": "Diagnostics export complete",
+  "備份會使用 Argon2id 派生金鑰並以 AES-256-GCM 加密。密碼不會儲存，遺失後無法找回。":
+    "The backup uses an Argon2id-derived key and AES-256-GCM encryption. The password is not stored and cannot be recovered.",
+  "輸入建立這份備份時設定的密碼。若密碼錯誤，檔案不會被修改。":
+    "Enter the password used when this backup was created. A wrong password leaves everything unchanged.",
+  "留空會保留現有金鑰；按「查看」才會把完整金鑰載入編輯器。":
+    "Leave blank to keep the current key; only “View” loads the full key into the editor.",
+  "儲存後會移除這個供應商的 API Key。": "Saving will remove this provider's API key.",
+  "金鑰會以系統安全儲存加密後留在本機。": "The key is encrypted with system secure storage and stays on this machine.",
+  "查看": "View",
+  "清除金鑰": "Clear key",
+  "保留金鑰": "Keep key",
+  "讀取中…": "Reading…",
+  "儲存後清除": "Clear on save",
+  "已儲存": "Stored",
+  "建立一份包含 API Key 的完整副本": "Create a complete copy including the API key",
+  "開啟所在資料夾": "Open containing folder",
+  "把所有供應商加密匯出成 .kumoswitch": "Export every provider as an encrypted .kumoswitch backup",
+  "從 .kumoswitch 加密備份或舊 JSON 匯入供應商": "Import an encrypted .kumoswitch backup or legacy JSON",
 };
 
 interface Rule {
@@ -213,6 +243,11 @@ interface Rule {
 
 const RULES: Rule[] = [
   { re: /^已儲存「(.+)」$/, out: (m) => `Saved “${m[1]}”` },
+  { re: /^已建立完整副本「(.+)」$/, out: (m) => `Created a complete copy of “${m[1]}”` },
+  { re: /^已匯入舊明文格式 (\d+) 筆，略過 (\d+) 筆$/, out: (m) => `Imported ${m[1]} legacy plaintext entries; skipped ${m[2]}` },
+  { re: /^已解密匯入 (\d+) 筆，略過 (\d+) 筆$/, out: (m) => `Decrypted and imported ${m[1]} entries; skipped ${m[2]}` },
+  { re: /^已加密匯出 (\d+) 個供應商。請妥善保管密碼；沒有密碼無法還原。$/, out: (m) => `Encrypted export contains ${m[1]} providers. Keep the password safe; it cannot be recovered.` },
+  { re: /^已匯出 (\d+) 個供應商摘要。診斷檔不含完整 API Key。$/, out: (m) => `Exported a summary of ${m[1]} providers. The diagnostics file contains no full API keys.` },
   { re: /^已建立「(.+)」$/, out: (m) => `Created “${m[1]}”` },
   { re: /^已更新「(.+)」$/, out: (m) => `Updated “${m[1]}”` },
   { re: /^已套用「(.+)」$/, out: (m) => `Applied “${m[1]}”` },

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 — 2026-11-12
+- 安全性：供應商清單不再經 IPC 回傳完整 API Key；編輯器只在按下「查看」時明確讀取，套用前 diff 中的已知金鑰也改為末四碼遮罩。
+- 加密備份：以固定 Argon2id 參數（64 MiB、3 次、2 lanes）派生金鑰，再用 AES-256-GCM 封裝 `.kumoswitch` 備份；保留舊明文 JSON 匯入。
+- 代理：共用 reqwest client 與連線池、32 MiB request body 上限（413）、chunked response 即時 flush，修正 SSE 可能被 tiny_http 緩衝到 upstream EOF 的問題。
+- 測試：新增 client 重用、body 上限、413、真 SSE 先送達與並行 SSE 壓測，以及 Playwright Chromium UI E2E（金鑰遮罩／清除、加密匯出、diff）。
+
 ## 0.8.1 — 2026-11-12
 - 可靠性：`providers.json`、`history.json`、備份 manifest 與匯出檔改為原子寫入，避免斷電或程序中斷造成半寫檔。
 - 安全性：Unix 上資料目錄收緊為 `0700`、應用檔案為 `0600`；寫回工具設定時保留原有權限位。

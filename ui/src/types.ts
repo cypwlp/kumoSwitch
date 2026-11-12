@@ -6,6 +6,9 @@ export interface Provider {
   name: string;
   base_url: string;
   api_key: string;
+  api_key_masked?: string;
+  has_api_key?: boolean;
+  clear_api_key?: boolean;
   model: string;
   kind: string;
   note: string;

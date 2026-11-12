@@ -4,12 +4,18 @@ import { Modal } from "./Modal";
 
 interface ExportProps {
   result: ExportResult;
+  variant: "encrypted" | "diagnostics";
   onClose: () => void;
   onReveal: () => void;
 }
 
-export function ExportModal({ result, onClose, onReveal }: ExportProps) {
+export function ExportModal({ result, variant, onClose, onReveal }: ExportProps) {
   const [copied, setCopied] = useState(false);
+  const title = variant === "encrypted" ? "加密備份完成" : "診斷匯出完成";
+  const description =
+    variant === "encrypted"
+      ? `已加密匯出 ${result.count} 個供應商。請妥善保管密碼；沒有密碼無法還原。`
+      : `已匯出 ${result.count} 個供應商摘要。診斷檔不含完整 API Key。`;
 
   const copy = async () => {
     try {
@@ -23,12 +29,12 @@ export function ExportModal({ result, onClose, onReveal }: ExportProps) {
   return (
     <Modal
       narrow
-      title="匯出完成"
+      title={title}
       onClose={onClose}
       footer={
         <>
-          <button className="ghost" onClick={onReveal} title="開啟目前工具的設定資料夾">
-            開啟工具資料夾
+          <button className="ghost" onClick={onReveal} title="在檔案總管中顯示這個檔案">
+            開啟所在資料夾
           </button>
           <button className="ghost" onClick={copy}>
             {copied ? "已複製" : "複製路徑"}
@@ -39,9 +45,7 @@ export function ExportModal({ result, onClose, onReveal }: ExportProps) {
         </>
       }
     >
-      <div className="note" style={{ marginBottom: 12 }}>
-        已匯出 {result.count} 個供應商（含 API Key）。檔案是明文 JSON，請自行保管。
-      </div>
+      <div className="note" style={{ marginBottom: 12 }}>{description}</div>
       <div className="note path">{result.path}</div>
     </Modal>
   );

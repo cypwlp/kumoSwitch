@@ -134,7 +134,15 @@ pub fn list(tool: &str) -> Vec<Provider> {
     load().providers.get(tool).cloned().unwrap_or_default()
 }
 
-pub fn upsert(tool: &str, mut provider: Provider) -> Result<Provider, String> {
+pub fn upsert(tool: &str, provider: Provider) -> Result<Provider, String> {
+    upsert_with_key_action(tool, provider, false)
+}
+
+pub fn upsert_with_key_action(
+    tool: &str,
+    mut provider: Provider,
+    clear_key: bool,
+) -> Result<Provider, String> {
     let mut store = load();
     if provider.id.is_empty() {
         provider.id = format!("p{}", stamp());
@@ -153,7 +161,10 @@ pub fn upsert(tool: &str, mut provider: Provider) -> Result<Provider, String> {
     }
     match entry.iter_mut().find(|p| p.id == provider.id) {
         Some(existing) => {
-            if provider.api_key.is_empty() && !existing.api_key_enc.is_empty() {
+            if clear_key {
+                provider.api_key.clear();
+                provider.api_key_enc.clear();
+            } else if provider.api_key.is_empty() && !existing.api_key_enc.is_empty() {
                 provider.api_key = existing.api_key.clone();
                 provider.api_key_enc = existing.api_key_enc.clone();
             }

@@ -17,3 +17,8 @@ ui/dist/
 
 # signing keys
 .secrets/
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/
