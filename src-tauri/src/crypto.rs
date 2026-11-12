@@ -177,11 +177,13 @@ mod imp {
     }
 
     pub fn protect(data: &[u8]) -> Result<Vec<u8>, String> {
-        protect_with_key(&master_key()?, data)
+        let key = master_key()?;
+        protect_with_key(&key[..], data)
     }
 
     pub fn unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
-        unprotect_with_key(&master_key()?, data)
+        let key = master_key()?;
+        unprotect_with_key(&key[..], data)
     }
 
     pub fn available() -> bool {
