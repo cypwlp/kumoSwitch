@@ -105,7 +105,10 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   const context = browser!.contexts()[0];
   const page = context.pages()[0] ?? await context.waitForEvent("page");
   await expect(page).toHaveTitle(/kumoSwitch/i);
-  await page.evaluate(() => localStorage.setItem("kumoswitch.onboarded", "1"));
+  await page.evaluate(() => {
+    localStorage.setItem("kumoswitch.onboarded", "1");
+    localStorage.setItem("kumoswitch.lang", "zh");
+  });
   await page.reload();
   await expect(page).toHaveTitle(/kumoSwitch/i);
   await page.getByRole("button", { name: /Codex/ }).first().click();
