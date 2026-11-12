@@ -7,7 +7,7 @@ set -eu
 REPO_URL="https://github.com/cypwlp/kumoSwitch.git"
 SRC_DIR="${HOME}/kumoswitch-src"
 WEB_ROOT="/var/www/kumoswitch"
-NGINX_CONF="/etc/nginx/conf.d/kumoswitch.conf"
+NGINX_CONF="/etc/nginx/sites-available/kumoswitch"
 
 if [ -d "$SRC_DIR/.git" ]; then
   git -C "$SRC_DIR" pull --ff-only
@@ -20,6 +20,7 @@ sudo cp -r "$SRC_DIR/site/." "$WEB_ROOT/"
 
 # Always refresh the virtual host so domain changes reach the server.
 sudo install -m 644 "$SRC_DIR/deploy/nginx-kumoswitch.conf" "$NGINX_CONF"
+sudo ln -sfn "$NGINX_CONF" /etc/nginx/sites-enabled/kumoswitch
 sudo nginx -t
 sudo systemctl reload nginx
 
