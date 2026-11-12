@@ -34,4 +34,20 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix ui
       - run: npm run build --prefix ui
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Rust tests
+        shell: pwsh
+        run: |
+          & cargo test --manifest-path src-tauri/Cargo.toml 2>&1 | Tee-Object -FilePath cargo-test.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Annotate Rust test failures
+        if: failure()
+        shell: pwsh
+        run: |
+          $pattern = '^failures:|FAILED|panicked|assertion|^---- .* stdout ----'
+          Get-Content cargo-test.log |
+            Select-String -Pattern $pattern |
+            Select-Object -Last 40 |
+            ForEach-Object {
+              $message = $_.Line.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=Rust test failure::$message"
+            }
