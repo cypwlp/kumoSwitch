@@ -23,5 +23,5 @@ sudo install -m 644 "$SRC_DIR/deploy/nginx-kumoswitch.conf" "$NGINX_CONF"
 sudo nginx -t
 sudo systemctl reload nginx
 
-echo "published: https://kumoswitch.cypilu.cloud/"
+echo "published origin: http://kumoswitch.cypilu.cloud/"
 echo "origin check: curl -H 'Host: kumoswitch.cypilu.cloud' http://127.0.0.1/"

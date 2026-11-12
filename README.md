@@ -131,9 +131,8 @@ CI 仍保留可選的 Windows Authenticode hook：提供 `WINDOWS_CERT_PFX_BASE6
 
 ## 鏡像站
 
-主要網站是 [GitHub Pages](https://cypwlp.github.io/kumoSwitch/)。鏡像網域為
-[kumoswitch.cypilu.cloud](https://kumoswitch.cypilu.cloud/)，DNS 指向獨立的 Nginx virtual host，
-不會覆蓋同一台主機上的其他站點。
+主要網站是 [GitHub Pages](https://cypwlp.github.io/kumoSwitch/)。鏡像 origin 預留在
+`kumoswitch.cypilu.cloud`，DNS 指向獨立的 Nginx virtual host，不會覆蓋同一台主機上的其他站點。
 
-部署方式：在伺服器上執行 `sh deploy/deploy.sh`。若鏡像網域由中國大陸直接連線時出現
-DNSPod／ICP 攔截頁，需完成網域備案或改由境外 CDN／反向代理承接；origin Nginx 設定本身已就緒。
+目前 origin 已部署並可從主機內以 `Host: kumoswitch.cypilu.cloud` 正確取得 kumoSwitch 頁面；但公開入口仍被
+DNSPod／ICP 備案攔截，因此在完成網域備案或改由境外 CDN／反向代理承接前，不會放上官網下載頁。
