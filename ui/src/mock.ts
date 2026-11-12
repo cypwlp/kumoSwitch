@@ -13,6 +13,8 @@ import type {
   Provider,
   TestResult,
   ToolView,
+  ProxyConfig,
+  ModelTestResult,
 } from "./types";
 
 /**
@@ -33,21 +35,37 @@ function p(
   kind: string,
   note: string,
 ): Provider {
-  return { id, config_id: configId, name, base_url: baseUrl, api_key: apiKey, model, kind, note };
+  return {
+    id,
+    config_id: configId,
+    name,
+    base_url: baseUrl,
+    api_key: apiKey,
+    model,
+    models: model ? [{ id: model, name: model }] : [],
+    kind,
+    note,
+  };
 }
 
 const PROVIDERS: Record<string, Provider[]> = {
   codex: [
-    p(
-      "cx-1",
-      "opencode-go",
-      "OpenCode Go",
-      "https://opencode.ai/zen/go/v1",
-      "sk-zen-8f31c0d9f2a",
-      "glm-5.3-flash",
-      "responses",
-      "主力",
-    ),
+    {
+      ...p(
+        "cx-1",
+        "opencode-go",
+        "OpenCode Go",
+        "https://opencode.ai/zen/go/v1",
+        "sk-zen-8f31c0d9f2a",
+        "glm-5.3-flash",
+        "responses",
+        "主力",
+      ),
+      models: [
+        { id: "glm-5.3-flash", name: "GLM 5.3 Flash", context_window: 128000, max_output: 16384, reasoning: true, tools: true },
+        { id: "muse-spark-1.3", name: "Muse Spark 1.3", context_window: 128000, max_output: 16384, reasoning: true, tools: true },
+      ],
+    },
     p(
       "cx-2",
       "command-code",
@@ -98,6 +116,8 @@ const PROVIDERS: Record<string, Provider[]> = {
     p("ds-2", "zen-go", "Zen Go", "https://opencode.ai/zen/go/v1", "sk-zen-8f31c0d9f2a", "glm-5.3-flash", "openai-responses", ""),
   ],
 };
+
+const PREVIOUS: Record<string, string | null> = {};
 
 const ACTIVE: Record<string, string | null> = {
   codex: "cx-1",
@@ -346,6 +366,7 @@ function toolViews(): ToolView[] {
     takeover: s.takeover,
     provider_count: (PROVIDERS[s.id] ?? []).length,
     active_id: ACTIVE[s.id] ?? null,
+    previous_id: PREVIOUS[s.id] ?? null,
     current: { ...s.current },
     kind_choices: [...s.kinds],
     importable: s.importable,
@@ -544,7 +565,13 @@ function buildPreview(tool: string, providerId: string): Preview {
   if (!target.api_key.trim()) {
     warnings.push("此供應商未填 API Key，將寫入空字串；多數工具會回報 401。");
   }
-  return { files: [file], warnings };
+  const changedFields = ["供應商", "模型", "Base URL", "API Key"].filter((label) => {
+    if (label === "模型") return file.diff.includes("model");
+    if (label === "Base URL") return /base_?url|baseURL/i.test(file.diff);
+    if (label === "API Key") return /api_?key|auth_token|bearer_token/i.test(file.diff);
+    return /provider/i.test(file.diff);
+  });
+  return { files: [file], warnings, changed_fields: changedFields };
 }
 
 /* ----------------------------------------------------------------- invoke */
@@ -582,7 +609,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   switch (cmd) {
     case "app_info":
       return {
-        version: "0.9.1",
+        version: "0.10.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
       } satisfies AppInfo;
@@ -647,6 +674,57 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return provider.api_key;
     }
 
+    case "provider_config_preview": {
+      const id = String(args.id ?? "");
+      const provider = findProvider(tool, id);
+      const seed = seedOf(tool);
+      const diff = buildPreview(tool, provider.id).files[0];
+      return [{ file: displayPath(seed.file), fmt: diff.fmt, content: diff.diff }];
+    }
+
+    case "provider_select_model": {
+      const id = String(args.id ?? "");
+      const model = String(args.model ?? "");
+      const provider = findProvider(tool, id);
+      const models = provider.models ?? [{ id: provider.model, name: provider.model }];
+      if (!models.some((item) => item.id === model)) throw new Error(`這個供應商沒有模型「${model}」`);
+      provider.model = model;
+      provider.models = models;
+      return providerView(provider);
+    }
+
+    case "test_model": {
+      const providerId = String(args.providerId ?? "");
+      const modelId = String(args.modelId ?? "");
+      const provider = findProvider(tool, providerId);
+      const model = (provider.models ?? []).find((item) => item.id === modelId);
+      if (!model) throw new Error(`這個供應商沒有模型「${modelId}」`);
+      await delay(220);
+      const bad = /command-code|ollama/.test(provider.config_id);
+      const status = bad ? 401 : 200;
+      const result = {
+        ok: status === 200,
+        status,
+        ms: bad ? 412 : 128 + (modelId.length % 7) * 23,
+        message: bad ? "Unauthorized：API Key 無效或已過期" : `HTTP 200 · 模型「${modelId}」可用`,
+      } satisfies TestResult;
+      const checks = [...(model.checks ?? []), { ts: Date.now(), ok: result.ok, ms: result.ms, status }].slice(-20);
+      const updated = { ...model, checks };
+      provider.models = (provider.models ?? []).map((item) => item.id === modelId ? updated : item);
+      return { model: updated, result } satisfies ModelTestResult;
+    }
+
+    case "provider_reorder": {
+      const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
+      const bucket = PROVIDERS[tool] ?? (PROVIDERS[tool] = []);
+      bucket.sort((left, right) => {
+        const a = ids.indexOf(left.id);
+        const b = ids.indexOf(right.id);
+        return (a < 0 ? Number.MAX_SAFE_INTEGER : a) - (b < 0 ? Number.MAX_SAFE_INTEGER : b);
+      });
+      return bucket.map(providerView);
+    }
+
     case "provider_delete": {
       const id = String(args.id ?? "");
       PROVIDERS[tool] = (PROVIDERS[tool] ?? []).filter((x) => x.id !== id);
@@ -662,6 +740,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       const target = findProvider(tool, id);
       const seed = seedOf(tool);
       const preview = buildPreview(tool, id);
+      if (ACTIVE[tool] && ACTIVE[tool] !== id) PREVIOUS[tool] = ACTIVE[tool] ?? null;
       ACTIVE[tool] = id;
       seed.current = {
         base_url: target.base_url,
@@ -715,11 +794,65 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     }
 
     case "proxy_status":
-      return { enabled: false, port: 17890, stack: [] };
+      return {
+        enabled: false,
+        port: 17890,
+        stack: [],
+        strategy: "ordered",
+        policies: {},
+      } satisfies ProxyConfig;
     case "proxy_save":
       return args.config;
+    case "proxy_reset_metrics":
+      return undefined;
+    case "proxy_metrics":
+      return {
+        strategy: "health",
+        targets: {
+          "codex:cx-1": {
+            active: 1,
+            requests: 48,
+            successes: 46,
+            failures: 2,
+            failovers: 3,
+            success_rate: 0.958,
+            consecutive_failures: 0,
+            circuit_open_until: 0,
+            last_ttfb_ms: 112,
+            avg_ttfb_ms: 138,
+            last_status: 200,
+            last_used: Date.now(),
+          },
+        },
+        logs: [
+          { ts: Date.now(), target: "codex:cx-1", event: "success", status: 200, ttfb_ms: 112, message: "OK" },
+          { ts: Date.now() - 5000, target: "codex:cx-2", event: "failover", status: 429, ttfb_ms: 86, message: "upstream rate limited (429); cooling down" },
+        ],
+      };
     case "proxy_attach":
       return { changed: true, backup_id: "mock", written: ["config"], message: "已掛載代理" };
+
+    case "import_scan":
+      return Object.entries(PROVIDERS).flatMap(([tool, list]) =>
+        list.map((provider) => ({
+          tool,
+          tool_name: seedOf(tool).name,
+          config_id: provider.config_id,
+          name: provider.name,
+          base_url: provider.base_url,
+          model: provider.model,
+          models: provider.models ?? [],
+          kind: provider.kind,
+          conflict: true,
+          differences: tool === "codex" ? ["目前模型"] : [],
+        })),
+      );
+
+    case "import_apply": {
+      const decisions = Array.isArray(args.decisions) ? args.decisions : [];
+      const imported = decisions.filter((item) => item && typeof item === "object" && "action" in item && item.action !== "skip").length;
+      return { imported, skipped: decisions.length - imported } satisfies JsonImportResult;
+    }
 
     case "provider_presets":
       return [
@@ -789,8 +922,20 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return {
         path: `${HOME}\\Documents\\kumoswitch-backup-20261110.kumoswitch`,
         count,
+        sha256: "b5f95a42a2a69f36ed4e789f3b9a12bf03ef86384ddb6e97f340ff6ab0f20e1c",
       } satisfies ExportResult;
     }
+
+    case "inspect_encrypted_backup":
+      if (!String(args.text ?? "").includes("kumoswitch-export")) throw new Error("不是有效的 kumoSwitch 加密備份");
+      return {
+        format: "kumoswitch-export",
+        version: 1,
+        created_at: 1762790400000,
+        provider_count: 9,
+        plaintext_sha256: "4a63dfe8f901b4f5bc3b0b50d93f8cba7dc3f6a60948f6f63e21ad0f8e382a67",
+        has_checksum: true,
+      };
 
     case "import_providers_encrypted": {
       const password = String(args.password ?? "");
@@ -802,6 +947,13 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "reveal_path":
       return undefined;
+
+    case "audit_log":
+      return [
+        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.10.0" },
+        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.10.0" },
+        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.10.0" },
+      ];
 
     case "import_providers_json": {
       const text = String(args.text ?? "");

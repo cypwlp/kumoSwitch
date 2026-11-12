@@ -47,6 +47,12 @@ export function ExportModal({ result, variant, onClose, onReveal }: ExportProps)
     >
       <div className="note" style={{ marginBottom: 12 }}>{description}</div>
       <div className="note path">{result.path}</div>
+      {result.sha256 ? (
+        <div className="export-checksum">
+          <span>SHA-256</span>
+          <code>{result.sha256}</code>
+        </div>
+      ) : null}
     </Modal>
   );
 }

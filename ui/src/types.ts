@@ -1,5 +1,24 @@
 export type Fmt = "TOML" | "JSON" | "YAML" | "ENV";
 
+export interface ModelCheck {
+  ts: number;
+  ok: boolean;
+  ms: number;
+  status: number;
+}
+
+export interface ModelProfile {
+  id: string;
+  name: string;
+  context_window?: number;
+  max_output?: number;
+  reasoning?: boolean;
+  vision?: boolean;
+  tools?: boolean;
+  metadata?: unknown;
+  checks?: ModelCheck[];
+}
+
 export interface Provider {
   id: string;
   config_id: string;
@@ -10,6 +29,7 @@ export interface Provider {
   has_api_key?: boolean;
   clear_api_key?: boolean;
   model: string;
+  models?: ModelProfile[];
   kind: string;
   note: string;
   /** Unix millis of the last successful apply. */
@@ -35,6 +55,7 @@ export interface ToolView {
   takeover: boolean;
   provider_count: number;
   active_id: string | null;
+  previous_id: string | null;
   current: CurrentState;
   kind_choices: string[];
   importable: number;
@@ -52,6 +73,7 @@ export interface FileDiff {
 export interface Preview {
   files: FileDiff[];
   warnings: string[];
+  changed_fields: string[];
 }
 
 export interface ApplyResult {
@@ -74,6 +96,11 @@ export interface TestResult {
   message: string;
 }
 
+export interface ModelTestResult {
+  model: ModelProfile;
+  result: TestResult;
+}
+
 export interface AppInfo {
   autoHealth?: boolean;
   version: string;
@@ -89,11 +116,55 @@ export interface ImportResult {
 export interface ExportResult {
   path: string;
   count: number;
+  sha256?: string | null;
+}
+
+export interface AuditEntry {
+  ts: number;
+  action: string;
+  detail: string;
+  version: string;
+}
+
+export interface EncryptedBackupInfo {
+  format: string;
+  version: number;
+  created_at: number;
+  provider_count: number;
+  plaintext_sha256: string;
+  has_checksum: boolean;
 }
 
 export interface JsonImportResult {
   imported: number;
   skipped: number;
+}
+
+export interface ProviderConfigPreview {
+  file: string;
+  fmt: Fmt;
+  content: string;
+}
+
+export type ImportAction = "skip" | "import" | "overwrite" | "merge" | "copy";
+
+export interface ImportCandidate {
+  tool: string;
+  tool_name: string;
+  config_id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  models: ModelProfile[];
+  kind: string;
+  conflict: boolean;
+  differences: string[];
+}
+
+export interface ImportDecision {
+  tool: string;
+  config_id: string;
+  action: ImportAction;
 }
 export interface Sample {
   ts: number;
@@ -149,4 +220,52 @@ export interface UsageReport {
 
 export interface HealthOverview { tests: number; ok: number; avg_ms: number; providers_tested: number; }
 
-export interface ProxyConfig { enabled: boolean; port: number; stack: string[]; }
+export type RoutingStrategy = "ordered" | "priority" | "weighted" | "health";
+
+export interface ProxyTargetPolicy {
+  weight: number;
+  priority: number;
+  timeout_secs: number;
+  failure_cooldown_secs: number;
+  backoff_429_secs: number;
+  failure_threshold: number;
+  max_concurrency: number;
+}
+
+export interface ProxyConfig {
+  enabled: boolean;
+  port: number;
+  stack: string[];
+  strategy: RoutingStrategy;
+  policies: Record<string, ProxyTargetPolicy>;
+}
+
+export interface ProxyLogEntry {
+  ts: number;
+  target: string;
+  event: string;
+  status: number | null;
+  ttfb_ms: number | null;
+  message: string;
+}
+
+export interface TargetMetrics {
+  active: number;
+  requests: number;
+  successes: number;
+  failures: number;
+  failovers: number;
+  success_rate: number;
+  consecutive_failures: number;
+  circuit_open_until: number;
+  last_ttfb_ms: number;
+  avg_ttfb_ms: number;
+  last_status: number;
+  last_used: number;
+}
+
+export interface ProxyMetrics {
+  strategy: string;
+  targets: Record<string, TargetMetrics>;
+  logs: ProxyLogEntry[];
+}

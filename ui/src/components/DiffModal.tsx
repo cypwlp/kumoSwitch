@@ -69,6 +69,13 @@ export function DiffModal({ tool, provider, preview, busy, onCancel, onConfirm }
         </div>
       ) : null}
 
+      <div className="changed-fields">
+        <span>這次會改動</span>
+        {preview.changed_fields.length
+          ? preview.changed_fields.map((field) => <span className="badge subtle" key={field}>{field}</span>)
+          : <span className="badge subtle">設定檔</span>}
+      </div>
+
       <div className="note">
         以下是實際會寫入的變更。只列出被修改的行；未列出的內容一個字都不會動。寫入前會自動建立時間戳備份。
       </div>

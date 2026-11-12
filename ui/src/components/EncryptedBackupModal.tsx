@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { errorText } from "../api";
+import type { EncryptedBackupInfo } from "../types";
 import { Modal } from "./Modal";
 
 interface EncryptedBackupProps {
   mode: "export" | "import";
   fileName?: string;
+  backupInfo?: EncryptedBackupInfo;
   onCancel: () => void;
   onSubmit: (password: string) => Promise<void>;
 }
 
-export function EncryptedBackupModal({ mode, fileName, onCancel, onSubmit }: EncryptedBackupProps) {
+export function EncryptedBackupModal({ mode, fileName, backupInfo, onCancel, onSubmit }: EncryptedBackupProps) {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
@@ -60,6 +62,14 @@ export function EncryptedBackupModal({ mode, fileName, onCancel, onSubmit }: Enc
         }}
       >
         {fileName ? <div className="note path">{fileName}</div> : null}
+        {backupInfo ? (
+          <div className="backup-meta-grid">
+            <div><span>格式版本</span><strong>v{backupInfo.version}</strong></div>
+            <div><span>建立時間</span><strong>{backupInfo.created_at ? new Date(backupInfo.created_at).toLocaleString() : "舊版備份"}</strong></div>
+            <div><span>供應商數量</span><strong>{backupInfo.provider_count || "未知"}</strong></div>
+            <div><span>完整性</span><strong>{backupInfo.has_checksum ? "含 SHA-256 校驗" : "舊版無校驗"}</strong></div>
+          </div>
+        ) : null}
         <div className="note" style={{ marginBottom: 12 }}>
           {isExport
             ? "備份會使用 Argon2id 派生金鑰並以 AES-256-GCM 加密。密碼不會儲存，遺失後無法找回。"

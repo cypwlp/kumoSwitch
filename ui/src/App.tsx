@@ -11,6 +11,10 @@ import type {
   Provider,
   HistoryMap,
   ToolView,
+  ImportCandidate,
+  ImportDecision,
+  EncryptedBackupInfo,
+  ModelProfile,
 } from "./types";
 import { Rail } from "./components/Rail";
 import { ToolPanel } from "./components/ToolPanel";
@@ -20,6 +24,7 @@ import { BackupModal } from "./components/BackupModal";
 import { ConfirmModal } from "./components/ConfirmModal";
 import { ExportModal } from "./components/ExportModal";
 import { EncryptedBackupModal } from "./components/EncryptedBackupModal";
+import { ImportPreviewModal } from "./components/ImportPreviewModal";
 import { CommandPalette } from "./components/CommandPalette";
 import { Onboarding } from "./components/Onboarding";
 import { StatsView } from "./components/StatsView";
@@ -33,6 +38,7 @@ type ModalState =
   | { kind: "backups"; backups: BackupInfo[] }
   | { kind: "export"; result: ExportResult; variant: "encrypted" | "diagnostics" }
   | { kind: "encrypted"; mode: "export" | "import"; fileName?: string }
+  | { kind: "import-preview"; candidates: ImportCandidate[] }
   | null;
 
 interface ConfirmState {
@@ -64,7 +70,7 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [showProxy, setShowProxy] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
-  const [pendingImport, setPendingImport] = useState<{ text: string; name: string } | null>(null);
+  const [pendingImport, setPendingImport] = useState<{ text: string; name: string; info?: EncryptedBackupInfo } | null>(null);
   const [palette, setPalette] = useState(false);
   const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
   const [update, setUpdate] = useState<UpdateCheck>({ kind: "idle" });
@@ -321,18 +327,58 @@ export default function App() {
 
   /* ------------------------------------------------------------ actions */
 
-  const saveProvider = async (payload: Provider) => {
+  const saveProvider = async (payload: Provider, previewAfter = false) => {
     if (!selected) return;
+    const toolId = selected.id;
     setBusy(true);
     try {
-      const saved = await api.providerSave(selected.id, payload);
-      await reload(selected.id);
+      const saved = await api.providerSave(toolId, payload);
+      const list = await loadProviders(toolId);
       setModal(null);
       push(`已儲存「${saved.name}」`, "ok");
+      const savedView = list.find((provider) => provider.id === saved.id);
+      if (previewAfter && savedView) await openDiff(toolId, savedView);
     } catch (err) {
       push(errorText(err), "err");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const rememberModelTest = (model: ModelProfile) => {
+    if (modal?.kind !== "editor" || !modal.provider) return;
+    const providerId = modal.provider.id;
+    setProviders((current) => current.map((provider) => (
+      provider.id === providerId
+        ? { ...provider, models: (provider.models ?? []).map((item) => item.id === model.id ? model : item) }
+        : provider
+    )));
+  };
+
+  const switchProviderModel = async (modelId: string) => {
+    if (!selected || modal?.kind !== "editor" || !modal.provider) return;
+    const toolId = selected.id;
+    const providerId = modal.provider.id;
+    setBusy(true);
+    try {
+      const updated = await api.providerSelectModel(toolId, providerId, modelId);
+      await loadProviders(toolId);
+      setModal(null);
+      push(`已選擇模型「${modelId}」，請確認 diff 後套用`, "ok");
+      await openDiff(toolId, updated);
+    } catch (err) {
+      push(errorText(err), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reorderProviders = async (ids: string[]) => {
+    if (!selected) return;
+    try {
+      setProviders(await api.providerReorder(selected.id, ids));
+    } catch (err) {
+      push(errorText(err), "err");
     }
   };
 
@@ -417,17 +463,30 @@ export default function App() {
     }
   };
 
-  const importConfig = async () => {
-    if (!selected) return;
-    const toolId = selected.id;
+  const scanConfig = async () => {
     setBusy(true);
     try {
-      const result = await api.importFromConfig(toolId);
-      push(
-        `從設定檔導入 ${result.imported.length} 筆，略過 ${result.skipped} 筆`,
-        result.imported.length ? "ok" : "",
-      );
-      await reload(toolId);
+      const candidates = await api.importScan();
+      if (candidates.length === 0) {
+        push("所有 Harness 都沒有找到可匯入的供應商", "ok");
+        return;
+      }
+      setModal({ kind: "import-preview", candidates });
+    } catch (err) {
+      push(errorText(err), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const applyImport = async (decisions: ImportDecision[]) => {
+    setBusy(true);
+    try {
+      const result = await api.importApply(decisions);
+      setModal(null);
+      push(`已匯入 ${result.imported} 筆，略過 ${result.skipped} 筆`, "ok");
+      await refreshTools();
+      if (selectedId) await loadProviders(selectedId);
     } catch (err) {
       push(errorText(err), "err");
     } finally {
@@ -445,8 +504,13 @@ export default function App() {
       void (async () => {
         const text = String(reader.result ?? "");
         if (file.name.toLowerCase().endsWith(".kumoswitch")) {
-          setPendingImport({ text, name: file.name });
-          setModal({ kind: "encrypted", mode: "import", fileName: file.name });
+          try {
+            const info = await api.inspectEncryptedBackup(text);
+            setPendingImport({ text, name: file.name, info });
+            setModal({ kind: "encrypted", mode: "import", fileName: file.name });
+          } catch (err) {
+            push(errorText(err), "err");
+          }
           return;
         }
         try {
@@ -463,10 +527,26 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  const chooseSavePath = async (defaultName: string, extension: string): Promise<string | undefined | null> => {
+    if (MOCK) return undefined;
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      return await save({
+        defaultPath: `${info?.dataDir || ""}/${defaultName}`,
+        filters: [{ name: extension === "kumoswitch" ? "kumoSwitch backup" : "Text", extensions: [extension] }],
+      });
+    } catch (error) {
+      push(errorText(error), "err");
+      return null;
+    }
+  };
+
   const handleEncryptedSubmit = async (password: string) => {
     if (modal?.kind !== "encrypted") return;
     if (modal.mode === "export") {
-      const result = await api.exportProvidersEncrypted(password);
+      const destination = await chooseSavePath(`kumoswitch-backup-${Date.now()}.kumoswitch`, "kumoswitch");
+      if (destination === null) return;
+      const result = await api.exportProvidersEncrypted(password, destination || undefined);
       setModal({ kind: "export", result, variant: "encrypted" });
       return;
     }
@@ -561,7 +641,9 @@ export default function App() {
 
   const diagnostics = async () => {
     try {
-      const result = await api.exportDiagnostics();
+      const destination = await chooseSavePath(`kumoswitch-diagnostics-${Date.now()}.txt`, "txt");
+      if (destination === null) return;
+      const result = await api.exportDiagnostics(destination || undefined);
       push(`診斷已匯出（${result.count} 個供應商摘要）`, "ok");
       setModal({ kind: "export", result, variant: "diagnostics" });
     } catch (err) {
@@ -644,6 +726,7 @@ export default function App() {
               key={selected.id}
               tool={selected}
               activeProvider={providers.find((provider) => provider.id === selected.active_id) ?? null}
+              previousProvider={providers.find((provider) => provider.id === selected.previous_id) ?? null}
               rows={rows}
               total={providers.length}
               filter={filter}
@@ -655,7 +738,7 @@ export default function App() {
               onReveal={() => void reveal(selected.id)}
               onBackups={() => void openBackups(selected.id)}
               onAdd={() => openEditor(null)}
-              onImportConfig={() => void importConfig()}
+              onImportConfig={() => void scanConfig()}
               sort={sort}
               onSort={setSort}
               onPalette={() => setPalette(true)}
@@ -664,6 +747,7 @@ export default function App() {
               autoHealth={autoHealth}
               onToggleAutoHealth={() => void toggleAutoHealth()}
               onApply={(p) => void openDiff(selected.id, p)}
+              onReorder={(ids) => void reorderProviders(ids)}
               onEdit={(p) => openEditor(p)}
               onDelete={askDelete}
               onTest={(p) => void runTest(p)}
@@ -729,9 +813,12 @@ export default function App() {
         <EditorModal
           tool={selected}
           provider={modal.provider}
+          history={modal.provider ? history[modal.provider.id] : undefined}
           busy={busy}
           onCancel={() => setModal(null)}
-          onSave={(payload) => void saveProvider(payload)}
+          onSave={(payload, previewAfter) => saveProvider(payload, previewAfter)}
+          onSwitchModel={(modelId) => switchProviderModel(modelId)}
+          onModelTested={rememberModelTest}
           onClone={() => void cloneProvider()}
         />
       ) : null}
@@ -757,10 +844,20 @@ export default function App() {
         />
       ) : null}
 
+      {modal?.kind === "import-preview" ? (
+        <ImportPreviewModal
+          candidates={modal.candidates}
+          busy={busy}
+          onCancel={() => setModal(null)}
+          onApply={applyImport}
+        />
+      ) : null}
+
       {modal?.kind === "encrypted" ? (
         <EncryptedBackupModal
           mode={modal.mode}
           fileName={modal.fileName}
+          backupInfo={pendingImport?.info}
           onCancel={() => {
             setModal(null);
             setPendingImport(null);

@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { useFocusLayer } from "../focus";
 
 interface ModalProps {
@@ -12,6 +12,7 @@ interface ModalProps {
 
 export function Modal({ title, onClose, children, footer, narrow, top }: ModalProps) {
   const sheet = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useFocusLayer(sheet, onClose);
 
   return (
@@ -26,10 +27,11 @@ export function Modal({ title, onClose, children, footer, narrow, top }: ModalPr
         ref={sheet}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
         tabIndex={-1}
       >
         <div className="sheet-head">
-          <h3>{title}</h3>
+          <h3 id={titleId}>{title}</h3>
           <button className="ghost small" onClick={onClose} aria-label="關閉" title="關閉 (Esc)">
             ✕
           </button>

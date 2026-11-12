@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { HistoryMap, HistorySummary, Provider, TestResult } from "../types";
 
 export type TestState = TestResult | "pending";
@@ -23,6 +24,7 @@ interface TableProps {
   rows: Provider[];
   total: number;
   tests: Record<string, TestState>;
+  onAttemptReorder: (ids: string[]) => void;
   onApply: (provider: Provider) => void;
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
@@ -35,6 +37,7 @@ export function ProviderTable({
   rows,
   total,
   tests,
+  onAttemptReorder,
   onApply,
   onEdit,
   onDelete,
@@ -42,6 +45,30 @@ export function ProviderTable({
   history,
   activeId,
 }: TableProps) {
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+
+  const moveBy = (providerId: string, delta: number) => {
+    const ids = rows.map((provider) => provider.id);
+    const from = ids.indexOf(providerId);
+    const to = Math.max(0, Math.min(ids.length - 1, from + delta));
+    if (from < 0 || from === to) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, providerId);
+    onAttemptReorder(ids);
+  };
+
+  const dropOn = (targetId: string) => {
+    if (!draggedId || draggedId === targetId) return;
+    const ids = rows.map((provider) => provider.id);
+    const from = ids.indexOf(draggedId);
+    const to = ids.indexOf(targetId);
+    if (from < 0 || to < 0) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, draggedId);
+    onAttemptReorder(ids);
+    setDraggedId(null);
+  };
+
   return (
     <div className="provider-list">
       {rows.map((provider) => {
@@ -50,9 +77,40 @@ export function ProviderTable({
         return (
           <article
             key={provider.id}
-            className={`provider-card${active ? " active" : ""}`}
+            className={`provider-card${active ? " active" : ""}${draggedId === provider.id ? " dragging" : ""}`}
             aria-label={`供應商 ${provider.name}`}
+            onDragOver={(event) => {
+              if (draggedId) event.preventDefault();
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              dropOn(provider.id);
+            }}
           >
+            <button
+              type="button"
+              className="provider-drag"
+              draggable
+              title="拖曳調整供應商順序；也可用上下鍵移動"
+              aria-label={`調整 ${provider.name} 的順序`}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  moveBy(provider.id, -1);
+                } else if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  moveBy(provider.id, 1);
+                }
+              }}
+              onDragStart={(event) => {
+                setDraggedId(provider.id);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", provider.id);
+              }}
+              onDragEnd={() => setDraggedId(null)}
+            >
+              ⠿
+            </button>
             <button
               type="button"
               className="provider-card-main"
@@ -73,7 +131,14 @@ export function ProviderTable({
               <dl className="provider-facts">
                 <div className="provider-fact model-fact">
                   <dt>預設模型</dt>
-                  <dd>{provider.model || "未指定，沿用 Harness 目前模型"}</dd>
+                  <dd>
+                    <span>{provider.model || "未指定，沿用 Harness 目前模型"}</span>
+                    {(provider.models?.length ?? 0) > 0 ? (
+                      <span className="model-count" title={`已設定 ${provider.models?.length ?? 0} 個模型`}>
+                        {provider.models?.length} 個
+                      </span>
+                    ) : null}
+                  </dd>
                 </div>
                 <div className="provider-fact url-fact">
                   <dt>Base URL</dt>
@@ -94,7 +159,7 @@ export function ProviderTable({
               </span>
             </button>
 
-            <div className="provider-card-actions" aria-label={`${provider.name} 的操作`}>
+            <div className="provider-card-actions" role="group" aria-label={`${provider.name} 的操作`}>
               <button
                 type="button"
                 className="small ghost"

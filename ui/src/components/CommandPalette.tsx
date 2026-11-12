@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "../api";
+import { useFocusLayer } from "../focus";
 import type { Provider, ToolView } from "../types";
 
 interface Props {
@@ -20,6 +21,8 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const paletteRef = useRef<HTMLDivElement>(null);
+  useFocusLayer(paletteRef, onClose);
 
   useEffect(() => {
     let alive = true;
@@ -74,13 +77,18 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="palette" role="dialog" aria-modal="true" aria-label="快速切換">
+      <div className="palette" role="dialog" aria-modal="true" aria-label="快速切換" ref={paletteRef} tabIndex={-1}>
         <input
           ref={inputRef}
           className="palette-input"
           placeholder="跳到任何供應商…（輸入名稱、模型或工具）"
           value={query}
+          role="combobox"
           aria-label="搜尋供應商"
+          aria-autocomplete="list"
+          aria-expanded="true"
+          aria-controls="palette-provider-list"
+          aria-activedescendant={matches[cursor] ? `palette-option-${cursor}` : undefined}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
@@ -98,7 +106,7 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
             }
           }}
         />
-        <div className="palette-list" role="listbox">
+        <div className="palette-list" id="palette-provider-list" role="listbox">
           {matches.length === 0 ? (
             <div className="palette-empty">
               {rows.length === 0 ? "還沒有任何供應商" : "沒有符合的供應商"}
@@ -107,6 +115,7 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
             matches.map((row, index) => (
               <button
                 key={`${row.tool.id}-${row.provider.id}`}
+                id={`palette-option-${index}`}
                 role="option"
                 aria-selected={index === cursor}
                 className={`palette-row${index === cursor ? " active" : ""}`}

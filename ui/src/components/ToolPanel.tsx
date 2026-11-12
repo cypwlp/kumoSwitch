@@ -7,6 +7,7 @@ import { WarnIcon } from "./Icons";
 interface PanelProps {
   tool: ToolView;
   activeProvider: Provider | null;
+  previousProvider: Provider | null;
   rows: Provider[];
   total: number;
   filter: string;
@@ -20,6 +21,7 @@ interface PanelProps {
   onAdd: () => void;
   onImportConfig: () => void;
   onApply: (provider: Provider) => void;
+  onReorder: (ids: string[]) => void;
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
   onTest: (provider: Provider) => void;
@@ -35,6 +37,7 @@ interface PanelProps {
 export function ToolPanel({
   tool,
   activeProvider,
+  previousProvider,
   rows,
   total,
   filter,
@@ -48,6 +51,7 @@ export function ToolPanel({
   onAdd,
   onImportConfig,
   onApply,
+  onReorder,
   onEdit,
   onDelete,
   onTest,
@@ -133,6 +137,11 @@ export function ToolPanel({
             {tool.current.base_url || "尚未設定 Base URL"}
           </span>
           <span>金鑰 {tool.current.api_key_tail || "—"}</span>
+          {previousProvider ? (
+            <button className="ghost small" type="button" onClick={() => onApply(previousProvider)}>
+              切回上一個供應商
+            </button>
+          ) : null}
         </div>
         <span className="current-restart">{tool.restart}</span>
       </div>
@@ -222,6 +231,7 @@ export function ToolPanel({
         tests={tests}
         history={history}
         activeId={tool.active_id}
+        onAttemptReorder={(ids) => onReorder(ids)}
         onApply={onApply}
         onEdit={onEdit}
         onDelete={onDelete}
