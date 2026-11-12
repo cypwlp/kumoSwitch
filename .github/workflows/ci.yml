@@ -45,13 +45,18 @@ jobs:
         run: |
           $pattern = '^failures:|FAILED|panicked|assertion|^---- .* stdout ----|^error(?:\[|:)|could not compile|cannot find|mismatched types|unresolved import|no method named|trait .* not implemented'
           $lines = Get-Content cargo-test.log
-          $matches = $lines | Select-String -Pattern $pattern | Select-Object -Last 40
-          if (-not $matches) {
+          $matches = $lines | Select-String -Pattern $pattern -Context 0,8
+          if ($matches) {
+            $matches = foreach ($match in $matches) {
+              $match.Line
+              $match.Context.PostContext
+            }
+          } else {
             # Compile errors and setup failures often do not match test panic patterns.
             $matches = $lines | Select-Object -Last 80
           }
-          $matches | ForEach-Object {
-            $line = if ($_.Line) { $_.Line } else { [string]$_ }
+          $matches | Select-Object -Unique | ForEach-Object {
+            $line = [string]$_
             $message = $line.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
             Write-Output "::error title=Rust test failure::$message"
           }
