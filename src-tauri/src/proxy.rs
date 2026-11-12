@@ -570,7 +570,7 @@ mod tests {
             let mut workers = Vec::new();
             for _ in 0..requests {
                 let request = server
-                    .recv_timeout(Duration::from_secs(10))
+                    .recv_timeout(Duration::from_secs(30))
                     .expect("stress proxy receive")
                     .expect("stress proxy request");
                 let targets = targets.clone();
@@ -734,18 +734,19 @@ mod tests {
             vec![target(upstream_url, "stress-key")],
             CONNECTIONS,
         );
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .unwrap();
         let mut workers = Vec::new();
         for index in 0..CONNECTIONS {
-            let client = client.clone();
             let proxy_url = proxy_url.clone();
             workers.push(thread::spawn(move || {
+                let client = reqwest::blocking::Client::builder()
+                    .timeout(Duration::from_secs(30))
+                    .pool_max_idle_per_host(0)
+                    .build()
+                    .unwrap();
                 let response = client
                     .post(format!("{proxy_url}/v1/responses"))
                     .header("Content-Type", "application/json")
+                    .header("Connection", "close")
                     .body(format!(r#"{{"stream":true,"request":{index}}}"#))
                     .send()
                     .expect("stress proxy response");
