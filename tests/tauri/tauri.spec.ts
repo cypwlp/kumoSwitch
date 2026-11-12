@@ -67,7 +67,16 @@ test.beforeAll(async () => {
     auto_health: false,
     proxy: { enabled: false, port: 27891, stack: [], strategy: "ordered", policies: {} },
   }, null, 2));
-  writeFileSync(join(home, ".codex", "config.toml"), 'model = "e2e-model"\nmodel_provider = "e2e-provider"\n');
+  writeFileSync(join(home, ".codex", "config.toml"), [
+    'model = "e2e-model"',
+    'model_provider = "e2e-provider"',
+    "",
+    "[model_providers.e2e-provider]",
+    'name = "E2E Provider"',
+    'base_url = "https://e2e.invalid/v1"',
+    'wire_api = "responses"',
+    "",
+  ].join("\n"));
 
   const executable = resolve(process.cwd(), "src-tauri/target/release/kumoswitch.exe");
   const cdp = "http://127.0.0.1:9229";
@@ -120,9 +129,17 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   await expect(page).toHaveTitle(/kumoSwitch/i);
   await page.getByRole("button", { name: /Codex/ }).first().click();
   const providerButton = page.getByRole("button", { name: "查看供應商 E2E Provider 的模型與設定" });
+  const importButton = page.getByRole("button", { name: /^從設定檔導入/ });
   const skipOnboarding = page.getByRole("button", { name: "略過，稍後再說" });
-  await expect(providerButton.or(skipOnboarding)).toBeVisible();
+  await expect(providerButton.or(importButton).or(skipOnboarding)).toBeVisible();
   if (await skipOnboarding.isVisible()) await skipOnboarding.click();
+  if (!await providerButton.isVisible()) {
+    await importButton.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: /掃描到 \d+ 個供應商/ })).toBeVisible();
+    await dialog.getByRole("button", { name: /^匯入 \d+ 個/ }).click();
+    await expect(dialog).toBeHidden();
+  }
   await expect(providerButton).toBeVisible();
   await providerButton.click();
   await expect(page.getByRole("heading", { name: "供應商詳情 · Codex" })).toBeVisible();
