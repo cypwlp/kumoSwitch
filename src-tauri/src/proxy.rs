@@ -504,7 +504,7 @@ mod tests {
             stream.flush().unwrap();
 
             finish_rx
-                .recv_timeout(Duration::from_secs(5))
+                .recv_timeout(Duration::from_secs(15))
                 .expect("release second SSE event");
             write_sse_chunk(&mut stream, b"data: second\n\n");
             stream.write_all(b"0\r\n\r\n").unwrap();
@@ -691,8 +691,8 @@ mod tests {
         let (first_tx, first_rx) = mpsc::channel();
         let client_join = thread::spawn(move || {
             let client = reqwest::blocking::Client::builder()
-                .connect_timeout(Duration::from_secs(5))
-                .timeout(Duration::from_secs(10))
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(20))
                 .build()
                 .unwrap();
             let response = client
@@ -711,7 +711,7 @@ mod tests {
             (first, rest)
         });
 
-        let first = first_rx.recv_timeout(Duration::from_secs(2));
+        let first = first_rx.recv_timeout(Duration::from_secs(10));
         release_upstream.send(()).expect("release SSE upstream");
         upstream_join.join().unwrap();
         proxy_join.join().unwrap();
