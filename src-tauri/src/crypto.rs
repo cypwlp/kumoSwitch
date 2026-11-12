@@ -104,7 +104,7 @@ mod imp {
     fn create_master(entry: &keyring::Entry) -> Result<Zeroizing<[u8; KEY_BYTES]>, String> {
         let mut key = Zeroizing::new([0u8; KEY_BYTES]);
         OsRng.fill_bytes(&mut *key);
-        let encoded = Zeroizing::new(super::to_hex(&key));
+        let encoded = Zeroizing::new(super::to_hex(&key[..]));
         entry
             .set_password(encoded.as_str())
             .map_err(|error| format!("無法建立系統主金鑰：{error}"))?;
@@ -125,7 +125,7 @@ mod imp {
                     Ok(encoded) => {
                         let encoded = Zeroizing::new(encoded);
                         let key = decode_master(encoded.as_str())?;
-                        let migrated = Zeroizing::new(super::to_hex(&key));
+                        let migrated = Zeroizing::new(super::to_hex(&key[..]));
                         entry
                             .set_password(migrated.as_str())
                             .map_err(|error| format!("無法遷移系統主金鑰：{error}"))?;
