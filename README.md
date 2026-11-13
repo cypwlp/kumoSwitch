@@ -42,7 +42,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **首次啟動引導** —— 自動偵測既有設定並一鍵導入，不必從零輸入。
 - **診斷匯出** —— 一鍵產生環境與設定摘要（金鑰只留末四碼）。
 - **自動健康檢查** —— 可開啟每 10 分鐘重測已有歷史的供應商，健康度欄不用手動按。
-- **統計儀表板** —— 讀取 Claude Code／Codex 本機 session log，算 token 用量、每日趨勢與成本估算（只在本機計算）。
+- **統計儀表板** —— 串流讀取 Claude Code／Codex 本機 session log，計算 token 用量、每日趨勢與成本估算；掃描在背景執行，並顯示實際檢查路徑、讀取檔案數、跳過數與錯誤診斷。
 - **預設供應商目錄** —— 16 個已知端點一鍵帶入，不用手打 base URL。
 - **智慧代理／故障轉移** —— 本地反向代理支援固定順序、優先級、加權與健康優先路由；每個供應商可設定 timeout、429 退避、熔斷、最大併發、允許模型與模型映射，並提供成功率、TTFB、換手、脫敏失敗原因與每請求決策軌跡（候選順序、跳過原因、逾時與熔斷狀態）。共用連線池、32 MiB body 上限與真正即時 flush 的 SSE 串流。
 - **跨平台** —— Windows／Linux／macOS 皆由 CI 建置，main 每次推送跑三平台測試。
@@ -70,7 +70,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 
 ## 下載
 
-使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.14.1) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
+使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.14.2) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
 
 - Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `kumoSwitch-portable.exe`
 - macOS Apple Silicon／Intel：`.dmg`

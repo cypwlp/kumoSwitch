@@ -6,7 +6,10 @@
 
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize, Clone, Debug, Default)]
 pub struct UsageRow {
@@ -29,6 +32,15 @@ pub struct DayRow {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct UsageRoot {
+    pub source: String,
+    pub path: String,
+    pub exists: bool,
+    pub files: usize,
+    pub scanned_files: usize,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct UsageReport {
     pub rows: Vec<UsageRow>,
     pub days: Vec<DayRow>,
@@ -39,6 +51,10 @@ pub struct UsageReport {
     pub total_cache: u64,
     pub total_cost: Option<f64>,
     pub days_scanned: u32,
+    pub roots: Vec<UsageRoot>,
+    pub skipped_files: usize,
+    pub errors: Vec<String>,
+    pub elapsed_ms: u64,
 }
 
 /// USD per million tokens: (input, output, cache_read). Estimates, not quotes.
@@ -93,16 +109,37 @@ impl Acc {
     }
 }
 
-fn scan_file(path: &Path, source: &str, cutoff: &str, models: &mut BTreeMap<(String, String), Acc>, days: &mut BTreeMap<String, (u64, u64)>, files: &mut usize, records: &mut usize) {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return;
-    };
-    *files += 1;
-    for line in text.lines() {
-        if !line.contains("usage") {
+fn line_has_candidate(source: &str, line: &str) -> bool {
+    if source == "codex" {
+        line.contains("token_usage_record") && line.contains("\"usage\"")
+    } else {
+        line.contains("\"usage\"")
+    }
+}
+
+fn scan_file(
+    path: &Path,
+    source: &str,
+    cutoff: &str,
+    models: &mut BTreeMap<(String, String), Acc>,
+    days: &mut BTreeMap<String, (u64, u64)>,
+    records: &mut usize,
+) -> Result<(), String> {
+    let file = File::open(path).map_err(|error| format!("{}：{error}", path.display()))?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    loop {
+        line.clear();
+        let read = reader
+            .read_line(&mut line)
+            .map_err(|error| format!("{}：{error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        if !line_has_candidate(source, &line) {
             continue;
         }
-        let Ok(d) = serde_json::from_str::<serde_json::Value>(line) else {
+        let Ok(d) = serde_json::from_str::<serde_json::Value>(&line) else {
             continue;
         };
         let (usage, model, ts) = if source == "codex" {
@@ -154,37 +191,124 @@ fn scan_file(path: &Path, source: &str, cutoff: &str, models: &mut BTreeMap<(Str
         entry.1 += o;
         *records += 1;
     }
+    Ok(())
 }
 
-fn walk(dir: &Path, source: &str, cutoff: &str, models: &mut BTreeMap<(String, String), Acc>, days: &mut BTreeMap<String, (u64, u64)>, files: &mut usize, records: &mut usize) {
+fn modified_secs(path: &Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs())
+}
+
+fn walk(
+    dir: &Path,
+    source: &str,
+    cutoff_secs: u64,
+    cutoff: &str,
+    models: &mut BTreeMap<(String, String), Acc>,
+    days: &mut BTreeMap<String, (u64, u64)>,
+    root: &mut UsageRoot,
+    skipped_files: &mut usize,
+    errors: &mut Vec<String>,
+    records: &mut usize,
+) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            walk(&path, source, cutoff, models, days, files, records);
-        } else if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
-            scan_file(&path, source, cutoff, models, days, files, records);
+            walk(
+                &path,
+                source,
+                cutoff_secs,
+                cutoff,
+                models,
+                days,
+                root,
+                skipped_files,
+                errors,
+                records,
+            );
+        } else if path.extension().map(|extension| extension == "jsonl").unwrap_or(false) {
+            root.files += 1;
+            if modified_secs(&path).is_some_and(|modified| modified.saturating_add(86_400) < cutoff_secs) {
+                *skipped_files += 1;
+                continue;
+            }
+            match scan_file(&path, source, cutoff, models, days, records) {
+                Ok(()) => root.scanned_files += 1,
+                Err(error) => {
+                    if errors.len() < 20 {
+                        errors.push(error);
+                    }
+                    *skipped_files += 1;
+                }
+            }
         }
     }
 }
 
+fn root_report(source: &str, path: &Path) -> UsageRoot {
+    UsageRoot {
+        source: source.to_string(),
+        path: crate::adapters::display_path(path),
+        exists: path.exists(),
+        files: 0,
+        scanned_files: 0,
+    }
+}
+
 pub fn report(days_back: u32) -> UsageReport {
+    let started = Instant::now();
     let home = crate::adapters::home();
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let cutoff_secs = now.saturating_sub(days_back as u64 * 86_400);
     let cutoff = epoch_day(cutoff_secs);
 
     let mut models = BTreeMap::new();
     let mut days = BTreeMap::new();
-    let mut files = 0;
     let mut records = 0;
-    walk(&home.join(".claude").join("projects"), "claude", &cutoff, &mut models, &mut days, &mut files, &mut records);
-    walk(&home.join(".codex").join("sessions"), "codex", &cutoff, &mut models, &mut days, &mut files, &mut records);
+    let mut skipped_files = 0;
+    let mut errors = Vec::new();
+
+    let claude_dir = home.join(".claude").join("projects");
+    let codex_dir = home.join(".codex").join("sessions");
+    let mut claude_root = root_report("claude", &claude_dir);
+    let mut codex_root = root_report("codex", &codex_dir);
+    walk(
+        &claude_dir,
+        "claude",
+        cutoff_secs,
+        &cutoff,
+        &mut models,
+        &mut days,
+        &mut claude_root,
+        &mut skipped_files,
+        &mut errors,
+        &mut records,
+    );
+    walk(
+        &codex_dir,
+        "codex",
+        cutoff_secs,
+        &cutoff,
+        &mut models,
+        &mut days,
+        &mut codex_root,
+        &mut skipped_files,
+        &mut errors,
+        &mut records,
+    );
+    let files = claude_root.scanned_files + codex_root.scanned_files;
+    let roots = vec![claude_root, codex_root];
 
     let mut rows: Vec<UsageRow> = models
         .into_iter()
@@ -227,6 +351,10 @@ pub fn report(days_back: u32) -> UsageReport {
         total_cache,
         total_cost,
         days_scanned: days_back,
+        roots,
+        skipped_files,
+        errors,
+        elapsed_ms: started.elapsed().as_millis() as u64,
     }
 }
 

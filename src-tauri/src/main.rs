@@ -1408,8 +1408,10 @@ fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, Stri
 }
 
 #[tauri::command]
-fn usage_report(days: u32) -> usage::UsageReport {
-    usage::report(days.clamp(1, 365))
+async fn usage_report(days: u32) -> Result<usage::UsageReport, String> {
+    tauri::async_runtime::spawn_blocking(move || usage::report(days.clamp(1, 365)))
+        .await
+        .map_err(|error| format!("session log 掃描失敗：{error}"))
 }
 
 #[tauri::command]

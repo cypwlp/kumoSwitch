@@ -623,7 +623,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.14.1",
+        version: "0.14.2",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
@@ -1060,6 +1060,13 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         rows, days: dayRows, files: 132, records: 3700,
         total_input: 8_600_000, total_output: 680_000, total_cache: 7_580_000,
         total_cost: 2.6, days_scanned: days,
+        roots: [
+          { source: "claude", path: `${HOME}\\.claude\\projects`, exists: true, files: 74, scanned_files: 62 },
+          { source: "codex", path: `${HOME}\\.codex\\sessions`, exists: true, files: 58, scanned_files: 51 },
+        ],
+        skipped_files: 19,
+        errors: [],
+        elapsed_ms: 184,
       };
     }
 
@@ -1126,9 +1133,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "audit_log":
       return [
-        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.14.1" },
-        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.14.1" },
-        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.14.1" },
+        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.14.2" },
+        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.14.2" },
+        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.14.2" },
       ];
 
     case "import_providers_json": {

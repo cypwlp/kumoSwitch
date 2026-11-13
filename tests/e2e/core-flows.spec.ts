@@ -352,6 +352,18 @@ test("Harness more menu closes on outside click and Escape", async ({ page }) =>
   await expect(trigger).toBeFocused();
 });
 
+test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
+  await page.getByRole("button", { name: "統計", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "統計儀表板" })).toBeVisible();
+  await expect(page.getByText("掃描診斷")).toBeVisible();
+  await expect(page.getByText("3,700")).toBeVisible();
+  await expect(page.locator(".scan-root")).toHaveCount(2);
+  await expect(page.locator(".scan-root").getByText("Claude Code")).toBeVisible();
+  await expect(page.locator(".scan-root").getByText("Codex", { exact: true })).toBeVisible();
+  await page.locator(".stats").getByRole("button", { name: "重新掃描" }).click();
+  await expect(page.getByText("掃描診斷")).toBeVisible();
+});
+
 test("proxy route strategy and observability are usable", async ({ page }) => {
   await page.getByRole("button", { name: "代理", exact: true }).click();
   await expect(page.getByRole("heading", { name: "代理／故障轉移" })).toBeVisible();

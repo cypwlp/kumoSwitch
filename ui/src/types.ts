@@ -256,6 +256,14 @@ export interface UsageRow {
 
 export interface DayRow { day: string; input: number; output: number; total: number; }
 
+export interface UsageRoot {
+  source: string;
+  path: string;
+  exists: boolean;
+  files: number;
+  scanned_files: number;
+}
+
 export interface UsageReport {
   rows: UsageRow[];
   days: DayRow[];
@@ -266,6 +274,10 @@ export interface UsageReport {
   total_cache: number;
   total_cost: number | null;
   days_scanned: number;
+  roots: UsageRoot[];
+  skipped_files: number;
+  errors: string[];
+  elapsed_ms: number;
 }
 
 export interface HealthOverview { tests: number; ok: number; avg_ms: number; providers_tested: number; }
