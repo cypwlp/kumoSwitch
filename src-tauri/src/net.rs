@@ -505,13 +505,13 @@ pub fn discover_models_styled(
     })
 }
 
-fn live_test_request(tool: &str, kind: &str, model: &str) -> (String, String) {
+fn live_test_request(tool: &str, kind: &str, model: &str, max_output_tokens: u32) -> (String, String) {
     if tool == "claude" || kind.contains("anthropic") {
         return (
             "/messages".into(),
             serde_json::json!({
                 "model": model,
-                "max_tokens": 1,
+                "max_tokens": max_output_tokens.max(1),
                 "messages": [{ "role": "user", "content": "Reply OK" }]
             })
             .to_string(),
@@ -522,7 +522,7 @@ fn live_test_request(tool: &str, kind: &str, model: &str) -> (String, String) {
             format!("/models/{model}:generateContent"),
             serde_json::json!({
                 "contents": [{ "role": "user", "parts": [{ "text": "Reply OK" }] }],
-                "generationConfig": { "maxOutputTokens": 1 }
+                "generationConfig": { "maxOutputTokens": max_output_tokens.max(1) }
             })
             .to_string(),
         );
@@ -533,7 +533,7 @@ fn live_test_request(tool: &str, kind: &str, model: &str) -> (String, String) {
             serde_json::json!({
                 "model": model,
                 "input": "Reply OK",
-                "max_output_tokens": 16,
+                "max_output_tokens": max_output_tokens.max(1),
                 "store": false
             })
             .to_string(),
@@ -544,7 +544,7 @@ fn live_test_request(tool: &str, kind: &str, model: &str) -> (String, String) {
         serde_json::json!({
             "model": model,
             "messages": [{ "role": "user", "content": "Reply OK" }],
-            "max_tokens": 1,
+            "max_tokens": max_output_tokens.max(1),
             "stream": false
         })
         .to_string(),
@@ -560,6 +560,7 @@ pub fn probe_live_model(
     anthropic_style: bool,
     tool: &str,
     kind: &str,
+    max_output_tokens: u32,
 ) -> TestResult {
     let base = base_url.trim_end_matches('/');
     if base.is_empty() || model.trim().is_empty() {
@@ -570,7 +571,8 @@ pub fn probe_live_model(
     } else {
         tool
     };
-    let (path, body) = live_test_request(request_tool, kind, model);
+    let output_tokens = max_output_tokens.clamp(1, 128);
+    let (path, body) = live_test_request(request_tool, kind, model, output_tokens);
     let url = format!("{base}{path}");
     let escaped_body = body.replace('\\', "\\\\").replace('"', "\\\"");
     let mut config = String::new();
@@ -636,7 +638,7 @@ pub fn probe_live_model(
     let ms = started.elapsed().as_millis();
     let status: u16 = String::from_utf8_lossy(&output.stdout).trim().parse().unwrap_or(0);
     let (ok, message) = match status {
-        200..=299 => (true, format!("HTTP {status} · 最小推論請求成功")),
+        200..=299 => (true, format!("HTTP {status} · 最小推論請求成功（輸出上限 {output_tokens} tokens）")),
         401 | 403 => (false, format!("HTTP {status} · 金鑰被拒或權限不足")),
         404 => (false, "HTTP 404 · 模型或 API 路徑不存在".into()),
         429 => (false, "HTTP 429 · 被限流，實測未完成".into()),
@@ -768,19 +770,19 @@ mod tests {
 
     #[test]
     fn live_test_uses_provider_specific_request_shapes() {
-        let (chat_path, chat_body) = live_test_request("codex", "chat", "gpt-test");
+        let (chat_path, chat_body) = live_test_request("codex", "chat", "gpt-test", 4);
         assert_eq!(chat_path, "/chat/completions");
         assert!(chat_body.contains("gpt-test"));
 
-        let (responses_path, responses_body) = live_test_request("codex", "responses", "gpt-test");
+        let (responses_path, responses_body) = live_test_request("codex", "responses", "gpt-test", 4);
         assert_eq!(responses_path, "/responses");
-        assert!(responses_body.contains("max_output_tokens"));
+        assert!(responses_body.contains(r#""max_output_tokens":4"#));
 
-        let (claude_path, claude_body) = live_test_request("claude", "", "claude-test");
+        let (claude_path, claude_body) = live_test_request("claude", "", "claude-test", 4);
         assert_eq!(claude_path, "/messages");
         assert!(claude_body.contains("max_tokens"));
 
-        let (gemini_path, gemini_body) = live_test_request("gemini", "", "gemini-test");
+        let (gemini_path, gemini_body) = live_test_request("gemini", "", "gemini-test", 4);
         assert!(gemini_path.contains(":generateContent"));
         assert!(gemini_body.contains("maxOutputTokens"));
     }

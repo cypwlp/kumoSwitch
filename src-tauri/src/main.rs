@@ -90,6 +90,35 @@ struct ModelTestResult {
     result: net::TestResult,
 }
 
+#[derive(Clone, Debug, Serialize)]
+struct LiveTestPolicy {
+    daily_limit: u32,
+    used_24h: u32,
+    remaining_24h: u32,
+    max_output_tokens: u32,
+}
+
+const LIVE_TEST_WINDOW_MS: u64 = 24 * 60 * 60 * 1000;
+static LIVE_TEST_QUOTA: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn live_test_used_24h(data: &store::Store, now: u64) -> u32 {
+    data.live_test_runs
+        .iter()
+        .filter(|ts| now.saturating_sub(**ts) < LIVE_TEST_WINDOW_MS)
+        .count() as u32
+}
+
+fn live_test_policy_for(data: &store::Store, now: u64) -> LiveTestPolicy {
+    let used = live_test_used_24h(data, now);
+    let daily_limit = data.live_test_daily_limit.clamp(1, 200);
+    LiveTestPolicy {
+        daily_limit,
+        used_24h: used,
+        remaining_24h: daily_limit.saturating_sub(used),
+        max_output_tokens: data.live_test_max_output_tokens.clamp(1, 128),
+    }
+}
+
 #[derive(Serialize)]
 struct ProviderSearchRow {
     tool: String,
@@ -122,6 +151,12 @@ struct ProviderView {
     last_used: u64,
     model_synced_at: u64,
     previous_model: String,
+    model_sync_interval_secs: u64,
+    model_sync_jitter_secs: u64,
+    model_sync_next_at: u64,
+    model_sync_retry_at: u64,
+    model_sync_failures: u32,
+    model_sync_last_error: String,
 }
 
 impl From<Provider> for ProviderView {
@@ -144,6 +179,12 @@ impl From<Provider> for ProviderView {
             last_used: provider.last_used,
             model_synced_at: provider.model_synced_at,
             previous_model: provider.previous_model,
+            model_sync_interval_secs: provider.model_sync_interval_secs,
+            model_sync_jitter_secs: provider.model_sync_jitter_secs,
+            model_sync_next_at: provider.model_sync_next_at,
+            model_sync_retry_at: provider.model_sync_retry_at,
+            model_sync_failures: provider.model_sync_failures,
+            model_sync_last_error: provider.model_sync_last_error,
         }
     }
 }
@@ -176,6 +217,18 @@ struct ProviderInput {
     model_synced_at: u64,
     #[serde(default)]
     previous_model: String,
+    #[serde(default = "adapters::default_model_sync_interval_secs")]
+    model_sync_interval_secs: u64,
+    #[serde(default = "adapters::default_model_sync_jitter_secs")]
+    model_sync_jitter_secs: u64,
+    #[serde(default)]
+    model_sync_next_at: u64,
+    #[serde(default)]
+    model_sync_retry_at: u64,
+    #[serde(default)]
+    model_sync_failures: u32,
+    #[serde(default)]
+    model_sync_last_error: String,
 }
 
 impl From<ProviderInput> for Provider {
@@ -194,6 +247,12 @@ impl From<ProviderInput> for Provider {
             last_used: provider.last_used,
             model_synced_at: provider.model_synced_at,
             previous_model: provider.previous_model,
+            model_sync_interval_secs: provider.model_sync_interval_secs,
+            model_sync_jitter_secs: provider.model_sync_jitter_secs,
+            model_sync_next_at: provider.model_sync_next_at,
+            model_sync_retry_at: provider.model_sync_retry_at,
+            model_sync_failures: provider.model_sync_failures,
+            model_sync_last_error: provider.model_sync_last_error,
         };
         adapters::normalize_provider_models(&mut provider);
         provider
@@ -506,6 +565,21 @@ fn provider_save(
     let clear_key = provider.clear_api_key;
     let mut provider: Provider = provider.into();
     configured_kind(spec, &mut provider);
+    if provider.model_synced_at > 0 && provider.model_sync_interval_secs > 0 {
+        let now = store::stamp() as u64;
+        provider.model_sync_next_at = provider
+            .model_synced_at
+            .saturating_add(provider.model_sync_interval_secs.saturating_mul(1000))
+            .saturating_add(
+                sync_jitter_secs(
+                    &tool,
+                    if provider.id.is_empty() { &provider.config_id } else { &provider.id },
+                    now,
+                    provider.model_sync_jitter_secs,
+                )
+                .saturating_mul(1000),
+            );
+    }
     let saved = store::upsert_with_key_action(&tool, provider, clear_key)?;
     audit::record("provider.save", format!("{tool}:{}", saved.id));
     tray::refresh(&app);
@@ -653,11 +727,31 @@ fn test_model(tool: String, provider_id: String, model_id: String) -> Result<Mod
 
 #[tauri::command]
 fn live_test_model(tool: String, provider_id: String, model_id: String) -> Result<ModelTestResult, String> {
-    let (_, mut provider) = load_provider(&tool, &provider_id)?;
+    let now = store::stamp() as u64;
+    let guard = LIVE_TEST_QUOTA.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut data = store::load();
+    data.live_test_runs.retain(|ts| now.saturating_sub(*ts) < LIVE_TEST_WINDOW_MS);
+    let policy = live_test_policy_for(&data, now);
+    if policy.remaining_24h == 0 {
+        return Err(format!(
+            "近 24 小時實測配額已用完（{}／{}）。請稍後再試或調整配額。",
+            policy.used_24h, policy.daily_limit
+        ));
+    }
+    let provider = data
+        .providers
+        .get(&tool)
+        .and_then(|providers| providers.iter().find(|provider| provider.id == provider_id))
+        .cloned()
+        .ok_or_else(|| format!("找不到供應商：{provider_id}"))?;
     if !provider.models.iter().any(|model| model.id == model_id) {
-        provider.api_key.zeroize();
         return Err(format!("這個供應商沒有模型「{model_id}」"));
     }
+    data.live_test_runs.push(now);
+    store::save(&data)?;
+    drop(guard);
+
+    let mut provider = provider;
     let result = net::probe_live_model(
         &provider.base_url,
         &provider.api_key,
@@ -665,6 +759,7 @@ fn live_test_model(tool: String, provider_id: String, model_id: String) -> Resul
         tool == "claude",
         &tool,
         &provider.kind,
+        policy.max_output_tokens,
     );
     let recorded = store::record_model_check(
         &tool,
@@ -681,9 +776,28 @@ fn live_test_model(tool: String, provider_id: String, model_id: String) -> Resul
     let model = recorded?;
     audit::record(
         "model.live_test",
-        format!("{tool}:{provider_id}:{model_id}:{}:{}ms", result.status, result.ms),
+        format!(
+            "{tool}:{provider_id}:{model_id}:{}:{}ms:max_tokens={}:quota={}/{}",
+            result.status, result.ms, policy.max_output_tokens, policy.used_24h + 1, policy.daily_limit
+        ),
     );
     Ok(ModelTestResult { model, result })
+}
+
+#[tauri::command]
+fn live_test_policy() -> LiveTestPolicy {
+    let now = store::stamp() as u64;
+    live_test_policy_for(&store::load(), now)
+}
+
+#[tauri::command]
+fn set_live_test_policy(daily_limit: u32, max_output_tokens: u32) -> Result<LiveTestPolicy, String> {
+    let mut data = store::load();
+    data.live_test_daily_limit = daily_limit.clamp(1, 200);
+    data.live_test_max_output_tokens = max_output_tokens.clamp(1, 128);
+    store::save(&data)?;
+    let now = store::stamp() as u64;
+    Ok(live_test_policy_for(&data, now))
 }
 
 #[tauri::command]
@@ -1280,6 +1394,12 @@ fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, Stri
         last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),
+            model_sync_interval_secs: adapters::default_model_sync_interval_secs(),
+            model_sync_jitter_secs: adapters::default_model_sync_jitter_secs(),
+            model_sync_next_at: 0,
+            model_sync_retry_at: 0,
+            model_sync_failures: 0,
+            model_sync_last_error: String::new(),
     };
     let saved = store::upsert(&tool, provider)?;
     let result = apply_core(&tool, &saved.id)?;
@@ -1311,72 +1431,173 @@ fn set_auto_health(enabled: bool) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn set_auto_model_sync(enabled: bool) -> Result<bool, String> {
+fn set_auto_model_sync(enabled: bool, app: tauri::AppHandle) -> Result<bool, String> {
     let mut data = store::load();
     data.auto_model_sync = enabled;
     store::save(&data)?;
+    if enabled {
+        std::thread::spawn(move || {
+            use tauri::Emitter as _;
+            let updated = auto_sync_models_once();
+            if updated > 0 {
+                let _ = app.emit("kumoswitch://changed", ());
+                tray::refresh(&app);
+            }
+        });
+    }
     Ok(enabled)
+}
+
+fn sync_hash(tool: &str, provider_id: &str, nonce: u64) -> u64 {
+    let mut hash = 14_695_981_039_346_656_037u64;
+    for byte in tool.bytes().chain(provider_id.bytes()).chain(nonce.to_le_bytes()) {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(1_099_511_628_211);
+    }
+    hash
+}
+
+fn sync_jitter_secs(tool: &str, provider_id: &str, nonce: u64, max_secs: u64) -> u64 {
+    if max_secs == 0 {
+        return 0;
+    }
+    sync_hash(tool, provider_id, nonce) % (max_secs.saturating_add(1))
+}
+
+fn model_sync_backoff_secs(failures: u32) -> u64 {
+    match failures {
+        0 | 1 => 5 * 60,
+        2 => 15 * 60,
+        3 => 60 * 60,
+        4 => 3 * 60 * 60,
+        _ => 6 * 60 * 60,
+    }
+}
+
+fn model_sync_due(
+    now: u64,
+    synced_at: u64,
+    next_at: u64,
+    retry_at: u64,
+    interval_secs: u64,
+) -> bool {
+    if interval_secs == 0 {
+        return false;
+    }
+    if retry_at > 0 {
+        return now >= retry_at;
+    }
+    if next_at > 0 {
+        return now >= next_at;
+    }
+    if synced_at > 0 {
+        return now >= synced_at.saturating_add(interval_secs.saturating_mul(1000));
+    }
+    true
 }
 
 fn auto_sync_models_once() -> usize {
     let mut data = store::load();
     let now = store::stamp() as u64;
-    let one_day = 24 * 60 * 60 * 1000u64;
-    if data.last_auto_model_sync > 0 && now.saturating_sub(data.last_auto_model_sync) < one_day {
-        return 0;
-    }
     let mut updated = 0usize;
+    let mut failed = 0usize;
+    let mut changed = false;
     for (tool, providers) in data.providers.iter_mut() {
         for provider in providers.iter_mut() {
-            if provider.model_synced_at == 0 {
+            if !model_sync_due(
+                now,
+                provider.model_synced_at,
+                provider.model_sync_next_at,
+                provider.model_sync_retry_at,
+                provider.model_sync_interval_secs,
+            ) {
                 continue;
             }
-            let Ok(discovery) = net::discover_models_styled(
+            match net::discover_models_styled(
                 &provider.base_url,
                 &provider.api_key,
                 tool == "claude",
                 tool,
                 &provider.kind,
-            ) else {
-                continue;
-            };
-            for discovered in discovery.models {
-                if let Some(existing) = provider
-                    .models
-                    .iter_mut()
-                    .find(|model| model.id == discovered.id)
-                {
-                    existing.last_seen_at = now;
-                } else {
-                    let mut model = discovered;
-                    model.last_seen_at = now;
-                    provider.models.push(model);
+            ) {
+                Ok(discovery) => {
+                    for discovered in discovery.models {
+                        if let Some(existing) = provider
+                            .models
+                            .iter_mut()
+                            .find(|model| model.id == discovered.id)
+                        {
+                            existing.last_seen_at = now;
+                        } else {
+                            let mut model = discovered;
+                            model.last_seen_at = now;
+                            provider.models.push(model);
+                        }
+                    }
+                    provider.model_synced_at = now;
+                    provider.model_sync_failures = 0;
+                    provider.model_sync_last_error.clear();
+                    provider.model_sync_retry_at = 0;
+                    provider.model_sync_next_at = now
+                        .saturating_add(provider.model_sync_interval_secs.saturating_mul(1000))
+                        .saturating_add(
+                            sync_jitter_secs(
+                                tool,
+                                &provider.id,
+                                now,
+                                provider.model_sync_jitter_secs,
+                            )
+                            .saturating_mul(1000),
+                        );
+                    if provider.model.is_empty()
+                        || !provider.models.iter().any(|model| model.id == provider.model)
+                    {
+                        provider.model = provider
+                            .models
+                            .iter()
+                            .find(|model| !model.archived)
+                            .map(|model| model.id.clone())
+                            .unwrap_or_default();
+                    }
+                    updated += 1;
+                    changed = true;
+                }
+                Err(error) => {
+                    provider.model_sync_failures = provider.model_sync_failures.saturating_add(1);
+                    provider.model_sync_last_error = error.chars().take(280).collect();
+                    let backoff = model_sync_backoff_secs(provider.model_sync_failures);
+                    provider.model_sync_retry_at = now
+                        .saturating_add(backoff.saturating_mul(1000))
+                        .saturating_add(
+                            sync_jitter_secs(
+                                tool,
+                                &provider.id,
+                                now ^ u64::from(provider.model_sync_failures),
+                                provider.model_sync_jitter_secs,
+                            )
+                            .saturating_mul(1000),
+                        );
+                    failed += 1;
+                    changed = true;
                 }
             }
-            provider.model_synced_at = now;
-            if provider.model.is_empty() || !provider.models.iter().any(|model| model.id == provider.model) {
-                provider.model = provider
-                    .models
-                    .iter()
-                    .find(|model| !model.archived)
-                    .map(|model| model.id.clone())
-                    .unwrap_or_default();
-            }
-            updated += 1;
         }
     }
-    data.last_auto_model_sync = now;
-    let _ = store::save(&data);
-    if updated > 0 {
-        audit::record("model.auto_sync", format!("providers={updated};interval_ms={one_day}"));
+    if changed {
+        data.last_auto_model_sync = now;
+        let _ = store::save(&data);
+        audit::record(
+            "model.auto_sync",
+            format!("providers={updated};failed={failed};per_provider_schedule=true"),
+        );
     }
-    updated
+    updated + failed
 }
 
 fn spawn_model_sync_loop(app: tauri::AppHandle) {
     use tauri::Emitter as _;
     std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(60 * 60));
+        std::thread::sleep(std::time::Duration::from_secs(60));
         let enabled = store::load().auto_model_sync;
         if !enabled {
             continue;
@@ -1527,6 +1748,8 @@ fn main() {
             discover_provider_models,
             test_model,
             live_test_model,
+            live_test_policy,
+            set_live_test_policy,
             provider_reorder,
             provider_delete,
             preview,
@@ -1638,6 +1861,12 @@ mod redaction_tests {
             last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),
+            model_sync_interval_secs: adapters::default_model_sync_interval_secs(),
+            model_sync_jitter_secs: adapters::default_model_sync_jitter_secs(),
+            model_sync_next_at: 0,
+            model_sync_retry_at: 0,
+            model_sync_failures: 0,
+            model_sync_last_error: String::new(),
         };
         let view = ProviderView::from(provider);
         assert_eq!(view.api_key, "");
@@ -1703,5 +1932,36 @@ mod import_merge_tests {
         assert!(differences.iter().any(|field| field == "Base URL"));
         assert!(differences.iter().any(|field| field == "目前模型"));
         assert!(differences.iter().any(|field| field == "模型清單"));
+    }
+}
+
+#[cfg(test)]
+mod v014_tests {
+    use super::*;
+
+    #[test]
+    fn model_sync_schedule_honors_interval_retry_and_manual_mode() {
+        let day = 24 * 60 * 60 * 1000;
+        assert!(!model_sync_due(day, 0, day + 1, 0, 86_400));
+        assert!(model_sync_due(day + 2, 0, day + 1, 0, 86_400));
+        assert!(!model_sync_due(day, day, 0, day + 1, 86_400));
+        assert!(model_sync_due(day + 2, day, 0, day + 1, 86_400));
+        assert!(!model_sync_due(day * 2, 0, 0, 0, 0));
+        assert_eq!(model_sync_backoff_secs(1), 300);
+        assert!(model_sync_backoff_secs(5) > model_sync_backoff_secs(2));
+        assert!(sync_jitter_secs("codex", "provider-a", day, 300) <= 300);
+    }
+
+    #[test]
+    fn live_test_policy_counts_only_the_recent_window() {
+        let now = 10 * LIVE_TEST_WINDOW_MS;
+        let mut data = store::Store::default();
+        data.live_test_daily_limit = 2;
+        data.live_test_max_output_tokens = 16;
+        data.live_test_runs = vec![now - 1000, now - LIVE_TEST_WINDOW_MS - 1, now - 2000];
+        let policy = live_test_policy_for(&data, now);
+        assert_eq!(policy.used_24h, 2);
+        assert_eq!(policy.remaining_24h, 0);
+        assert_eq!(policy.max_output_tokens, 16);
     }
 }

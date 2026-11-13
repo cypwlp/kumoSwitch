@@ -128,6 +128,30 @@ pub struct Provider {
     /// Model selected before the current one, for one-click rollback.
     #[serde(default)]
     pub previous_model: String,
+    /// Per-provider model catalogue schedule. Zero disables automatic sync.
+    #[serde(default = "default_model_sync_interval_secs")]
+    pub model_sync_interval_secs: u64,
+    /// Maximum random delay added after a successful catalogue sync.
+    #[serde(default = "default_model_sync_jitter_secs")]
+    pub model_sync_jitter_secs: u64,
+    /// Stored next scheduled sync, including jitter.
+    #[serde(default)]
+    pub model_sync_next_at: u64,
+    /// Earliest retry after a failed catalogue sync.
+    #[serde(default)]
+    pub model_sync_retry_at: u64,
+    #[serde(default)]
+    pub model_sync_failures: u32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub model_sync_last_error: String,
+}
+
+pub(crate) fn default_model_sync_interval_secs() -> u64 {
+    24 * 60 * 60
+}
+
+pub(crate) fn default_model_sync_jitter_secs() -> u64 {
+    5 * 60
 }
 
 /// Normalize legacy and edited model data without dropping metadata.
@@ -1066,6 +1090,12 @@ fn imported(config_id: &str, name: String, base_url: String, api_key: String, mo
         last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),
+            model_sync_interval_secs: default_model_sync_interval_secs(),
+            model_sync_jitter_secs: default_model_sync_jitter_secs(),
+            model_sync_next_at: 0,
+            model_sync_retry_at: 0,
+            model_sync_failures: 0,
+            model_sync_last_error: String::new(),
     };
     normalize_provider_models(&mut provider);
     provider
@@ -1352,6 +1382,12 @@ mod real_config_checks {
             last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),
+            model_sync_interval_secs: default_model_sync_interval_secs(),
+            model_sync_jitter_secs: default_model_sync_jitter_secs(),
+            model_sync_next_at: 0,
+            model_sync_retry_at: 0,
+            model_sync_failures: 0,
+            model_sync_last_error: String::new(),
         }
     }
 

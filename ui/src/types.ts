@@ -40,6 +40,12 @@ export interface Provider {
   last_used?: number;
   model_synced_at?: number;
   previous_model?: string;
+  model_sync_interval_secs?: number;
+  model_sync_jitter_secs?: number;
+  model_sync_next_at?: number;
+  model_sync_retry_at?: number;
+  model_sync_failures?: number;
+  model_sync_last_error?: string;
 }
 
 export interface CurrentState {
@@ -128,6 +134,13 @@ export interface TestResult {
 export interface ModelTestResult {
   model: ModelProfile;
   result: TestResult;
+}
+
+export interface LiveTestPolicy {
+  daily_limit: number;
+  used_24h: number;
+  remaining_24h: number;
+  max_output_tokens: number;
 }
 
 export interface ModelDiscovery {
@@ -303,8 +316,35 @@ export interface TargetMetrics {
   last_used: number;
 }
 
+export interface ProxyAttempt {
+  target: string;
+  order: number;
+  outcome: "success" | "failed" | "timeout" | "rate_limited" | "server_error" | "skipped" | string;
+  reason: string;
+  status: number | null;
+  ttfb_ms: number | null;
+  circuit_open_until: number;
+  model: string | null;
+}
+
+export interface ProxyTrace {
+  id: number;
+  ts: number;
+  method: string;
+  path: string;
+  requested_model: string | null;
+  strategy: string;
+  candidate_order: string[];
+  attempts: ProxyAttempt[];
+  selected: string | null;
+  final_status: number;
+  total_ms: number;
+  outcome: "success" | "failed" | string;
+}
+
 export interface ProxyMetrics {
   strategy: string;
   targets: Record<string, TargetMetrics>;
   logs: ProxyLogEntry[];
+  traces: ProxyTrace[];
 }

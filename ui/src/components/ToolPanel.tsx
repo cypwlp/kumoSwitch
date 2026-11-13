@@ -224,7 +224,7 @@ export function ToolPanel({
                 {autoHealth ? "✓ 自動健康檢查（10 分鐘）" : "自動健康檢查（關）"}
               </button>
               <button type="button" role="menuitem" onClick={menuAction(onToggleAutoModelSync)}>
-                {autoModelSync ? "✓ 自動模型同步（24 小時）" : "自動模型同步（關）"}
+                {autoModelSync ? "✓ 自動模型同步（供應商排程）" : "自動模型同步（關）"}
               </button>
             </div>
           ) : null}

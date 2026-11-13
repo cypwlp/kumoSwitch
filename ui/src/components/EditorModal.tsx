@@ -11,6 +11,7 @@ import type {
   ModelCheck,
   ModelDiscovery,
   ToolView,
+  LiveTestPolicy,
 } from "../types";
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
@@ -48,7 +49,17 @@ function normalized(provider: Provider | null): Provider {
   if (value.model && !models.some((model) => model.id === value.model)) {
     models.unshift({ id: value.model, name: value.model });
   }
-  return { ...value, models, model: value.model || models[0]?.id || "" };
+  return {
+    ...value,
+    models,
+    model: value.model || models[0]?.id || "",
+    model_sync_interval_secs: value.model_sync_interval_secs ?? 86_400,
+    model_sync_jitter_secs: value.model_sync_jitter_secs ?? 300,
+    model_sync_next_at: value.model_sync_next_at ?? 0,
+    model_sync_retry_at: value.model_sync_retry_at ?? 0,
+    model_sync_failures: value.model_sync_failures ?? 0,
+    model_sync_last_error: value.model_sync_last_error ?? "",
+  };
 }
 
 function modelMetadataText(model: ModelProfile): string {
@@ -91,6 +102,40 @@ function modelSnapshot(model: ModelProfile) {
   };
 }
 
+function metadataValueAt(root: unknown, path: string): unknown {
+  if (!root || typeof root !== "object") return undefined;
+  return path.split(".").reduce<unknown>((value, key) => {
+    if (!value || typeof value !== "object") return undefined;
+    return (value as Record<string, unknown>)[key];
+  }, root);
+}
+
+function metadataNumber(root: unknown, paths: string[]): number | undefined {
+  for (const path of paths) {
+    const value = metadataValueAt(root, path);
+    const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return undefined;
+}
+
+function estimateLiveTestCost(model: ModelProfile, maxOutputTokens: number): number | null {
+  const perTokenInput = metadataNumber(model.metadata, ["pricing.prompt", "pricing.input", "input_cost_per_token"]);
+  const perTokenOutput = metadataNumber(model.metadata, ["pricing.completion", "pricing.output", "output_cost_per_token"]);
+  const perMillionInput = metadataNumber(model.metadata, ["input_cost_per_million", "pricing.input_per_million"]);
+  const perMillionOutput = metadataNumber(model.metadata, ["output_cost_per_million", "pricing.output_per_million"]);
+  const input = perTokenInput ?? (perMillionInput != null ? perMillionInput / 1_000_000 : undefined);
+  const output = perTokenOutput ?? (perMillionOutput != null ? perMillionOutput / 1_000_000 : undefined);
+  if (input == null && output == null) return null;
+  return 8 * (input ?? 0) + Math.max(1, maxOutputTokens) * (output ?? 0);
+}
+
+function formatUsd(value: number): string {
+  if (value === 0) return "$0";
+  if (value < 0.000001) return "< $0.000001";
+  return `$${value.toFixed(value < 0.01 ? 6 : 4)}`;
+}
+
 function snapshot(provider: Provider, keyChanged: boolean): string {
   return JSON.stringify({
     id: provider.id,
@@ -102,6 +147,12 @@ function snapshot(provider: Provider, keyChanged: boolean): string {
     model: provider.model,
     models: (provider.models ?? []).map(modelSnapshot),
     model_synced_at: provider.model_synced_at ?? 0,
+    model_sync_interval_secs: provider.model_sync_interval_secs ?? 86_400,
+    model_sync_jitter_secs: provider.model_sync_jitter_secs ?? 300,
+    model_sync_next_at: provider.model_sync_next_at ?? 0,
+    model_sync_retry_at: provider.model_sync_retry_at ?? 0,
+    model_sync_failures: provider.model_sync_failures ?? 0,
+    model_sync_last_error: provider.model_sync_last_error ?? "",
     kind: provider.kind,
     note: provider.note,
   });
@@ -138,7 +189,11 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const [modelError, setModelError] = useState("");
   const [testingModels, setTestingModels] = useState<Record<string, boolean>>({});
   const [liveTestingModels, setLiveTestingModels] = useState<Record<string, boolean>>({});
-  const [confirmLiveModel, setConfirmLiveModel] = useState<ModelProfile | null>(null);
+  const [confirmLiveModels, setConfirmLiveModels] = useState<ModelProfile[] | null>(null);
+  const [liveSelected, setLiveSelected] = useState<Set<string>>(new Set());
+  const [livePolicy, setLivePolicy] = useState<LiveTestPolicy | null>(null);
+  const [policyBusy, setPolicyBusy] = useState(false);
+  const [liveBatchNotice, setLiveBatchNotice] = useState("");
   const [modelNotices, setModelNotices] = useState<Record<string, string>>({});
   const [modelDiscovery, setModelDiscovery] = useState<ModelDiscovery | null>(null);
   const [syncingModels, setSyncingModels] = useState(false);
@@ -170,6 +225,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     api.providerPresets().then((items) => alive && setPresets(items)).catch(() => {});
     if (provider) api.backupList(tool.id).then((items) => alive && setBackups(items.slice(0, 8))).catch(() => {});
     api.auditLog(40).then((items) => alive && setAuditEntries(items)).catch(() => {});
+    api.liveTestPolicy().then((policy) => alive && setLivePolicy(policy)).catch(() => {});
     return () => {
       alive = false;
     };
@@ -330,34 +386,86 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     }
   };
 
-  const runLiveModelTest = async (model: ModelProfile) => {
-    const modelId = model.id.trim();
-    if (!provider || !modelId) return;
-    setConfirmLiveModel(null);
+  const toggleLiveSelected = (modelId: string) => {
+    if (!modelId.trim()) return;
+    setLiveSelected((current) => {
+      const next = new Set(current);
+      if (next.has(modelId)) next.delete(modelId);
+      else next.add(modelId);
+      return next;
+    });
+  };
+
+  const saveLivePolicy = async () => {
+    if (!livePolicy) return;
+    setPolicyBusy(true);
     setModelError("");
-    setLiveTestingModels((previous) => ({ ...previous, [modelId]: true }));
     try {
-      const tested = await api.liveTestModel(tool.id, provider.id, modelId);
-      setForm((previous) => ({
-        ...previous,
-        models: (previous.models ?? []).map((item) =>
-          item.id === modelId ? { ...item, checks: tested.model.checks ?? [] } : item
-        ),
-      }));
-      onModelTested(tested.model);
-      setModelNotices((previous) => ({
-        ...previous,
-        [modelId]: `${tested.result.status || "連線失敗"} · ${tested.result.ms}ms — ${tested.result.message}`,
-      }));
+      setLivePolicy(await api.setLiveTestPolicy(livePolicy.daily_limit, livePolicy.max_output_tokens));
+      setLiveBatchNotice("實測配額與 token 上限已儲存。");
     } catch (error) {
       setModelError(errorText(error));
     } finally {
-      setLiveTestingModels((previous) => {
-        const next = { ...previous };
-        delete next[modelId];
-        return next;
-      });
+      setPolicyBusy(false);
     }
+  };
+
+  const runLiveModelTests = async (models: ModelProfile[]) => {
+    if (!provider) return;
+    const unique = Array.from(new Map(models.filter((model) => model.id.trim()).map((model) => [model.id.trim(), model])).values());
+    const remaining = Math.max(0, livePolicy?.remaining_24h ?? unique.length);
+    const allowed = unique.slice(0, remaining);
+    const errors: string[] = [];
+    if (!allowed.length) {
+      setConfirmLiveModels(null);
+      setModelError("近 24 小時實測配額已用完。請調整配額或稍後再試。");
+      return;
+    }
+    if (allowed.length < unique.length) {
+      errors.push(`配額只允許執行 ${allowed.length}／${unique.length} 個模型。`);
+    }
+    setConfirmLiveModels(null);
+    setModelError("");
+    setLiveBatchNotice("");
+    let succeeded = 0;
+    let failed = 0;
+    for (const model of allowed) {
+      const modelId = model.id.trim();
+      setLiveTestingModels((previous) => ({ ...previous, [modelId]: true }));
+      try {
+        const tested = await api.liveTestModel(tool.id, provider.id, modelId);
+        setForm((previous) => ({
+          ...previous,
+          models: (previous.models ?? []).map((item) =>
+            item.id === modelId ? { ...item, checks: tested.model.checks ?? [] } : item
+          ),
+        }));
+        onModelTested(tested.model);
+        setModelNotices((previous) => ({
+          ...previous,
+          [modelId]: `${tested.result.status || "連線失敗"} · ${tested.result.ms}ms — ${tested.result.message}`,
+        }));
+        succeeded += 1;
+      } catch (error) {
+        const message = errorText(error);
+        errors.push(`${modelId}: ${message}`);
+        failed += 1;
+        if (message.includes("配額")) break;
+      } finally {
+        setLiveTestingModels((previous) => {
+          const next = { ...previous };
+          delete next[modelId];
+          return next;
+        });
+      }
+    }
+    try {
+      setLivePolicy(await api.liveTestPolicy());
+    } catch {
+      /* policy refresh is best effort */
+    }
+    setLiveBatchNotice(`實測完成：成功 ${succeeded}，失敗 ${failed}。`);
+    if (errors.length) setModelError(errors.join("\\n"));
   };
 
   const discoverModels = async () => {
@@ -393,11 +501,17 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
       for (const model of models) {
         if (returned.has(model.id)) model.last_seen_at = syncedAt;
       }
+      const interval = previous.model_sync_interval_secs ?? 86_400;
+      const jitter = Math.floor(Math.random() * ((previous.model_sync_jitter_secs ?? 300) + 1)) * 1000;
       return {
         ...previous,
         models,
         model: previous.model || models[0]?.id || "",
         model_synced_at: syncedAt,
+        model_sync_next_at: interval > 0 ? syncedAt + interval * 1000 + jitter : 0,
+        model_sync_retry_at: 0,
+        model_sync_failures: 0,
+        model_sync_last_error: "",
       };
     });
     setMetadataDrafts({});
@@ -518,6 +632,17 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
 
   const metadataValue = (model: ModelProfile) => metadataDrafts[model.id] ?? modelMetadataText(model);
 
+  const selectedLiveModels = (form.models ?? []).filter((model) => model.id.trim() && liveSelected.has(model.id));
+  const liveMaxOutput = livePolicy?.max_output_tokens ?? 8;
+  const liveCosts = selectedLiveModels.map((model) => estimateLiveTestCost(model, liveMaxOutput));
+  const liveEstimatedTotal = liveCosts.every((cost) => cost != null) ? liveCosts.reduce((sum, cost) => sum + (cost ?? 0), 0) : null;
+  const liveEstimateUnknown = liveCosts.some((cost) => cost == null);
+  const confirmLiveCosts = (confirmLiveModels ?? []).map((model) => estimateLiveTestCost(model, liveMaxOutput));
+  const confirmLiveEstimate = confirmLiveCosts.every((cost) => cost != null) ? confirmLiveCosts.reduce((sum, cost) => sum + (cost ?? 0), 0) : null;
+  const confirmLiveUnknown = confirmLiveCosts.some((cost) => cost == null);
+  const scheduleInterval = form.model_sync_interval_secs ?? 86_400;
+  const scheduleNextAt = Math.max(form.model_sync_retry_at ?? 0, form.model_sync_next_at ?? 0, form.model_synced_at && scheduleInterval ? form.model_synced_at + scheduleInterval * 1000 : 0);
+
   return (
     <>
       <Modal
@@ -636,9 +761,85 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 >
                   {syncingModels ? <><span className="spin" /> 探索中</> : "↻ 同步模型"}
                 </button>
+                <button
+                  type="button"
+                  className="ghost live-test"
+                  disabled={busy || !provider || !selectedLiveModels.length || dirty || !livePolicy?.remaining_24h}
+                  onClick={() => setConfirmLiveModels(selectedLiveModels)}
+                  title="一次實測勾選的模型；送出前會顯示配額與費用估算"
+                >
+                  實測選取 {selectedLiveModels.length || ""}
+                </button>
                 <button type="button" className="ghost" onClick={() => addModel()}>＋ 新增模型</button>
               </div>
             </div>
+            <div className="model-automation-grid">
+              <div className="model-schedule-card">
+                <div className="model-automation-head">
+                  <div>
+                    <strong>自動模型同步</strong>
+                    <span>每個供應商獨立排程；失敗會退避，成功後加入隨機延遲。</span>
+                  </div>
+                  <span className={`badge ${form.model_sync_failures ? "warn" : "ok"}`}>{form.model_sync_failures ? `失敗 ${form.model_sync_failures} 次` : "正常"}</span>
+                </div>
+                <div className="model-schedule-fields">
+                  <div className="field">
+                    <label>同步間隔</label>
+                    <select aria-label="模型同步間隔" value={scheduleInterval} onChange={(event) => setForm((previous) => ({ ...previous, model_sync_interval_secs: Number(event.target.value) }))}>
+                      <option value={0}>手動</option>
+                      <option value={21600}>每 6 小時</option>
+                      <option value={43200}>每 12 小時</option>
+                      <option value={86400}>每 24 小時</option>
+                      <option value={259200}>每 3 天</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>隨機延遲（分鐘）</label>
+                    <input aria-label="模型同步隨機延遲分鐘" type="number" min={0} max={60} value={Math.round((form.model_sync_jitter_secs ?? 300) / 60)} onChange={(event) => setForm((previous) => ({ ...previous, model_sync_jitter_secs: Math.max(0, Math.min(3600, Number(event.target.value) || 0)) * 60 }))} />
+                  </div>
+                </div>
+                <div className="model-schedule-meta">
+                  <span>上次成功：{form.model_synced_at ? new Date(form.model_synced_at).toLocaleString() : "尚未同步"}</span>
+                  <span>下次排程：{scheduleInterval === 0 ? "手動" : scheduleNextAt ? new Date(scheduleNextAt).toLocaleString() : "尚未排程"}</span>
+                  <span>離線快取：{form.models?.length ?? 0} 個模型</span>
+                </div>
+                {form.model_sync_last_error ? <div className="note warn model-sync-error">上次失敗：{form.model_sync_last_error}</div> : null}
+              </div>
+
+              <div className="live-policy-card">
+                <div className="model-automation-head">
+                  <div>
+                    <strong>實測成本保護</strong>
+                    <span>配額以近 24 小時計算；每次請求都受硬性 token 上限約束。</span>
+                  </div>
+                  <span className={`badge ${livePolicy?.remaining_24h ? "ok" : "warn"}`}>{livePolicy ? `剩餘 ${livePolicy.remaining_24h}` : "讀取中"}</span>
+                </div>
+                <div className="model-schedule-fields">
+                  <div className="field">
+                    <label>每日實測次數</label>
+                    <input aria-label="每日實測次數上限" type="number" min={1} max={200} value={livePolicy?.daily_limit ?? 20} onChange={(event) => setLivePolicy((previous) => ({ ...(previous ?? { daily_limit: 20, used_24h: 0, remaining_24h: 20, max_output_tokens: 8 }), daily_limit: Math.max(1, Math.min(200, Number(event.target.value) || 1)) }))} />
+                  </div>
+                  <div className="field">
+                    <label>每次輸出上限</label>
+                    <input aria-label="實測輸出 token 上限" type="number" min={1} max={128} value={livePolicy?.max_output_tokens ?? 8} onChange={(event) => setLivePolicy((previous) => ({ ...(previous ?? { daily_limit: 20, used_24h: 0, remaining_24h: 20, max_output_tokens: 8 }), max_output_tokens: Math.max(1, Math.min(128, Number(event.target.value) || 1)) }))} />
+                  </div>
+                  <button type="button" className="ghost" onClick={() => void saveLivePolicy()} disabled={policyBusy || !livePolicy}>{policyBusy ? <span className="spin" /> : null} 儲存政策</button>
+                </div>
+                <div className="model-schedule-meta">
+                  <span>近 24 小時已使用：{livePolicy?.used_24h ?? 0} / {livePolicy?.daily_limit ?? 20}</span>
+                  <span>目前每次最多：{livePolicy?.max_output_tokens ?? 8} tokens</span>
+                </div>
+                {selectedLiveModels.length ? (
+                  <div className="live-selection-summary">
+                    <span>已選 {selectedLiveModels.length} 個模型</span>
+                    <span>{liveEstimatedTotal != null ? `預估上限 ${formatUsd(liveEstimatedTotal)}` : liveEstimateUnknown ? "部分模型未提供 pricing" : "尚未提供 pricing"}</span>
+                    <button type="button" className="ghost small" onClick={() => setLiveSelected(new Set())}>清除選取</button>
+                  </div>
+                ) : null}
+                {liveBatchNotice ? <div className="note">{liveBatchNotice}</div> : null}
+              </div>
+            </div>
+
             <div className="field compact-field">
               <label htmlFor="f-add-preset-models">從預設加入模型</label>
               <select id="f-add-preset-models" value="" onChange={(event) => addPresetModels(event.target.value)}>
@@ -653,6 +854,16 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 return (
                   <article className={`model-card${active ? " active" : ""}${model.archived ? " archived" : ""}${stale ? " stale" : ""}`} key={`${index}-${model.id}`} aria-label={`模型 ${model.id || "新模型"}`}>
                     <div className="model-actions">
+                      <label className="model-live-pick" title="選取此模型進行批次實測">
+                        <input
+                          type="checkbox"
+                          aria-label={`選取實測模型 ${model.id || "新模型"}`}
+                          checked={Boolean(model.id && liveSelected.has(model.id))}
+                          disabled={!provider || !model.id.trim()}
+                          onChange={() => toggleLiveSelected(model.id)}
+                        />
+                        <span>選取</span>
+                      </label>
                       <button type="button" className={`model-active${active ? " on" : ""}`} aria-pressed={active} onClick={() => selectModel(model)} title="把這個模型設為供應商預設">
                         <span className="model-dot" />
                         {active ? "目前模型" : "設為目前"}
@@ -692,7 +903,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                         className="small ghost live-test"
                         aria-label={`實測模型 ${model.id || "新模型"}`}
                         disabled={busy || !provider || !model.id.trim() || Boolean(liveTestingModels[model.id])}
-                        onClick={() => setConfirmLiveModel(model)}
+                        onClick={() => setConfirmLiveModels([model])}
                         title="送出極小推論請求；可能產生少量費用"
                       >
                         {liveTestingModels[model.id] ? <><span className="spin" /> 實測中</> : "實測"}
@@ -852,16 +1063,18 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
         />
       ) : null}
 
-      {confirmLiveModel ? (
+      {confirmLiveModels ? (
         <ConfirmModal
           title="進行真實模型實測？"
-          message={`會向「${provider?.name || form.name}」送出一個極小的推論請求，驗證模型「${confirmLiveModel.id}」是否真的可用。
+          message={`會向「${provider?.name || form.name}」送出 ${confirmLiveModels.length} 個極小推論請求：${confirmLiveModels.map((model) => model.id || "新模型").join("、")}。
+
+每次最多 ${liveMaxOutput} tokens，近 24 小時剩餘 ${livePolicy?.remaining_24h ?? "未知"} 次配額。${confirmLiveEstimate != null ? `依端點 pricing metadata 粗估總費用 ${formatUsd(confirmLiveEstimate)}。` : confirmLiveUnknown ? "部分模型未提供 pricing metadata，實際費用無法完整估算。" : ""}
 
 這不是 /models 檢查，供應商可能收取少量費用。`}
-          confirmLabel="送出實測"
-          busy={Boolean(liveTestingModels[confirmLiveModel.id])}
-          onCancel={() => setConfirmLiveModel(null)}
-          onConfirm={() => void runLiveModelTest(confirmLiveModel)}
+          confirmLabel={confirmLiveModels.length > 1 ? `實測 ${confirmLiveModels.length} 個模型` : "送出實測"}
+          busy={confirmLiveModels.some((model) => liveTestingModels[model.id])}
+          onCancel={() => setConfirmLiveModels(null)}
+          onConfirm={() => void runLiveModelTests(confirmLiveModels)}
         />
       ) : null}
 

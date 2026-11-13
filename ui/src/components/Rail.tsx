@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { AppInfo, ToolView } from "../types";
 import type { ThemeMode } from "../theme";
 import { LangToggle } from "./LangToggle";
@@ -51,6 +51,8 @@ export function Rail({
   driftActive,
   onDrift,
 }: RailProps) {
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const activeActionCount = Number(statsActive) + Number(proxyActive) + Number(driftActive);
   const q = filter.trim().toLowerCase();
   const visible = tools.filter(
     (t) =>
@@ -121,23 +123,34 @@ export function Rail({
           ))}
         </div>
 
-        <div className="rail-actions">
+        <button
+          type="button"
+          className={`rail-more-toggle${activeActionCount ? " active" : ""}`}
+          aria-expanded={actionsOpen}
+          aria-controls="rail-advanced-actions"
+          onClick={() => setActionsOpen((open) => !open)}
+        >
+          <span>更多操作</span>
+          {activeActionCount ? <span className="rail-more-count">{activeActionCount}</span> : null}
+          <span className="rail-more-chevron" aria-hidden="true">{actionsOpen ? "−" : "+"}</span>
+        </button>
+        <div id="rail-advanced-actions" className={`rail-actions${actionsOpen ? " open" : ""}`}>
           <div className="rail-action-row rail-view-actions">
-            <button className={`ghost small${statsActive ? " on" : ""}`} onClick={onStats} title="用量與成本統計">
+            <button className={`ghost small${statsActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onStats(); }} title="用量與成本統計">
               統計
             </button>
-            <button className={`ghost small${proxyActive ? " on" : ""}`} onClick={onProxy} title="本地代理與故障轉移">
+            <button className={`ghost small${proxyActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onProxy(); }} title="本地代理與故障轉移">
               代理
             </button>
-            <button className={`ghost small${driftActive ? " on" : ""}`} onClick={onDrift} title="檢查實際設定檔是否偏離 kumoSwitch">
+            <button className={`ghost small${driftActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onDrift(); }} title="檢查實際設定檔是否偏離 kumoSwitch">
               漂移
             </button>
           </div>
           <div className="rail-action-row rail-data-actions">
-            <button className="ghost small" onClick={onExport} title="把所有供應商加密匯出成 .kumoswitch">
+            <button className="ghost small" onClick={() => { setActionsOpen(false); onExport(); }} title="把所有供應商加密匯出成 .kumoswitch">
               匯出清單
             </button>
-            <button className="ghost small" onClick={onImport} title="從 .kumoswitch 加密備份或舊 JSON 匯入供應商">
+            <button className="ghost small" onClick={() => { setActionsOpen(false); onImport(); }} title="從 .kumoswitch 加密備份或舊 JSON 匯入供應商">
               匯入清單
             </button>
           </div>

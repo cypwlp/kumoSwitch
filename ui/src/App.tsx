@@ -728,6 +728,7 @@ export default function App() {
           {showDrift ? (
             <DriftView
               onError={(message) => push(message, "err")}
+              onToast={(message, kind) => push(message, kind ?? "ok")}
               onOpenDiff={(toolId, provider) => void openDiff(toolId, provider)}
               onImport={() => void scanConfig()}
             />

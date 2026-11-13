@@ -53,7 +53,7 @@ pub fn data_dir() -> PathBuf {
     current
 }
 
-#[derive(Default, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Store {
     #[serde(default)]
     pub providers: BTreeMap<String, Vec<Provider>>,
@@ -70,8 +70,41 @@ pub struct Store {
     pub auto_model_sync: bool,
     #[serde(default)]
     pub last_auto_model_sync: u64,
+    /// Live model tests are rationed over a rolling 24-hour window.
+    #[serde(default = "default_live_test_daily_limit")]
+    pub live_test_daily_limit: u32,
+    /// Hard cap for output tokens sent by a live smoke test.
+    #[serde(default = "default_live_test_max_output_tokens")]
+    pub live_test_max_output_tokens: u32,
+    #[serde(default)]
+    pub live_test_runs: Vec<u64>,
     #[serde(default)]
     pub proxy: crate::proxy::ProxyConfig,
+}
+
+fn default_live_test_daily_limit() -> u32 {
+    20
+}
+
+fn default_live_test_max_output_tokens() -> u32 {
+    8
+}
+
+impl Default for Store {
+    fn default() -> Self {
+        Self {
+            providers: BTreeMap::new(),
+            active: BTreeMap::new(),
+            previous_active: BTreeMap::new(),
+            auto_health: false,
+            auto_model_sync: false,
+            last_auto_model_sync: 0,
+            live_test_daily_limit: default_live_test_daily_limit(),
+            live_test_max_output_tokens: default_live_test_max_output_tokens(),
+            live_test_runs: Vec::new(),
+            proxy: crate::proxy::ProxyConfig::default(),
+        }
+    }
 }
 
 fn store_path() -> PathBuf {

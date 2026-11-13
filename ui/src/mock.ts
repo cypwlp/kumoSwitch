@@ -16,6 +16,7 @@ import type {
   ProxyConfig,
   ModelTestResult,
   ModelDiscovery,
+  LiveTestPolicy,
   DriftReport,
 } from "./types";
 
@@ -579,6 +580,9 @@ function buildPreview(tool: string, providerId: string): Preview {
 /* ----------------------------------------------------------------- invoke */
 
 let counter = 100;
+let liveTestDailyLimit = 20;
+let liveTestMaxOutputTokens = 8;
+let liveTestUsed24h = 3;
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function slug(text: string): string {
@@ -601,6 +605,12 @@ function providerView(provider: Provider): Provider {
     api_key_masked: maskKey(provider.api_key),
     has_api_key: provider.api_key.length > 0,
     clear_api_key: false,
+    model_sync_interval_secs: provider.model_sync_interval_secs ?? 86_400,
+    model_sync_jitter_secs: provider.model_sync_jitter_secs ?? 300,
+    model_sync_next_at: provider.model_sync_next_at ?? Date.now() + 86_400_000,
+    model_sync_retry_at: provider.model_sync_retry_at ?? 0,
+    model_sync_failures: provider.model_sync_failures ?? 0,
+    model_sync_last_error: provider.model_sync_last_error ?? "",
   };
 }
 
@@ -611,7 +621,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   switch (cmd) {
     case "app_info":
       return {
-        version: "0.13.1",
+        version: "0.14.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
@@ -814,9 +824,31 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return { model: updated, result } satisfies ModelTestResult;
     }
 
+    case "live_test_policy":
+      return {
+        daily_limit: liveTestDailyLimit,
+        used_24h: liveTestUsed24h,
+        remaining_24h: Math.max(0, liveTestDailyLimit - liveTestUsed24h),
+        max_output_tokens: liveTestMaxOutputTokens,
+      } satisfies LiveTestPolicy;
+
+    case "set_live_test_policy":
+      liveTestDailyLimit = Math.max(1, Math.min(200, Number(args.dailyLimit) || 20));
+      liveTestMaxOutputTokens = Math.max(1, Math.min(128, Number(args.maxOutputTokens) || 8));
+      return {
+        daily_limit: liveTestDailyLimit,
+        used_24h: liveTestUsed24h,
+        remaining_24h: Math.max(0, liveTestDailyLimit - liveTestUsed24h),
+        max_output_tokens: liveTestMaxOutputTokens,
+      } satisfies LiveTestPolicy;
+
     case "live_test_model": {
       const providerId = String(args.providerId ?? "");
       const modelId = String(args.modelId ?? "");
+      if (liveTestUsed24h >= liveTestDailyLimit) {
+        throw new Error(`近 24 小時實測配額已用完（${liveTestUsed24h}／${liveTestDailyLimit}）。請稍後再試或調整配額。`);
+      }
+      liveTestUsed24h += 1;
       const provider = findProvider(tool, providerId);
       const model = (provider.models ?? []).find((item) => item.id === modelId);
       if (!model) throw new Error(`這個供應商沒有模型「${modelId}」`);
@@ -826,7 +858,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         ok: !bad,
         status: bad ? 401 : 200,
         ms: bad ? 618 : 842,
-        message: bad ? "Unauthorized：實測金鑰無效" : `HTTP 200 · 最小推論請求成功`,
+        message: bad ? "Unauthorized：實測金鑰無效" : `HTTP 200 · 最小推論請求成功（輸出上限 ${liveTestMaxOutputTokens} tokens）`,
       } satisfies TestResult;
       const updated = {
         ...model,
@@ -953,6 +985,23 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
           { ts: Date.now(), target: "codex:cx-1", event: "success", status: 200, ttfb_ms: 112, message: "OK" },
           { ts: Date.now() - 5000, target: "codex:cx-2", event: "failover", status: 429, ttfb_ms: 86, message: "upstream rate limited (429); cooling down" },
         ],
+        traces: [{
+          id: 42,
+          ts: Date.now(),
+          method: "POST",
+          path: "/v1/responses",
+          requested_model: "glm-5.3-flash",
+          strategy: "health",
+          candidate_order: ["codex:cx-2", "codex:cx-1"],
+          attempts: [
+            { target: "codex:cx-2", order: 0, outcome: "rate_limited", reason: "429 限流，進入冷卻", status: 429, ttfb_ms: 86, circuit_open_until: Date.now() + 30_000, model: "glm-5.3-flash" },
+            { target: "codex:cx-1", order: 1, outcome: "success", reason: "選中並成功回應", status: 200, ttfb_ms: 112, circuit_open_until: 0, model: "glm-5.3-flash" },
+          ],
+          selected: "codex:cx-1",
+          final_status: 200,
+          total_ms: 221,
+          outcome: "success",
+        }],
       };
     case "proxy_attach":
       return { changed: true, backup_id: "mock", written: ["config"], message: "已掛載代理" };
@@ -1075,9 +1124,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "audit_log":
       return [
-        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.13.1" },
-        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.13.1" },
-        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.13.1" },
+        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.14.0" },
+        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.14.0" },
+        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.14.0" },
       ];
 
     case "import_providers_json": {

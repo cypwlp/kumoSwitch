@@ -33,6 +33,12 @@ fn provider(config_id: &str) -> Provider {
         last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),
+            model_sync_interval_secs: adapters::default_model_sync_interval_secs(),
+            model_sync_jitter_secs: adapters::default_model_sync_jitter_secs(),
+            model_sync_next_at: 0,
+            model_sync_retry_at: 0,
+            model_sync_failures: 0,
+            model_sync_last_error: String::new(),
     }
 }
 

@@ -144,19 +144,59 @@ test("live model test requires explicit cost warning", async ({ page }) => {
   await expect(editor.getByText(/最小推論請求成功/)).toBeVisible();
 });
 
-test("drift center shows clean, drifted, unmanaged, and empty harnesses", async ({ page }) => {
+test("drift center sorts attention first and filters by status", async ({ page }) => {
   await page.getByRole("button", { name: "漂移", exact: true }).click();
   await expect(page.getByRole("heading", { name: "設定漂移中心" })).toBeVisible();
   await expect(page.locator(".drift-summary").getByText("已漂移", { exact: true })).toBeVisible();
   await expect(page.locator(".drift-summary").getByText("未納管", { exact: true })).toBeVisible();
+  await expect(page.locator(".drift-card").first().getByRole("heading", { name: "Claude Code" })).toBeVisible();
   await expect(page.getByText("實際設定與 kumoSwitch 紀錄不同")).toBeVisible();
   await expect(page.getByText("external-provider", { exact: true })).toBeVisible();
+
+  await page.locator(".drift-filters").getByRole("button", { name: "未納管", exact: true }).click();
+  await expect(page.locator(".drift-card")).toHaveCount(1);
+  await expect(page.locator(".drift-card").getByRole("heading", { name: "Gemini CLI" })).toBeVisible();
+
+  await page.locator(".drift-filters").getByRole("button", { name: "待處理", exact: true }).click();
+  await expect(page.locator(".drift-card")).toHaveCount(2);
+});
+
+test("drift batch selection can reapply drifted Harnesses", async ({ page }) => {
+  await page.getByRole("button", { name: "漂移", exact: true }).click();
+  await page.getByRole("button", { name: /選取待處理/ }).click();
+  await expect(page.getByRole("button", { name: /批次重新套用 1/ })).toBeEnabled();
+  await page.getByRole("button", { name: /批次重新套用 1/ }).click();
+  const confirm = page.getByRole("dialog");
+  await expect(confirm.getByRole("heading", { name: "批次重新套用設定？" })).toBeVisible();
+  await confirm.getByRole("button", { name: "開始重新套用" }).click();
+  await expect(page.getByText("批次重新套用 1 個 Harness")).toBeVisible();
+});
+
+test("drift batch selection can import unmanaged Harnesses", async ({ page }) => {
+  await page.getByRole("button", { name: "漂移", exact: true }).click();
+  await page.getByRole("checkbox", { name: "選取 Gemini CLI" }).check();
+  await page.getByRole("button", { name: /批次匯入 1/ }).click();
+  const confirm = page.getByRole("dialog");
+  await expect(confirm.getByRole("heading", { name: "批次匯入未納管供應商？" })).toBeVisible();
+  await confirm.getByRole("button", { name: "開始匯入" }).click();
+  await expect(page.getByText(/批次匯入 .*個供應商/)).toBeVisible();
 });
 
 test("rail actions stay contained at desktop and narrow widths", async ({ page }) => {
   for (const width of [1222, 760, 480]) {
     await page.setViewportSize({ width, height: 784 });
-    await page.goto(APP);
+    await page.reload();
+    const actions = page.locator(".rail-actions");
+    const more = page.getByRole("button", { name: /更多操作/ });
+    if (width <= 760) {
+      await expect(more).toBeVisible();
+      await expect(actions).toBeHidden();
+      await more.click();
+      await expect(actions).toBeVisible();
+    } else {
+      await expect(more).toBeHidden();
+      await expect(actions).toBeVisible();
+    }
     await expect(page.getByRole("button", { name: "匯入清單", exact: true })).toBeVisible();
 
     const geometry = await page.evaluate(() => {
@@ -193,6 +233,45 @@ test("narrow window keeps the Harness usable without horizontal overflow", async
   expect(layout).toBe("column");
 });
 
+test("proxy decision trace explains skipped and selected providers", async ({ page }) => {
+  await page.getByRole("button", { name: "代理", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "代理／故障轉移" })).toBeVisible();
+  await expect(page.getByText("最近請求決策")).toBeVisible();
+  const trace = page.locator(".proxy-trace").first();
+  await trace.locator("summary").click();
+  await expect(trace.getByText("候選順序")).toBeVisible();
+  await expect(trace.getByText("429 限流，進入冷卻")).toBeVisible();
+  await expect(trace.getByText("選中並成功回應")).toBeVisible();
+  await expect(trace.getByText(/選中|Codex/).first()).toBeVisible();
+});
+
+test("model sync schedule and live-test budget are configurable", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /^模型/ }).click();
+
+  await expect(dialog.getByLabel("模型同步間隔")).toHaveValue("86400");
+  await expect(dialog.getByText(/離線快取：2 個模型/)).toBeVisible();
+  await expect(dialog.getByLabel("每日實測次數上限")).toHaveValue("20");
+  await expect(dialog.getByLabel("實測輸出 token 上限")).toHaveValue("8");
+
+  await dialog.getByLabel("每日實測次數上限").fill("6");
+  await dialog.getByLabel("實測輸出 token 上限").fill("4");
+  await dialog.getByRole("button", { name: "儲存政策" }).click();
+  await expect(dialog.getByText("實測配額與 token 上限已儲存。")).toBeVisible();
+
+  await dialog.getByRole("checkbox", { name: "選取實測模型 glm-5.3-flash" }).check();
+  await dialog.getByRole("checkbox", { name: "選取實測模型 muse-spark-1.3" }).check();
+  await expect(dialog.getByText(/已選 2 個模型/)).toBeVisible();
+  await dialog.getByRole("button", { name: /實測選取 2/ }).click();
+
+  const confirm = page.getByRole("dialog").last();
+  await expect(confirm.getByText(/每次最多 4 tokens/)).toBeVisible();
+  await expect(confirm.getByText(/近 24 小時剩餘 3 次配額/)).toBeVisible();
+  await confirm.getByRole("button", { name: "實測 2 個模型" }).click();
+  await expect(dialog.getByText("實測完成：成功 2，失敗 0。")).toBeVisible();
+});
+
 test("unsaved provider edits require confirmation before closing", async ({ page }) => {
   await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
   const dialog = page.getByRole("dialog");
@@ -218,7 +297,7 @@ test("Harness provider overview matches the visual baseline", async ({ page }) =
   });
 });
 
-test("dark visual system matches the v0.13 baseline", async ({ page }) => {
+test("dark visual system matches the v0.14 baseline", async ({ page }) => {
   await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "dark"));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
@@ -237,6 +316,20 @@ test("drift center matches the visual baseline", async ({ page }) => {
   await page.getByRole("button", { name: "漂移", exact: true }).click();
   await page.locator(".drift-card").first().waitFor();
   await expect(page).toHaveScreenshot("drift-center.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.06,
+    threshold: 0.3,
+  });
+});
+
+test("mobile rail keeps advanced actions collapsed", async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 860 });
+  await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "light"));
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "已設定的供應商" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /更多操作/ })).toBeVisible();
+  await expect(page.locator(".rail-actions")).toBeHidden();
+  await expect(page).toHaveScreenshot("mobile-rail.png", {
     animations: "disabled",
     maxDiffPixelRatio: 0.06,
     threshold: 0.3,

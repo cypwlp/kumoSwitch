@@ -201,6 +201,34 @@ pub struct ProxyLogEntry {
     pub message: String,
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ProxyAttempt {
+    pub target: String,
+    pub order: usize,
+    pub outcome: String,
+    pub reason: String,
+    pub status: Option<u16>,
+    pub ttfb_ms: Option<u64>,
+    pub circuit_open_until: u64,
+    pub model: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ProxyTrace {
+    pub id: u64,
+    pub ts: u64,
+    pub method: String,
+    pub path: String,
+    pub requested_model: Option<String>,
+    pub strategy: String,
+    pub candidate_order: Vec<String>,
+    pub attempts: Vec<ProxyAttempt>,
+    pub selected: Option<String>,
+    pub final_status: u16,
+    pub total_ms: u64,
+    pub outcome: String,
+}
+
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct TargetMetrics {
     pub active: usize,
@@ -222,11 +250,14 @@ pub struct ProxyMetrics {
     pub strategy: String,
     pub targets: BTreeMap<String, TargetMetrics>,
     pub logs: Vec<ProxyLogEntry>,
+    pub traces: Vec<ProxyTrace>,
 }
 
 static TARGET_STATE: Mutex<BTreeMap<String, TargetState>> = Mutex::new(BTreeMap::new());
 static PROXY_LOGS: Mutex<VecDeque<ProxyLogEntry>> = Mutex::new(VecDeque::new());
+static PROXY_TRACES: Mutex<VecDeque<ProxyTrace>> = Mutex::new(VecDeque::new());
 static ROUTE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static TRACE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -279,6 +310,25 @@ fn push_proxy_log(target: &str, event: &str, status: Option<u16>, ttfb_ms: Optio
         ttfb_ms,
         message: message.into(),
     });
+}
+
+fn push_proxy_trace(mut trace: ProxyTrace) {
+    trace.id = TRACE_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
+    trace.ts = now_ms();
+    let mut traces = PROXY_TRACES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if traces.len() >= 100 {
+        traces.pop_front();
+    }
+    traces.push_back(trace);
+}
+
+fn circuit_open_until(reference: &str) -> u64 {
+    target_states()
+        .get(reference)
+        .map(|state| state.open_until_ms)
+        .unwrap_or(0)
 }
 
 fn request_model(body: &[u8]) -> Option<String> {
@@ -412,13 +462,9 @@ fn ordered_targets(strategy: RoutingStrategy, targets: &[Target]) -> Vec<Target>
         RoutingStrategy::Ordered => {}
     }
     drop(states);
-    let now = now_ms();
-    let available: Vec<Target> = ordered
-        .iter()
-        .filter(|target| target_available(&target.reference, now))
-        .cloned()
-        .collect();
-    if available.is_empty() { ordered } else { available }
+    // Keep every configured target in the candidate order so the request trace
+    // can explain why a target was skipped. Availability is checked in the loop.
+    ordered
 }
 
 struct TargetPermit {
@@ -485,16 +531,27 @@ pub fn metrics() -> ProxyMetrics {
         .iter()
         .cloned()
         .collect();
+    let traces = PROXY_TRACES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .cloned()
+        .collect();
     ProxyMetrics {
         strategy: strategy_label(&config.strategy).into(),
         targets,
         logs,
+        traces,
     }
 }
 
 pub fn reset_metrics() {
     target_states().clear();
     PROXY_LOGS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    PROXY_TRACES
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clear();
@@ -686,15 +743,39 @@ fn handle_with_routing_limit(
 
     let requested_model = request_model(&body);
     let targets = ordered_targets(strategy, &targets);
+    let trace_started = Instant::now();
+    let trace_strategy = strategy_label(&strategy).to_string();
+    let candidate_order = targets.iter().map(|target| target.reference.clone()).collect::<Vec<_>>();
+    let mut attempts = Vec::<ProxyAttempt>::new();
     let all_unavailable = targets.iter().all(|target| !target_available(&target.reference, now_ms()));
     let mut last_status = 502u16;
-    for target in &targets {
+    for (order, target) in targets.iter().enumerate() {
         if !all_unavailable && !target_available(&target.reference, now_ms()) {
             record_failover(&target.reference, "circuit open; skipped");
+            attempts.push(ProxyAttempt {
+                target: target.reference.clone(),
+                order,
+                outcome: "skipped".into(),
+                reason: "熔斷冷卻中".into(),
+                status: None,
+                ttfb_ms: None,
+                circuit_open_until: circuit_open_until(&target.reference),
+                model: None,
+            });
             continue;
         }
         let Some(_permit) = acquire_target(&target.reference, target.policy.max_concurrency) else {
             record_failover(&target.reference, "max concurrency reached; skipped");
+            attempts.push(ProxyAttempt {
+                target: target.reference.clone(),
+                order,
+                outcome: "skipped".into(),
+                reason: "已達最大併發數".into(),
+                status: None,
+                ttfb_ms: None,
+                circuit_open_until: circuit_open_until(&target.reference),
+                model: None,
+            });
             continue;
         };
 
@@ -702,9 +783,20 @@ fn handle_with_routing_limit(
             Ok(target_body) => target_body,
             Err(reason) => {
                 record_failover(&target.reference, &reason);
+                attempts.push(ProxyAttempt {
+                    target: target.reference.clone(),
+                    order,
+                    outcome: "skipped".into(),
+                    reason: reason.clone(),
+                    status: None,
+                    ttfb_ms: None,
+                    circuit_open_until: circuit_open_until(&target.reference),
+                    model: None,
+                });
                 continue;
             }
         };
+        let mapped_model = request_model(&target_body);
         let upstream = format!("{}{}", upstream_url(&target.base_url, &path), query);
         let mut req = client
             .request(reqwest_method.clone(), &upstream)
@@ -741,6 +833,16 @@ fn handle_with_routing_limit(
                 };
                 record_result(&target.reference, 0, ttfb, false, &target.policy, Some(reason));
                 record_failover(&target.reference, reason);
+                attempts.push(ProxyAttempt {
+                    target: target.reference.clone(),
+                    order,
+                    outcome: if error.is_timeout() { "timeout".into() } else { "failed".into() },
+                    reason: if error.is_timeout() { "上游逾時".into() } else { "上游連線失敗".into() },
+                    status: None,
+                    ttfb_ms: Some(ttfb),
+                    circuit_open_until: circuit_open_until(&target.reference),
+                    model: mapped_model.clone(),
+                });
                 last_status = 502;
                 continue;
             }
@@ -755,14 +857,62 @@ fn handle_with_routing_limit(
             };
             record_result(&target.reference, status, ttfb, false, &target.policy, Some(reason));
             record_failover(&target.reference, reason);
+            attempts.push(ProxyAttempt {
+                target: target.reference.clone(),
+                order,
+                outcome: if status == 429 { "rate_limited".into() } else { "server_error".into() },
+                reason: if status == 429 { "429 限流，進入冷卻".into() } else { "上游 5xx，切換下一家".into() },
+                status: Some(status),
+                ttfb_ms: Some(ttfb),
+                circuit_open_until: circuit_open_until(&target.reference),
+                model: mapped_model.clone(),
+            });
             last_status = status;
             continue;
         }
         record_result(&target.reference, status, ttfb, true, &target.policy, None);
+        attempts.push(ProxyAttempt {
+            target: target.reference.clone(),
+            order,
+            outcome: "success".into(),
+            reason: "選中並成功回應".into(),
+            status: Some(status),
+            ttfb_ms: Some(ttfb),
+            circuit_open_until: 0,
+            model: mapped_model,
+        });
+        push_proxy_trace(ProxyTrace {
+            id: 0,
+            ts: 0,
+            method: method.clone(),
+            path: path.clone(),
+            requested_model: requested_model.clone(),
+            strategy: trace_strategy.clone(),
+            candidate_order: candidate_order.clone(),
+            attempts,
+            selected: Some(target.reference.clone()),
+            final_status: status,
+            total_ms: trace_started.elapsed().as_millis() as u64,
+            outcome: "success".into(),
+        });
         relay_response(request, resp, &method);
         return;
     }
 
+    push_proxy_trace(ProxyTrace {
+        id: 0,
+        ts: 0,
+        method,
+        path,
+        requested_model,
+        strategy: trace_strategy,
+        candidate_order,
+        attempts,
+        selected: None,
+        final_status: last_status,
+        total_ms: trace_started.elapsed().as_millis() as u64,
+        outcome: "failed".into(),
+    });
     let resp = tiny_http::Response::from_string(format!("{{\"error\":\"all providers failed\",\"last_status\":{last_status}}}"))
         .with_status_code(last_status)
         .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
@@ -1398,6 +1548,43 @@ mod tests {
         let good = good_seen.lock().unwrap();
         assert_eq!(good.len(), 1, "healthy upstream should receive one request");
         assert_forwarded(&good[0], "good-key");
+    }
+
+    #[test]
+    fn proxy_records_candidate_order_and_skip_reasons() {
+        let (good_url, _good_seen, good_join) = spawn_upstream(200, "good");
+        let mut blocked = target(good_url.clone(), "blocked-key");
+        blocked.reference = "test:trace-blocked".into();
+        blocked.policy.allowed_models = vec!["other-model".into()];
+        let mut good = target(good_url, "good-key");
+        good.reference = "test:trace-good".into();
+        let (proxy_url, proxy_join) = spawn_proxy(vec![blocked, good]);
+
+        let response = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap()
+            .post(format!("{proxy_url}/v1/trace-decision"))
+            .header("Content-Type", "application/json")
+            .body(r#"{"model":"wanted-model","messages":[]}"#)
+            .send()
+            .expect("trace proxy response");
+        assert_eq!(response.status().as_u16(), 200);
+        let _ = response.text();
+        proxy_join.join().unwrap();
+        good_join.join().unwrap();
+
+        let trace = metrics()
+            .traces
+            .into_iter()
+            .find(|trace| trace.path == "/v1/trace-decision")
+            .expect("decision trace should be recorded");
+        assert_eq!(trace.candidate_order, vec!["test:trace-blocked", "test:trace-good"]);
+        assert_eq!(trace.attempts[0].outcome, "skipped");
+        assert!(trace.attempts[0].reason.contains("not allowed"));
+        assert_eq!(trace.attempts[1].outcome, "success");
+        assert_eq!(trace.selected.as_deref(), Some("test:trace-good"));
+        assert_eq!(trace.final_status, 200);
     }
 
     #[test]

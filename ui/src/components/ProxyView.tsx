@@ -32,6 +32,13 @@ function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function attemptTone(outcome: string): string {
+  if (outcome === "success") return "ok";
+  if (outcome === "skipped") return "subtle";
+  if (outcome === "rate_limited" || outcome === "timeout") return "warn";
+  return "err";
+}
+
 function timeAgo(ms: number): string {
   if (!ms) return "—";
   const diff = Math.max(0, Date.now() - ms);
@@ -155,6 +162,7 @@ export function ProxyView({ onError, onToast }: Props) {
   };
 
   const logRows = metrics?.logs.slice().reverse().slice(0, 30) ?? [];
+  const traceRows = metrics?.traces?.slice().reverse().slice(0, 20) ?? [];
 
   return (
     <section className="stats proxy-view">
@@ -264,6 +272,40 @@ export function ProxyView({ onError, onToast }: Props) {
             </article>
           )) : <div className="empty small">尚無代理請求。</div>}
         </div>
+        <div className="detail-subhead">最近請求決策</div>
+        <div className="proxy-trace-list">
+          {traceRows.length ? traceRows.map((trace) => (
+            <details className="proxy-trace" key={trace.id}>
+              <summary>
+                <span className="mono">{new Date(trace.ts).toLocaleTimeString()}</span>
+                <span className="proxy-trace-path">{trace.method} {trace.path}</span>
+                <span className="proxy-trace-model">{trace.requested_model || "未指定模型"}</span>
+                <span className={`badge ${trace.outcome === "success" ? "ok" : "err"}`}>{trace.outcome === "success" ? "成功" : "失敗"}</span>
+                <span className="proxy-trace-selected">{trace.selected ? labels.get(trace.selected) ?? trace.selected : "未選中"}</span>
+                <span className="muted">{trace.total_ms}ms</span>
+              </summary>
+              <div className="proxy-trace-body">
+                <div className="proxy-candidate-order">
+                  <span>候選順序</span>
+                  {trace.candidate_order.map((ref, index) => <span className="badge subtle" key={ref}>#{index + 1} {labels.get(ref) ?? ref}</span>)}
+                </div>
+                <div className="proxy-attempt-list">
+                  {trace.attempts.map((attempt, index) => (
+                    <div className={`proxy-attempt ${attempt.outcome}`} key={`${attempt.target}-${index}`}>
+                      <span className="proxy-attempt-order">#{attempt.order + 1}</span>
+                      <span className="proxy-attempt-target">{labels.get(attempt.target) ?? attempt.target}</span>
+                      <span className={`badge ${attemptTone(attempt.outcome)}`}>{attempt.outcome}</span>
+                      <span>{attempt.status ?? "—"}</span>
+                      <span>{attempt.ttfb_ms != null ? `${attempt.ttfb_ms}ms` : "—"}</span>
+                      <span className="proxy-attempt-reason">{attempt.reason}{attempt.model ? ` · ${attempt.model}` : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </details>
+          )) : <div className="empty small">尚無請求決策紀錄。</div>}
+        </div>
+        <div className="detail-subhead">事件紀錄</div>
         <div className="proxy-log">
           {logRows.length ? logRows.map((log, index) => (
             <div className={`proxy-log-row ${log.event}`} key={`${log.ts}-${index}`}>
