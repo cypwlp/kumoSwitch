@@ -19,9 +19,7 @@ for (const [id, href] of [
   ["repoLink2", repoUrl],
   ["releasesLink", releasesUrl],
   ["heroDownload", latestReleaseUrl],
-  ["primaryDownload", latestReleaseUrl],
   ["alternateDownload", latestReleaseUrl],
-  ["stepsDownload", latestReleaseUrl],
   ["checksumsLink", latestReleaseUrl],
   ["securityChecksums", latestReleaseUrl],
   ["stepsChecksums", latestReleaseUrl],
@@ -213,9 +211,7 @@ function renderPlatform(platformId, userSelected = false) {
   document.getElementById("primarySize").textContent = primary ? formatSize(primary.size) : "—";
   document.getElementById("panelFile").textContent = primary?.name || "—";
   document.getElementById("panelVersion").textContent = release?.tag_name || "—";
-  setLink("primaryDownload", primary, platform.primaryLabel);
-  setLink("heroDownload", primary, "下載最新版");
-  setLink("stepsDownload", primary, platform.primaryLabel);
+  setLink("heroDownload", primary, platform.primaryLabel);
   setLink("checksumsLink", assets.checksums, "核對下載檔");
   setLink("securityChecksums", assets.checksums, "取得 checksums");
   setLink("stepsChecksums", assets.checksums, "下載 SHA-256 checksums");

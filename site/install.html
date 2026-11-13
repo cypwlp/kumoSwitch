@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>安裝 kumoSwitch — 專屬安裝向導</title>
-<meta name="description" content="kumoSwitch 專屬安裝頁：自動辨識平台、取得最新版本、下載 Windows、macOS 或 Linux 安裝檔，並逐步完成首次設定。" />
+<title>下載與安裝 kumoSwitch — 專屬指南</title>
+<meta name="description" content="下載 kumoSwitch 正確的安裝檔。網頁負責挑選下載檔，下載後由 Windows 安裝器接手，完成安裝與首次啟動。" />
 <meta name="theme-color" content="#0b1110" />
-<meta property="og:title" content="安裝 kumoSwitch" />
-<meta property="og:description" content="自動辨識平台、最新版本下載與完整首次設定向導。" />
-<meta property="og:image" content="assets/screenshot-panel.png" />
+<meta name="color-scheme" content="dark" />
+<meta property="og:title" content="下載與安裝 kumoSwitch" />
+<meta property="og:description" content="一次選對下載檔，再雙擊安裝；下載與安裝不再混淆。" />
+<meta property="og:image" content="assets/install-preview-dark.png" />
 <link rel="icon" href="assets/icon.png" />
 <link rel="stylesheet" href="install.css" />
 </head>
@@ -37,17 +38,22 @@
 <main id="top">
   <section class="hero wrap">
     <div class="hero-copy">
-      <span class="eyebrow"><i></i> Dedicated installer · 未簽章 Beta</span>
-      <h1>安裝 <em>kumoSwitch</em><br />不用猜哪個檔案。</h1>
-      <p class="lede">這個頁面會自動判斷你的作業系統，從 GitHub 最新 Release 挑選正確的安裝檔，並給出對應的平台步驟與首次啟動指引。</p>
+      <span class="eyebrow"><i></i> Download & install · 未簽章 Beta</span>
+      <h1>先下載，<br /><em>再完成安裝。</em></h1>
+      <p class="lede">這個網頁只負責挑選正確的安裝檔。下載完成後，雙擊 <code>.exe</code>，真正的安裝流程會在 kumoSwitch 的 Windows 安裝器中完成。</p>
+      <div class="flow-strip" aria-label="下載與安裝流程">
+        <span><b>01</b> 下載</span><i>→</i>
+        <span><b>02</b> 執行安裝器</span><i>→</i>
+        <span><b>03</b> 開啟</span>
+      </div>
       <div class="hero-meta">
         <span id="versionBadge" class="meta-pill">取得最新版本中…</span>
         <span class="meta-pill">Windows · macOS · Linux</span>
         <span class="meta-pill">MIT License</span>
       </div>
       <div class="hero-actions">
-        <a id="heroDownload" class="btn primary" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載最新版</a>
-        <a class="btn subtle" href="#steps">查看完整步驟</a>
+        <a id="heroDownload" class="btn primary" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載 Windows 安裝檔</a>
+        <a class="btn subtle" href="#steps">查看安裝流程</a>
       </div>
       <p id="releaseMeta" class="fineprint" aria-live="polite">正在向 GitHub 查詢最新版本與檔案大小…</p>
       <ul class="quick-facts">
@@ -60,7 +66,7 @@
     <aside class="installer" aria-label="平台安裝向導">
       <div class="installer-top">
         <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span>快速安裝</span>
+        <span>下載中心</span>
         <span id="detectedBadge" class="detected">偵測中</span>
       </div>
       <div class="platform-tabs" role="tablist" aria-label="選擇作業系統">
@@ -85,7 +91,7 @@
           </div>
           <span id="primarySize" class="size">—</span>
         </div>
-        <a id="primaryDownload" class="btn primary block" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載安裝檔</a>
+        <div class="download-hint"><span>下載後</span><strong>雙擊安裝檔，依安裝器指示完成</strong></div>
         <div class="alternate-row">
           <span id="alternateLabel">免安裝版</span>
           <a id="alternateDownload" href="https://github.com/cypwlp/kumoSwitch/releases/latest">前往 Releases</a>
@@ -116,7 +122,7 @@
         <span class="kicker">目前選擇</span>
         <h3 id="downloadTitle">Windows x64</h3>
         <p id="downloadSummary">下載 NSIS 安裝檔，執行後依畫面完成安裝。</p>
-        <a id="stepsDownload" class="btn primary" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載 Windows 安裝檔</a>
+        <span class="step-note">下載按鈕在上方；這裡只列出安裝流程與驗證資訊。</span>
         <a id="stepsChecksums" class="text-link" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載 SHA-256 checksums</a>
         <div class="mini-file">
           <span>版本</span><strong id="panelVersion">—</strong>
@@ -147,7 +153,7 @@
     </div>
     <div class="first-run-shot">
       <div class="shot-glow"></div>
-      <img src="assets/screenshot-panel.png" alt="kumoSwitch 主介面" />
+      <img src="assets/install-preview-dark.png" alt="kumoSwitch 暗色主介面" />
     </div>
   </section>
 
