@@ -31,6 +31,8 @@ fn provider(config_id: &str) -> Provider {
         kind: String::new(),
         note: String::new(),
         last_used: 0,
+            model_synced_at: 0,
+            previous_model: String::new(),
     }
 }
 

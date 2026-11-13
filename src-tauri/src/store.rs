@@ -65,6 +65,11 @@ pub struct Store {
     /// Re-test providers that already have history, on a timer.
     #[serde(default)]
     pub auto_health: bool,
+    /// Refresh previously synced model catalogues on a timer.
+    #[serde(default)]
+    pub auto_model_sync: bool,
+    #[serde(default)]
+    pub last_auto_model_sync: u64,
     #[serde(default)]
     pub proxy: crate::proxy::ProxyConfig,
 }
@@ -225,10 +230,63 @@ pub fn select_model(tool: &str, id: &str, model_id: &str) -> Result<Provider, St
     if !provider.models.iter().any(|model| model.id == model_id) {
         return Err(format!("這個供應商沒有模型「{model_id}」"));
     }
+    let now = stamp() as u64;
+    if !provider.model.is_empty() && provider.model != model_id {
+        provider.previous_model = provider.model.clone();
+    }
     provider.model = model_id.to_string();
+    if let Some(model) = provider.models.iter_mut().find(|model| model.id == model_id) {
+        model.last_used_at = now;
+    }
     let selected = provider.clone();
     save(&store)?;
     Ok(selected)
+}
+
+pub fn set_model_favorite(
+    tool: &str,
+    id: &str,
+    model_id: &str,
+    favorite: bool,
+) -> Result<crate::adapters::ModelProfile, String> {
+    let mut store = load();
+    let provider = store
+        .providers
+        .get_mut(tool)
+        .and_then(|list| list.iter_mut().find(|provider| provider.id == id))
+        .ok_or_else(|| "找不到這個供應商".to_string())?;
+    let model = provider
+        .models
+        .iter_mut()
+        .find(|model| model.id == model_id)
+        .ok_or_else(|| format!("這個供應商沒有模型「{model_id}」"))?;
+    model.favorite = favorite;
+    let updated = model.clone();
+    save(&store)?;
+    Ok(updated)
+}
+
+pub fn set_model_archived(
+    tool: &str,
+    id: &str,
+    model_id: &str,
+    archived: bool,
+) -> Result<crate::adapters::ModelProfile, String> {
+    let mut store = load();
+    let provider = store
+        .providers
+        .get_mut(tool)
+        .and_then(|list| list.iter_mut().find(|provider| provider.id == id))
+        .ok_or_else(|| "找不到這個供應商".to_string())?;
+    let model = provider
+        .models
+        .iter_mut()
+        .find(|model| model.id == model_id)
+        .ok_or_else(|| format!("這個供應商沒有模型「{model_id}」"))?;
+    model.archived = archived;
+    let updated = model.clone();
+    save(&store)?;
+    Ok(updated)
 }
 
 /// Append a model-specific endpoint check while retaining a short local trend.

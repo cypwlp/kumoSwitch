@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "kumoswitch"
-version = "0.10.0"
+version = "0.13.0"
 dependencies = [
  "aes-gcm",
  "argon2",

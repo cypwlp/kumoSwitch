@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager};
 
 pub const TRAY_ID: &str = "kumoswitch-tray";
 const APPLY_PREFIX: &str = "apply|";
+const MODEL_PREFIX: &str = "model|";
 
 pub fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -69,8 +70,45 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             } else {
                 provider.name.clone()
             };
-            let id = format!("{APPLY_PREFIX}{}|{}", spec.id, provider.id);
-            submenu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;
+            let provider_menu = Submenu::new(app, label, true)?;
+            let apply_id = format!("{APPLY_PREFIX}{}|{}", spec.id, provider.id);
+            provider_menu.append(&MenuItem::with_id(
+                app,
+                apply_id,
+                if active { "✓ 重新套用供應商" } else { "套用供應商" },
+                true,
+                None::<&str>,
+            )?)?;
+            let models: Vec<_> = provider
+                .models
+                .iter()
+                .filter(|model| !model.archived)
+                .collect();
+            if !models.is_empty() {
+                provider_menu.append(&PredefinedMenuItem::separator(app)?)?;
+            }
+            for model in models {
+                let model_active = active && current.model == model.id;
+                let display = if model.name.is_empty() { &model.id } else { &model.name };
+                let model_label = format!(
+                    "{}{}{}",
+                    if model.favorite { "★ " } else { "" },
+                    if model_active { "✓ " } else { "" },
+                    display
+                );
+                let model_id = format!(
+                    "{MODEL_PREFIX}{}|{}|{}",
+                    spec.id, provider.id, model.id
+                );
+                provider_menu.append(&MenuItem::with_id(
+                    app,
+                    model_id,
+                    model_label,
+                    true,
+                    None::<&str>,
+                )?)?;
+            }
+            submenu.append(&provider_menu)?;
         }
         menu.append(&submenu)?;
     }
@@ -118,14 +156,24 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
                 }
                 "quit" => app.exit(0),
                 _ => {
-                    if let Some(rest) = id.strip_prefix(APPLY_PREFIX) {
+                    let result = if let Some(rest) = id.strip_prefix(APPLY_PREFIX) {
                         let mut parts = rest.splitn(2, '|');
                         let tool = parts.next().unwrap_or("");
                         let provider = parts.next().unwrap_or("");
-                        let result = crate::apply_from_tray(tool, provider);
+                        Some(crate::apply_from_tray(tool, provider))
+                    } else if let Some(rest) = id.strip_prefix(MODEL_PREFIX) {
+                        let mut parts = rest.splitn(3, '|');
+                        let tool = parts.next().unwrap_or("");
+                        let provider = parts.next().unwrap_or("");
+                        let model = parts.next().unwrap_or("");
+                        Some(crate::switch_model_from_tray(tool, provider, model))
+                    } else {
+                        None
+                    };
+                    if let Some(result) = result {
                         let payload = match result {
                             Ok(message) => serde_json::json!({ "text": message, "kind": "ok" }),
-                            Err(err) => serde_json::json!({ "text": err, "kind": "err" }),
+                            Err(err) => serde_json::json!({ "text": err, "kind": "error" }),
                         };
                         let _ = app.emit("kumoswitch://toast", payload);
                         let _ = app.emit("kumoswitch://changed", ());

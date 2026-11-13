@@ -90,6 +90,12 @@ pub struct ProxyTargetPolicy {
     pub failure_threshold: u32,
     #[serde(default = "default_max_concurrency")]
     pub max_concurrency: usize,
+    /// Requests are only routed here when their model is in this list. Empty means no restriction.
+    #[serde(default)]
+    pub allowed_models: Vec<String>,
+    /// Rewrite a requested model ID to a provider-specific ID before forwarding.
+    #[serde(default)]
+    pub model_map: BTreeMap<String, String>,
 }
 
 fn default_weight() -> u32 { 100 }
@@ -109,6 +115,8 @@ impl Default for ProxyTargetPolicy {
             backoff_429_secs: default_429_cooldown(),
             failure_threshold: default_failure_threshold(),
             max_concurrency: default_max_concurrency(),
+            allowed_models: Vec::new(),
+            model_map: BTreeMap::new(),
         }
     }
 }
@@ -271,6 +279,37 @@ fn push_proxy_log(target: &str, event: &str, status: Option<u16>, ttfb_ms: Optio
         ttfb_ms,
         message: message.into(),
     });
+}
+
+fn request_model(body: &[u8]) -> Option<String> {
+    serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| value.get("model").and_then(|model| model.as_str()).map(str::to_string))
+}
+
+fn model_body_for_target(
+    body: &[u8],
+    requested_model: Option<&str>,
+    policy: &ProxyTargetPolicy,
+) -> Result<Vec<u8>, String> {
+    let Some(requested) = requested_model else {
+        if !policy.allowed_models.is_empty() {
+            return Err("model missing; target skipped".into());
+        }
+        return Ok(body.to_vec());
+    };
+    if !policy.allowed_models.is_empty()
+        && !policy.allowed_models.iter().any(|model| model == requested)
+    {
+        return Err(format!("model {requested} not allowed; target skipped"));
+    }
+    let Some(mapped) = policy.model_map.get(requested) else {
+        return Ok(body.to_vec());
+    };
+    let mut value: serde_json::Value =
+        serde_json::from_slice(body).map_err(|_| "request body is not valid JSON".to_string())?;
+    value["model"] = serde_json::Value::String(mapped.clone());
+    serde_json::to_vec(&value).map_err(|error| format!("failed to rewrite model: {error}"))
 }
 
 fn record_result(
@@ -645,6 +684,7 @@ fn handle_with_routing_limit(
     let has_content_type = forwarded_headers.iter().any(|(name, _)| name == "content-type");
     let has_anthropic_version = forwarded_headers.iter().any(|(name, _)| name == "anthropic-version");
 
+    let requested_model = request_model(&body);
     let targets = ordered_targets(strategy, &targets);
     let all_unavailable = targets.iter().all(|target| !target_available(&target.reference, now_ms()));
     let mut last_status = 502u16;
@@ -658,6 +698,13 @@ fn handle_with_routing_limit(
             continue;
         };
 
+        let target_body = match model_body_for_target(&body, requested_model.as_deref(), &target.policy) {
+            Ok(target_body) => target_body,
+            Err(reason) => {
+                record_failover(&target.reference, &reason);
+                continue;
+            }
+        };
         let upstream = format!("{}{}", upstream_url(&target.base_url, &path), query);
         let mut req = client
             .request(reqwest_method.clone(), &upstream)
@@ -673,11 +720,11 @@ fn handle_with_routing_limit(
         } else {
             req = req.header("Authorization", format!("Bearer {}", target.api_key));
         }
-        if !has_content_type && !body.is_empty() {
+        if !has_content_type && !target_body.is_empty() {
             req = req.header("Content-Type", "application/json");
         }
-        if !body.is_empty() {
-            req = req.body(body.clone());
+        if !target_body.is_empty() {
+            req = req.body(target_body);
         }
 
         let started = Instant::now();
@@ -1207,6 +1254,21 @@ mod tests {
         good_join.join().unwrap();
         slow_join.join().unwrap();
         assert_eq!(good_seen.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn model_aware_policy_maps_and_filters_models() {
+        let body = br#"{"model":"shared-model","messages":[]}"#;
+        let mut policy = ProxyTargetPolicy::default();
+        policy.allowed_models = vec!["shared-model".into()];
+        policy.model_map.insert("shared-model".into(), "provider-specific-model".into());
+        let mapped = model_body_for_target(body, request_model(body).as_deref(), &policy).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&mapped).unwrap();
+        assert_eq!(value["model"], "provider-specific-model");
+
+        policy.allowed_models = vec!["other-model".into()];
+        let error = model_body_for_target(body, request_model(body).as_deref(), &policy).unwrap_err();
+        assert!(error.contains("not allowed"));
     }
 
     #[test]

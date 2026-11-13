@@ -42,6 +42,24 @@ struct ToolView {
 }
 
 #[derive(Serialize)]
+struct DriftReport {
+    tool: String,
+    tool_name: String,
+    status: String,
+    active_id: Option<String>,
+    expected_name: Option<String>,
+    current_base_url: String,
+    current_model: String,
+    current_key_tail: String,
+    expected_base_url: String,
+    expected_model: String,
+    expected_key_tail: String,
+    changed_fields: Vec<String>,
+    unmanaged_providers: Vec<String>,
+    message: String,
+}
+
+#[derive(Serialize)]
 struct FileDiff {
     file: String,
     fmt: &'static str,
@@ -73,6 +91,13 @@ struct ModelTestResult {
 }
 
 #[derive(Serialize)]
+struct ProviderSearchRow {
+    tool: String,
+    tool_name: String,
+    provider: ProviderView,
+}
+
+#[derive(Serialize)]
 struct ModelDiscoveryView {
     models: Vec<ModelProfile>,
     missing: Vec<String>,
@@ -95,6 +120,8 @@ struct ProviderView {
     kind: String,
     note: String,
     last_used: u64,
+    model_synced_at: u64,
+    previous_model: String,
 }
 
 impl From<Provider> for ProviderView {
@@ -115,6 +142,8 @@ impl From<Provider> for ProviderView {
             kind: provider.kind,
             note: provider.note,
             last_used: provider.last_used,
+            model_synced_at: provider.model_synced_at,
+            previous_model: provider.previous_model,
         }
     }
 }
@@ -143,6 +172,10 @@ struct ProviderInput {
     note: String,
     #[serde(default)]
     last_used: u64,
+    #[serde(default)]
+    model_synced_at: u64,
+    #[serde(default)]
+    previous_model: String,
 }
 
 impl From<ProviderInput> for Provider {
@@ -159,6 +192,8 @@ impl From<ProviderInput> for Provider {
             kind: provider.kind,
             note: provider.note,
             last_used: provider.last_used,
+            model_synced_at: provider.model_synced_at,
+            previous_model: provider.previous_model,
         };
         adapters::normalize_provider_models(&mut provider);
         provider
@@ -332,6 +367,122 @@ fn tool_list() -> Vec<ToolView> {
 }
 
 #[tauri::command]
+fn drift_overview() -> Vec<DriftReport> {
+    let data = store::load();
+    TOOLS
+        .iter()
+        .map(|spec| {
+            let providers = data.providers.get(spec.id).cloned().unwrap_or_default();
+            let current = adapters::read_current(spec);
+            let matched = providers.iter().find(|provider| {
+                same_endpoint(&provider.base_url, &current.base_url)
+                    && (provider.model.is_empty()
+                        || current.model.is_empty()
+                        || provider.model == current.model)
+            });
+            let endpoint_match = providers
+                .iter()
+                .find(|provider| same_endpoint(&provider.base_url, &current.base_url));
+            let expected = data
+                .active
+                .get(spec.id)
+                .and_then(|id| providers.iter().find(|provider| &provider.id == id))
+                .or_else(|| endpoint_match)
+                .or(matched);
+            let discovered = adapters::discover(spec);
+            let unmanaged_providers = discovered
+                .iter()
+                .filter(|provider| {
+                    !providers
+                        .iter()
+                        .any(|known| known.config_id == provider.config_id)
+                })
+                .map(|provider| provider.config_id.clone())
+                .collect::<Vec<_>>();
+
+            let mut changed_fields = Vec::new();
+            if let Some(expected) = expected {
+                if !current.base_url.is_empty() && !same_endpoint(&expected.base_url, &current.base_url) {
+                    changed_fields.push("Base URL".to_string());
+                }
+                if !current.model.is_empty() && !expected.model.is_empty() && current.model != expected.model {
+                    changed_fields.push("模型".to_string());
+                }
+                let expected_tail = mask_key(&expected.api_key);
+                if !current.api_key_tail.is_empty()
+                    && !expected_tail.is_empty()
+                    && current.api_key_tail != expected_tail
+                {
+                    changed_fields.push("API Key".to_string());
+                }
+            }
+            if endpoint_match.is_none() && !current.base_url.is_empty() {
+                changed_fields.push("供應商".to_string());
+            }
+            if !unmanaged_providers.is_empty() {
+                changed_fields.push("未納管供應商".to_string());
+            }
+            changed_fields.sort();
+            changed_fields.dedup();
+
+            let has_current = !current.base_url.is_empty() || !current.model.is_empty();
+            let status = if !has_current && unmanaged_providers.is_empty() {
+                "empty"
+            } else if matched.is_some() && changed_fields.is_empty() {
+                "clean"
+            } else if expected.is_some() && (matched.is_some() || endpoint_match.is_some()) {
+                "drifted"
+            } else if has_current {
+                "unmanaged"
+            } else {
+                "drifted"
+            };
+            let message = match status {
+                "empty" => "尚未偵測到目前套用的供應商",
+                "clean" => "kumoSwitch 與實際設定一致",
+                "unmanaged" => "目前設定不在 kumoSwitch 清單中",
+                _ if !unmanaged_providers.is_empty() => "設定檔中存在尚未納管的供應商",
+                _ => "實際設定與 kumoSwitch 紀錄不同",
+            };
+            DriftReport {
+                tool: spec.id.to_string(),
+                tool_name: spec.name.to_string(),
+                status: status.to_string(),
+                active_id: matched
+                    .map(|provider| provider.id.clone())
+                    .or_else(|| data.active.get(spec.id).cloned()),
+                expected_name: expected.map(|provider| provider.name.clone()),
+                current_base_url: current.base_url,
+                current_model: current.model,
+                current_key_tail: current.api_key_tail,
+                expected_base_url: expected.map(|provider| provider.base_url.clone()).unwrap_or_default(),
+                expected_model: expected.map(|provider| provider.model.clone()).unwrap_or_default(),
+                expected_key_tail: expected.map(|provider| mask_key(&provider.api_key)).unwrap_or_default(),
+                changed_fields,
+                unmanaged_providers,
+                message: message.to_string(),
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn provider_search_index() -> Vec<ProviderSearchRow> {
+    let data = store::load();
+    let mut rows = Vec::new();
+    for spec in TOOLS {
+        for provider in data.providers.get(spec.id).cloned().unwrap_or_default() {
+            rows.push(ProviderSearchRow {
+                tool: spec.id.to_string(),
+                tool_name: spec.name.to_string(),
+                provider: ProviderView::from(provider),
+            });
+        }
+    }
+    rows
+}
+
+#[tauri::command]
 fn provider_list(tool: String) -> Vec<ProviderView> {
     store::list(&tool)
         .into_iter()
@@ -406,10 +557,12 @@ fn discover_provider_models(
     provider_id: String,
 ) -> Result<ModelDiscoveryView, String> {
     let (_, mut provider) = load_provider(&tool, &provider_id)?;
-    let discovered = net::discover_models(
+    let discovered = net::discover_models_styled(
         &provider.base_url,
         &provider.api_key,
         tool == "claude",
+        &tool,
+        &provider.kind,
     );
     provider.api_key.zeroize();
     let discovered = discovered?;
@@ -446,6 +599,26 @@ fn discover_provider_models(
 }
 
 #[tauri::command]
+fn toggle_model_favorite(
+    tool: String,
+    id: String,
+    model_id: String,
+    favorite: bool,
+) -> Result<ModelProfile, String> {
+    store::set_model_favorite(&tool, &id, &model_id, favorite)
+}
+
+#[tauri::command]
+fn archive_model(
+    tool: String,
+    id: String,
+    model_id: String,
+    archived: bool,
+) -> Result<ModelProfile, String> {
+    store::set_model_archived(&tool, &id, &model_id, archived)
+}
+
+#[tauri::command]
 fn test_model(tool: String, provider_id: String, model_id: String) -> Result<ModelTestResult, String> {
     let (_, mut provider) = load_provider(&tool, &provider_id)?;
     if !provider.models.iter().any(|model| model.id == model_id) {
@@ -473,6 +646,41 @@ fn test_model(tool: String, provider_id: String, model_id: String) -> Result<Mod
     let model = recorded?;
     audit::record(
         "model.test",
+        format!("{tool}:{provider_id}:{model_id}:{}:{}ms", result.status, result.ms),
+    );
+    Ok(ModelTestResult { model, result })
+}
+
+#[tauri::command]
+fn live_test_model(tool: String, provider_id: String, model_id: String) -> Result<ModelTestResult, String> {
+    let (_, mut provider) = load_provider(&tool, &provider_id)?;
+    if !provider.models.iter().any(|model| model.id == model_id) {
+        provider.api_key.zeroize();
+        return Err(format!("這個供應商沒有模型「{model_id}」"));
+    }
+    let result = net::probe_live_model(
+        &provider.base_url,
+        &provider.api_key,
+        &model_id,
+        tool == "claude",
+        &tool,
+        &provider.kind,
+    );
+    let recorded = store::record_model_check(
+        &tool,
+        &provider_id,
+        &model_id,
+        ModelCheck {
+            ts: store::stamp() as u64,
+            ok: result.ok,
+            ms: result.ms as u64,
+            status: result.status,
+        },
+    );
+    provider.api_key.zeroize();
+    let model = recorded?;
+    audit::record(
+        "model.live_test",
         format!("{tool}:{provider_id}:{model_id}:{}:{}ms", result.status, result.ms),
     );
     Ok(ModelTestResult { model, result })
@@ -685,6 +893,18 @@ fn apply_provider(
 /// Entry point used by the tray menu, where there is no window to reply to.
 pub fn apply_from_tray(tool: &str, provider_id: &str) -> Result<String, String> {
     apply_core(tool, provider_id).map(|r| r.message)
+}
+
+/// Switch only the selected model from the tray and apply its targeted diff.
+pub fn switch_model_from_tray(tool: &str, provider_id: &str, model_id: &str) -> Result<String, String> {
+    let provider = store::select_model(tool, provider_id, model_id)?;
+    let result = apply_core(tool, provider_id)?;
+    audit::record("model.apply_from_tray", format!("{tool}:{provider_id}:{model_id}"));
+    Ok(if result.changed {
+        format!("已切換「{}」→ {model_id}", provider.name)
+    } else {
+        format!("「{}」已經是 {model_id}", provider.name)
+    })
 }
 
 fn provider_differences(existing: &Provider, incoming: &Provider) -> Vec<String> {
@@ -1058,6 +1278,8 @@ fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, Stri
         kind: String::new(),
         note: "經本地代理＋故障轉移".into(),
         last_used: 0,
+            model_synced_at: 0,
+            previous_model: String::new(),
     };
     let saved = store::upsert(&tool, provider)?;
     let result = apply_core(&tool, &saved.id)?;
@@ -1086,6 +1308,84 @@ fn set_auto_health(enabled: bool) -> Result<bool, String> {
     data.auto_health = enabled;
     store::save(&data)?;
     Ok(enabled)
+}
+
+#[tauri::command]
+fn set_auto_model_sync(enabled: bool) -> Result<bool, String> {
+    let mut data = store::load();
+    data.auto_model_sync = enabled;
+    store::save(&data)?;
+    Ok(enabled)
+}
+
+fn auto_sync_models_once() -> usize {
+    let mut data = store::load();
+    let now = store::stamp() as u64;
+    let one_day = 24 * 60 * 60 * 1000u64;
+    if data.last_auto_model_sync > 0 && now.saturating_sub(data.last_auto_model_sync) < one_day {
+        return 0;
+    }
+    let mut updated = 0usize;
+    for (tool, providers) in data.providers.iter_mut() {
+        for provider in providers.iter_mut() {
+            if provider.model_synced_at == 0 {
+                continue;
+            }
+            let Ok(discovery) = net::discover_models_styled(
+                &provider.base_url,
+                &provider.api_key,
+                tool == "claude",
+                tool,
+                &provider.kind,
+            ) else {
+                continue;
+            };
+            for discovered in discovery.models {
+                if let Some(existing) = provider
+                    .models
+                    .iter_mut()
+                    .find(|model| model.id == discovered.id)
+                {
+                    existing.last_seen_at = now;
+                } else {
+                    let mut model = discovered;
+                    model.last_seen_at = now;
+                    provider.models.push(model);
+                }
+            }
+            provider.model_synced_at = now;
+            if provider.model.is_empty() || !provider.models.iter().any(|model| model.id == provider.model) {
+                provider.model = provider
+                    .models
+                    .iter()
+                    .find(|model| !model.archived)
+                    .map(|model| model.id.clone())
+                    .unwrap_or_default();
+            }
+            updated += 1;
+        }
+    }
+    data.last_auto_model_sync = now;
+    let _ = store::save(&data);
+    if updated > 0 {
+        audit::record("model.auto_sync", format!("providers={updated};interval_ms={one_day}"));
+    }
+    updated
+}
+
+fn spawn_model_sync_loop(app: tauri::AppHandle) {
+    use tauri::Emitter as _;
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(60 * 60));
+        let enabled = store::load().auto_model_sync;
+        if !enabled {
+            continue;
+        }
+        if auto_sync_models_once() > 0 {
+            let _ = app.emit("kumoswitch://changed", ());
+            tray::refresh(&app);
+        }
+    });
 }
 
 /// Periodically re-test providers that already have history, so the health
@@ -1183,6 +1483,7 @@ fn app_info() -> serde_json::Value {
         "dataDir": adapters::display_path(&store::data_dir()),
         "encrypted": crypto::available(),
         "autoHealth": store::load().auto_health,
+        "autoModelSync": store::load().auto_model_sync,
     })
 }
 
@@ -1200,6 +1501,7 @@ fn main() {
         .setup(|app| {
             tray::install(app.handle())?;
             spawn_health_loop(app.handle().clone());
+            spawn_model_sync_loop(app.handle().clone());
             let _ = proxy::start();
             Ok(())
         })
@@ -1212,14 +1514,19 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             tool_list,
+            drift_overview,
+            provider_search_index,
             provider_list,
             provider_save,
             provider_clone,
             reveal_provider_key,
             provider_config_preview,
             provider_select_model,
+            toggle_model_favorite,
+            archive_model,
             discover_provider_models,
             test_model,
+            live_test_model,
             provider_reorder,
             provider_delete,
             preview,
@@ -1230,6 +1537,7 @@ fn main() {
             test_provider,
             test_history,
             set_auto_health,
+            set_auto_model_sync,
             usage_report,
             provider_presets,
             health_overview,
@@ -1328,6 +1636,8 @@ mod redaction_tests {
             kind: "openai".into(),
             note: String::new(),
             last_used: 0,
+            model_synced_at: 0,
+            previous_model: String::new(),
         };
         let view = ProviderView::from(provider);
         assert_eq!(view.api_key, "");

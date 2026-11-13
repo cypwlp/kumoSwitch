@@ -301,6 +301,7 @@ fn parse_model_catalogue(body: &str) -> Result<Vec<ModelProfile>, String> {
     let mut seen = BTreeSet::new();
     let mut models = Vec::new();
     for (id, value) in entries {
+        let id = id.strip_prefix("models/").unwrap_or(&id).to_string();
         if models.len() >= 2_000 || !seen.insert(id.clone()) {
             continue;
         }
@@ -318,30 +319,41 @@ fn parse_model_catalogue(body: &str) -> Result<Vec<ModelProfile>, String> {
     Ok(models)
 }
 
-fn fetch_models_response(
-    base_url: &str,
+#[derive(Clone, Copy)]
+enum DiscoveryAuth {
+    Bearer,
+    Anthropic,
+    GoogleApiKey,
+    None,
+}
+
+fn fetch_catalogue_url(
+    url: &str,
     api_key: &str,
-    anthropic_style: bool,
+    auth: DiscoveryAuth,
 ) -> Result<(u16, String), String> {
-    let base = base_url.trim_end_matches('/');
-    if base.is_empty() {
-        return Err("Base URL 是空的".into());
-    }
-    let url = format!("{base}/models");
     let mut config = String::new();
     config.push_str("silent\nshow-error\nmax-time = 30\n");
     config.push_str("write-out = \"\\n%{http_code}\"\n");
+    config.push_str("header = \"Accept: application/json\"\n");
     config.push_str(&format!("url = \"{url}\"\n"));
     if !api_key.is_empty() {
-        if anthropic_style {
-            config.push_str(&format!("header = \"x-api-key: {api_key}\"\n"));
-            config.push_str("header = \"anthropic-version: 2023-06-01\"\n");
-        } else {
-            config.push_str(&format!("header = \"Authorization: Bearer {api_key}\"\n"));
+        match auth {
+            DiscoveryAuth::Anthropic => {
+                config.push_str(&format!("header = \"x-api-key: {api_key}\"\n"));
+                config.push_str("header = \"anthropic-version: 2023-06-01\"\n");
+            }
+            DiscoveryAuth::GoogleApiKey => {
+                config.push_str(&format!("header = \"x-goog-api-key: {api_key}\"\n"));
+            }
+            DiscoveryAuth::Bearer => {
+                config.push_str(&format!("header = \"Authorization: Bearer {api_key}\"\n"));
+            }
+            DiscoveryAuth::None => {}
         }
     }
 
-    let child = Command::new(curl_bin())
+    let mut child = Command::new(curl_bin())
         .arg("--config")
         .arg("-")
         .stdin(Stdio::piped())
@@ -349,7 +361,6 @@ fn fetch_models_response(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("找不到 curl：{error}"))?;
-    let mut child = child;
     if let Some(stdin) = child.stdin.as_mut() {
         stdin
             .write_all(config.as_bytes())
@@ -370,22 +381,123 @@ fn fetch_models_response(
     Ok((status, body.to_string()))
 }
 
-/// Fetch and normalize the provider model catalogue. This only calls `/models`;
-/// it never sends a prompt or spends inference tokens.
+fn discovery_status_error(status: u16) -> Option<String> {
+    match status {
+        200..=299 => None,
+        401 | 403 => Some(format!("HTTP {status} · 金鑰被拒或權限不足")),
+        404 => Some("HTTP 404 · 這個端點沒有模型目錄".into()),
+        429 => Some("HTTP 429 · 被限流，請稍後再同步模型".into()),
+        other => Some(format!("HTTP {other} · 無法取得模型目錄")),
+    }
+}
+
+fn unique_models(models: &mut Vec<ModelProfile>, incoming: Vec<ModelProfile>) {
+    for model in incoming {
+        if !models.iter().any(|existing| existing.id == model.id) {
+            models.push(model);
+        }
+    }
+}
+
+fn percent_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+fn fetch_ollama_catalogue(base: &str, api_key: &str) -> Result<ModelDiscovery, String> {
+    let root = base.strip_suffix("/v1").unwrap_or(base).trim_end_matches('/');
+    let endpoint = format!("{root}/api/tags");
+    let (status, body) = fetch_catalogue_url(&endpoint, api_key, DiscoveryAuth::Bearer)?;
+    if let Some(error) = discovery_status_error(status) {
+        return Err(error);
+    }
+    let models = parse_model_catalogue(&body)?;
+    Ok(ModelDiscovery {
+        message: format!("共找到 {} 個模型（Ollama）", models.len()),
+        models,
+        endpoint,
+    })
+}
+
+/// Fetch and normalize the provider model catalogue. This only calls model
+/// catalogue endpoints; it never sends a prompt or spends inference tokens.
+#[cfg(test)]
 pub fn discover_models(
     base_url: &str,
     api_key: &str,
     anthropic_style: bool,
 ) -> Result<ModelDiscovery, String> {
-    let endpoint = format!("{}/models", base_url.trim_end_matches('/'));
-    let (status, body) = fetch_models_response(base_url, api_key, anthropic_style)?;
-    let models = match status {
-        200..=299 => parse_model_catalogue(&body)?,
-        401 | 403 => return Err(format!("HTTP {status} · 金鑰被拒或權限不足")),
-        404 => return Err("HTTP 404 · 這個端點沒有 /models 模型目錄".into()),
-        429 => return Err("HTTP 429 · 被限流，請稍後再同步模型".into()),
-        other => return Err(format!("HTTP {other} · 無法取得模型目錄")),
+    discover_models_styled(base_url, api_key, anthropic_style, "", "")
+}
+
+pub fn discover_models_styled(
+    base_url: &str,
+    api_key: &str,
+    anthropic_style: bool,
+    tool: &str,
+    _kind: &str,
+) -> Result<ModelDiscovery, String> {
+    let base = base_url.trim_end_matches('/');
+    if base.is_empty() {
+        return Err("Base URL 是空的".into());
+    }
+    let auth = if anthropic_style || tool == "claude" {
+        DiscoveryAuth::Anthropic
+    } else if tool == "gemini" && !base.ends_with("/openai") {
+        DiscoveryAuth::GoogleApiKey
+    } else if api_key.is_empty() {
+        DiscoveryAuth::None
+    } else {
+        DiscoveryAuth::Bearer
     };
+    let endpoint = format!("{base}/models");
+    let first_url = if matches!(auth, DiscoveryAuth::Anthropic) {
+        format!("{endpoint}?limit=1000")
+    } else {
+        endpoint.clone()
+    };
+    let (mut status, mut body) = fetch_catalogue_url(&first_url, api_key, auth)?;
+    let is_ollama = base.contains("11434");
+    if status >= 400 && is_ollama {
+        if let Ok(discovery) = fetch_ollama_catalogue(base, api_key) {
+            return Ok(discovery);
+        }
+    }
+    if let Some(error) = discovery_status_error(status) {
+        return Err(error);
+    }
+    let mut models = match parse_model_catalogue(&body) {
+        Ok(models) => models,
+        Err(_) if is_ollama => return fetch_ollama_catalogue(base, api_key),
+        Err(error) => return Err(error),
+    };
+
+    if matches!(auth, DiscoveryAuth::Anthropic) {
+        for _ in 0..9 {
+            let Ok(page) = serde_json::from_str::<Value>(&body) else { break };
+            let has_more = page.get("has_more").and_then(Value::as_bool).unwrap_or(false);
+            let last_id = page.get("last_id").and_then(Value::as_str).unwrap_or("");
+            if !has_more || last_id.is_empty() {
+                break;
+            }
+            let next = format!("{endpoint}?limit=1000&after_id={}", percent_encode(last_id));
+            let (next_status, next_body) = fetch_catalogue_url(&next, api_key, auth)?;
+            status = next_status;
+            body = next_body;
+            if let Some(error) = discovery_status_error(status) {
+                return Err(error);
+            }
+            unique_models(&mut models, parse_model_catalogue(&body)?);
+        }
+    }
+
     Ok(ModelDiscovery {
         message: format!("共找到 {} 個模型", models.len()),
         models,
@@ -393,9 +505,154 @@ pub fn discover_models(
     })
 }
 
+fn live_test_request(tool: &str, kind: &str, model: &str) -> (String, String) {
+    if tool == "claude" || kind.contains("anthropic") {
+        return (
+            "/messages".into(),
+            serde_json::json!({
+                "model": model,
+                "max_tokens": 1,
+                "messages": [{ "role": "user", "content": "Reply OK" }]
+            })
+            .to_string(),
+        );
+    }
+    if tool == "gemini" {
+        return (
+            format!("/models/{model}:generateContent"),
+            serde_json::json!({
+                "contents": [{ "role": "user", "parts": [{ "text": "Reply OK" }] }],
+                "generationConfig": { "maxOutputTokens": 1 }
+            })
+            .to_string(),
+        );
+    }
+    if kind == "responses" {
+        return (
+            "/responses".into(),
+            serde_json::json!({
+                "model": model,
+                "input": "Reply OK",
+                "max_output_tokens": 16,
+                "store": false
+            })
+            .to_string(),
+        );
+    }
+    (
+        "/chat/completions".into(),
+        serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": "Reply OK" }],
+            "max_tokens": 1,
+            "stream": false
+        })
+        .to_string(),
+    )
+}
+
+/// Optional live smoke test. Unlike `/models` discovery, this sends a minimal
+/// inference request and may incur provider charges. The caller must confirm.
+pub fn probe_live_model(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    anthropic_style: bool,
+    tool: &str,
+    kind: &str,
+) -> TestResult {
+    let base = base_url.trim_end_matches('/');
+    if base.is_empty() || model.trim().is_empty() {
+        return TestResult { ok: false, status: 0, ms: 0, message: "Base URL 或模型 ID 是空的".into() };
+    }
+    let request_tool = if tool == "gemini" && base.ends_with("/openai") {
+        "gemini-openai"
+    } else {
+        tool
+    };
+    let (path, body) = live_test_request(request_tool, kind, model);
+    let url = format!("{base}{path}");
+    let escaped_body = body.replace('\\', "\\\\").replace('"', "\\\"");
+    let mut config = String::new();
+    config.push_str("silent\nshow-error\nmax-time = 45\n");
+    config.push_str("output = \"");
+    config.push_str(NULL_DEVICE);
+    config.push_str("\"\nwrite-out = \"%{http_code}\"\n");
+    config.push_str("header = \"Content-Type: application/json\"\n");
+    config.push_str(&format!("url = \"{url}\"\n"));
+    config.push_str(&format!("data = \"{escaped_body}\"\n"));
+    if !api_key.is_empty() {
+        if anthropic_style || tool == "claude" {
+            config.push_str(&format!("header = \"x-api-key: {api_key}\"\n"));
+            config.push_str("header = \"anthropic-version: 2023-06-01\"\n");
+        } else if tool == "gemini" {
+            config.push_str(&format!("header = \"x-goog-api-key: {api_key}\"\n"));
+        } else {
+            config.push_str(&format!("header = \"Authorization: Bearer {api_key}\"\n"));
+        }
+    }
+
+    let started = Instant::now();
+    let mut child = match Command::new(curl_bin())
+        .arg("--config")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            return TestResult {
+                ok: false,
+                status: 0,
+                ms: started.elapsed().as_millis(),
+                message: format!("找不到 curl：{error}"),
+            }
+        }
+    };
+    if let Some(stdin) = child.stdin.as_mut() {
+        if let Err(error) = stdin.write_all(config.as_bytes()) {
+            return TestResult {
+                ok: false,
+                status: 0,
+                ms: started.elapsed().as_millis(),
+                message: format!("無法送出實測請求：{error}"),
+            };
+        }
+    }
+    drop(child.stdin.take());
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(error) => {
+            return TestResult {
+                ok: false,
+                status: 0,
+                ms: started.elapsed().as_millis(),
+                message: format!("實測失敗：{error}"),
+            }
+        }
+    };
+    let ms = started.elapsed().as_millis();
+    let status: u16 = String::from_utf8_lossy(&output.stdout).trim().parse().unwrap_or(0);
+    let (ok, message) = match status {
+        200..=299 => (true, format!("HTTP {status} · 最小推論請求成功")),
+        401 | 403 => (false, format!("HTTP {status} · 金鑰被拒或權限不足")),
+        404 => (false, "HTTP 404 · 模型或 API 路徑不存在".into()),
+        429 => (false, "HTTP 429 · 被限流，實測未完成".into()),
+        0 => {
+            let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let short = error.lines().last().unwrap_or("連線失敗").to_string();
+            (false, format!("無法連線：{short}"))
+        }
+        other => (false, format!("HTTP {other} · 模型實測失敗")),
+    };
+    TestResult { ok, status, ms, message }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{body_lists_model, discover_models, parse_model_catalogue, probe_model};
+    use super::{body_lists_model, discover_models, live_test_request, parse_model_catalogue, probe_model};
     use std::thread;
     use std::time::Duration;
 
@@ -463,6 +720,29 @@ mod tests {
     }
 
     #[test]
+    fn model_catalogue_supports_gemini_and_ollama_shapes() {
+        let gemini = parse_model_catalogue(r#"{
+          "models": [{
+            "name": "models/gemini-2.5-pro",
+            "displayName": "Gemini 2.5 Pro",
+            "inputTokenLimit": 1048576,
+            "outputTokenLimit": 65536
+          }]
+        }"#)
+        .unwrap();
+        assert_eq!(gemini[0].id, "gemini-2.5-pro");
+        assert_eq!(gemini[0].name, "Gemini 2.5 Pro");
+        assert_eq!(gemini[0].context_window, Some(1048576));
+        assert_eq!(gemini[0].max_output, Some(65536));
+
+        let ollama = parse_model_catalogue(r#"{
+          "models": [{ "name": "qwen2.5-coder:14b", "size": 9000000000u64 }]
+        }"#.replace("9000000000u64", "9000000000").as_str())
+        .unwrap();
+        assert_eq!(ollama[0].id, "qwen2.5-coder:14b");
+    }
+
+    #[test]
     fn model_discovery_reads_a_local_catalogue() {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let address = server.server_addr().to_ip().unwrap();
@@ -484,6 +764,25 @@ mod tests {
         assert_eq!(discovery.models[0].id, "alpha");
         assert_eq!(discovery.models[0].context_window, Some(64000));
         assert!(discovery.endpoint.ends_with("/models"));
+    }
+
+    #[test]
+    fn live_test_uses_provider_specific_request_shapes() {
+        let (chat_path, chat_body) = live_test_request("codex", "chat", "gpt-test");
+        assert_eq!(chat_path, "/chat/completions");
+        assert!(chat_body.contains("gpt-test"));
+
+        let (responses_path, responses_body) = live_test_request("codex", "responses", "gpt-test");
+        assert_eq!(responses_path, "/responses");
+        assert!(responses_body.contains("max_output_tokens"));
+
+        let (claude_path, claude_body) = live_test_request("claude", "", "claude-test");
+        assert_eq!(claude_path, "/messages");
+        assert!(claude_body.contains("max_tokens"));
+
+        let (gemini_path, gemini_body) = live_test_request("gemini", "", "gemini-test");
+        assert!(gemini_path.contains(":generateContent"));
+        assert!(gemini_body.contains("maxOutputTokens"));
     }
 
     #[test]

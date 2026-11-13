@@ -45,6 +45,17 @@ pub struct ModelProfile {
     /// provider record so model switching and its health data travel together.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<ModelCheck>,
+    #[serde(default)]
+    pub favorite: bool,
+    /// Unix millis of the last switch to this model.
+    #[serde(default)]
+    pub last_used_at: u64,
+    /// Unix millis when `/models` last returned this model.
+    #[serde(default)]
+    pub last_seen_at: u64,
+    /// Explicitly hidden by the user. Archived models are never deleted by sync.
+    #[serde(default)]
+    pub archived: bool,
 }
 
 impl ModelProfile {
@@ -70,6 +81,10 @@ impl Default for ModelProfile {
             tools: None,
             metadata: Value::Null,
             checks: Vec::new(),
+            favorite: false,
+            last_used_at: 0,
+            last_seen_at: 0,
+            archived: false,
         }
     }
 }
@@ -107,6 +122,12 @@ pub struct Provider {
     /// Unix millis of the last successful apply, used for sorting.
     #[serde(default)]
     pub last_used: u64,
+    /// Unix millis of the last explicit model catalogue sync.
+    #[serde(default)]
+    pub model_synced_at: u64,
+    /// Model selected before the current one, for one-click rollback.
+    #[serde(default)]
+    pub previous_model: String,
 }
 
 /// Normalize legacy and edited model data without dropping metadata.
@@ -943,10 +964,10 @@ pub(crate) fn model_profile_from_value(id: String, value: &Value) -> ModelProfil
     };
     ModelProfile {
         name: value
-            .get("name")
-            .or_else(|| value.get("display_name"))
+            .get("display_name")
             .or_else(|| value.get("displayName"))
             .or_else(|| value.get("label"))
+            .or_else(|| value.get("name"))
             .and_then(Value::as_str)
             .filter(|name| !name.trim().is_empty())
             .unwrap_or(&id)
@@ -958,6 +979,7 @@ pub(crate) fn model_profile_from_value(id: String, value: &Value) -> ModelProfil
             "/context_length",
             "/max_context_length",
             "/input_token_limit",
+            "/inputTokenLimit",
             "/limit/context",
         ]),
         max_output: number(&[
@@ -966,6 +988,7 @@ pub(crate) fn model_profile_from_value(id: String, value: &Value) -> ModelProfil
             "/max_output_tokens",
             "/max_tokens",
             "/output_token_limit",
+            "/outputTokenLimit",
             "/limit/output",
         ]),
         reasoning: boolean(&["/reasoning", "/capabilities/reasoning", "/supports_reasoning"]),
@@ -973,6 +996,10 @@ pub(crate) fn model_profile_from_value(id: String, value: &Value) -> ModelProfil
         tools: boolean(&["/tools", "/tool_call", "/capabilities/tools"]),
         metadata: value.clone(),
         checks: Vec::new(),
+        favorite: false,
+        last_used_at: 0,
+        last_seen_at: 0,
+        archived: false,
     }
 }
 
@@ -1037,6 +1064,8 @@ fn imported(config_id: &str, name: String, base_url: String, api_key: String, mo
         kind,
         note: "從設定檔導入".into(),
         last_used: 0,
+            model_synced_at: 0,
+            previous_model: String::new(),
     };
     normalize_provider_models(&mut provider);
     provider
@@ -1321,6 +1350,8 @@ mod real_config_checks {
             kind: "responses".into(),
             note: String::new(),
             last_used: 0,
+            model_synced_at: 0,
+            previous_model: String::new(),
         }
     }
 
