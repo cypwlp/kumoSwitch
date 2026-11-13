@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.1 — 2026-11-13
+- 修正 v0.15.0 的 Rust 安全掃描失敗：將 `rusqlite` 升級至 0.42、`libsqlite3-sys` 升級至 0.40，修補 SQLite CVE-2026-119375（RUSTSEC-2026-0459）。
+- 將最低 Rust 版本調整為 1.89，與新版 SQLite 依賴一致。
+- CC Switch 供應商對照與一鍵匯入功能維持不變。
+
 ## 0.15.0 — 2026-11-13
 - 新增 CC Switch 資料來源對照：以唯讀方式讀取 `cc-switch.db` 的 Codex／Claude／Gemini／Grok Build 供應商，不再把 CC Switch 自己的資料庫和真實 Harness config 混為一談。
 - Codex 頁面明確標示：當 CC Switch 使用代理／路由模式時，`config.toml` 只會看到本地代理 `custom`；CC Switch 的底層供應商會顯示在獨立區塊。
