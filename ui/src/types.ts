@@ -17,6 +17,10 @@ export interface ModelProfile {
   tools?: boolean;
   metadata?: unknown;
   checks?: ModelCheck[];
+  favorite?: boolean;
+  last_used_at?: number;
+  last_seen_at?: number;
+  archived?: boolean;
 }
 
 export interface Provider {
@@ -34,6 +38,8 @@ export interface Provider {
   note: string;
   /** Unix millis of the last successful apply. */
   last_used?: number;
+  model_synced_at?: number;
+  previous_model?: string;
 }
 
 export interface CurrentState {
@@ -59,6 +65,29 @@ export interface ToolView {
   current: CurrentState;
   kind_choices: string[];
   importable: number;
+}
+
+export interface ProviderSearchRow {
+  tool: string;
+  tool_name: string;
+  provider: Provider;
+}
+
+export interface DriftReport {
+  tool: string;
+  tool_name: string;
+  status: "clean" | "drifted" | "unmanaged" | "empty";
+  active_id: string | null;
+  expected_name: string | null;
+  current_base_url: string;
+  current_model: string;
+  current_key_tail: string;
+  expected_base_url: string;
+  expected_model: string;
+  expected_key_tail: string;
+  changed_fields: string[];
+  unmanaged_providers: string[];
+  message: string;
 }
 
 export interface FileDiff {
@@ -110,6 +139,7 @@ export interface ModelDiscovery {
 
 export interface AppInfo {
   autoHealth?: boolean;
+  autoModelSync?: boolean;
   version: string;
   dataDir: string;
   encrypted: boolean;
@@ -237,6 +267,8 @@ export interface ProxyTargetPolicy {
   backoff_429_secs: number;
   failure_threshold: number;
   max_concurrency: number;
+  allowed_models: string[];
+  model_map: Record<string, string>;
 }
 
 export interface ProxyConfig {

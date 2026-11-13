@@ -29,12 +29,13 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Onboarding } from "./components/Onboarding";
 import { StatsView } from "./components/StatsView";
 import { ProxyView } from "./components/ProxyView";
+import { DriftView } from "./components/DriftView";
 import { Toasts, useToasts } from "./components/Toasts";
 import type { TestState } from "./components/ProviderTable";
 
 type ModalState =
   | { kind: "editor"; provider: Provider | null }
-  | { kind: "diff"; provider: Provider; preview: Preview }
+  | { kind: "diff"; tool: ToolView; provider: Provider; preview: Preview }
   | { kind: "backups"; backups: BackupInfo[] }
   | { kind: "export"; result: ExportResult; variant: "encrypted" | "diagnostics" }
   | { kind: "encrypted"; mode: "export" | "import"; fileName?: string }
@@ -67,8 +68,10 @@ export default function App() {
   const [tests, setTests] = useState<Record<string, TestState>>({});
   const [history, setHistory] = useState<HistoryMap>({});
   const [autoHealth, setAutoHealth] = useState(false);
+  const [autoModelSync, setAutoModelSync] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showProxy, setShowProxy] = useState(false);
+  const [showDrift, setShowDrift] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [pendingImport, setPendingImport] = useState<{ text: string; name: string; info?: EncryptedBackupInfo } | null>(null);
   const [palette, setPalette] = useState(false);
@@ -168,12 +171,14 @@ export default function App() {
           push("設定已是最新，沒有變更", "ok");
           return;
         }
-        setModal({ kind: "diff", provider, preview });
+        const tool = tools.find((item) => item.id === toolId);
+        if (!tool) throw new Error("找不到這個 Harness");
+        setModal({ kind: "diff", tool, provider, preview });
       } catch (err) {
         push(errorText(err), "err");
       }
     },
-    [push],
+    [push, tools],
   );
 
   const openBackups = useCallback(
@@ -198,6 +203,7 @@ export default function App() {
         if (alive) {
           setInfo(appInfo);
           setAutoHealth(Boolean(appInfo.autoHealth));
+          setAutoModelSync(Boolean(appInfo.autoModelSync));
         }
       } catch {
         /* version banner is optional */
@@ -373,6 +379,22 @@ export default function App() {
     }
   };
 
+  const switchModelFromCard = async (provider: Provider, modelId: string) => {
+    if (!selected || !modelId || modelId === provider.model) return;
+    const toolId = selected.id;
+    setBusy(true);
+    try {
+      const updated = await api.providerSelectModel(toolId, provider.id, modelId);
+      await loadProviders(toolId);
+      push(`${provider.name} → ${modelId}，請確認 diff`, "ok");
+      await openDiff(toolId, updated);
+    } catch (err) {
+      push(errorText(err), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const reorderProviders = async (ids: string[]) => {
     if (!selected) return;
     try {
@@ -399,8 +421,8 @@ export default function App() {
   };
 
   const confirmApply = async () => {
-    if (!selected || modal?.kind !== "diff") return;
-    const toolId = selected.id;
+    if (modal?.kind !== "diff") return;
+    const toolId = modal.tool.id;
     setBusy(true);
     try {
       const result = await api.applyProvider(toolId, modal.provider.id);
@@ -628,6 +650,17 @@ export default function App() {
     }
   };
 
+  const toggleAutoModelSync = async () => {
+    const next = !autoModelSync;
+    try {
+      await api.setAutoModelSync(next);
+      setAutoModelSync(next);
+      push(next ? "已開啟自動模型同步（每 24 小時）" : "已關閉自動模型同步", "ok");
+    } catch (err) {
+      push(errorText(err), "err");
+    }
+  };
+
   const toggleAutoHealth = async () => {
     const next = !autoHealth;
     try {
@@ -678,19 +711,27 @@ export default function App() {
           theme={mode}
           busy={busy}
           onFilter={setToolFilter}
-          onSelect={(id) => void selectTool(id)}
+          onSelect={(id) => { setShowDrift(false); setShowProxy(false); setShowStats(false); void selectTool(id); }}
           onRescan={() => void rescan()}
           onTheme={setMode}
           onExport={() => void exportList()}
           onImport={() => fileRef.current?.click()}
           statsActive={showStats}
-          onStats={() => { setShowProxy(false); setShowStats((v) => !v); }}
+          onStats={() => { setShowDrift(false); setShowProxy(false); setShowStats((v) => !v); }}
           proxyActive={showProxy}
-          onProxy={() => { setShowStats(false); setShowProxy((v) => !v); }}
+          onProxy={() => { setShowDrift(false); setShowStats(false); setShowProxy((v) => !v); }}
+          driftActive={showDrift}
+          onDrift={() => { setShowProxy(false); setShowStats(false); setShowDrift((v) => !v); }}
         />
 
         <main className="main">
-          {showProxy ? (
+          {showDrift ? (
+            <DriftView
+              onError={(message) => push(message, "err")}
+              onOpenDiff={(toolId, provider) => void openDiff(toolId, provider)}
+              onImport={() => void scanConfig()}
+            />
+          ) : showProxy ? (
             <ProxyView onError={(m) => push(m, "err")} onToast={(m, k) => push(m, k ?? "ok")} />
           ) : showStats ? (
             <StatsView onError={(m) => push(m, "err")} />
@@ -746,8 +787,11 @@ export default function App() {
               onCheckUpdate={() => void runUpdateCheck(true)}
               autoHealth={autoHealth}
               onToggleAutoHealth={() => void toggleAutoHealth()}
+              autoModelSync={autoModelSync}
+              onToggleAutoModelSync={() => void toggleAutoModelSync()}
               onApply={(p) => void openDiff(selected.id, p)}
               onReorder={(ids) => void reorderProviders(ids)}
+              onSwitchModel={(provider, modelId) => void switchModelFromCard(provider, modelId)}
               onEdit={(p) => openEditor(p)}
               onDelete={askDelete}
               onTest={(p) => void runTest(p)}
@@ -802,9 +846,10 @@ export default function App() {
           tools={tools}
           onError={(message) => push(message, "err")}
           onClose={() => setPalette(false)}
-          onPick={(tool, provider) => {
+          onPick={(tool, provider, model) => {
             setPalette(false);
-            void openDiff(tool.id, provider);
+            if (model && model.id !== provider.model) void switchModelFromCard(provider, model.id);
+            else void openDiff(tool.id, provider);
           }}
         />
       ) : null}
@@ -823,9 +868,9 @@ export default function App() {
         />
       ) : null}
 
-      {modal?.kind === "diff" && selected ? (
+      {modal?.kind === "diff" ? (
         <DiffModal
-          tool={selected}
+          tool={modal.tool}
           provider={modal.provider}
           preview={modal.preview}
           busy={busy}

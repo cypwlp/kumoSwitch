@@ -87,6 +87,7 @@ function modelSnapshot(model: ModelProfile) {
     vision: model.vision,
     tools: model.tools,
     metadata: model.metadata,
+    last_seen_at: model.last_seen_at,
   };
 }
 
@@ -100,6 +101,7 @@ function snapshot(provider: Provider, keyChanged: boolean): string {
     clear_api_key: keyChanged ? Boolean(provider.clear_api_key) : false,
     model: provider.model,
     models: (provider.models ?? []).map(modelSnapshot),
+    model_synced_at: provider.model_synced_at ?? 0,
     kind: provider.kind,
     note: provider.note,
   });
@@ -135,6 +137,8 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const [clipboardNotice, setClipboardNotice] = useState("");
   const [modelError, setModelError] = useState("");
   const [testingModels, setTestingModels] = useState<Record<string, boolean>>({});
+  const [liveTestingModels, setLiveTestingModels] = useState<Record<string, boolean>>({});
+  const [confirmLiveModel, setConfirmLiveModel] = useState<ModelProfile | null>(null);
   const [modelNotices, setModelNotices] = useState<Record<string, string>>({});
   const [modelDiscovery, setModelDiscovery] = useState<ModelDiscovery | null>(null);
   const [syncingModels, setSyncingModels] = useState(false);
@@ -326,6 +330,36 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     }
   };
 
+  const runLiveModelTest = async (model: ModelProfile) => {
+    const modelId = model.id.trim();
+    if (!provider || !modelId) return;
+    setConfirmLiveModel(null);
+    setModelError("");
+    setLiveTestingModels((previous) => ({ ...previous, [modelId]: true }));
+    try {
+      const tested = await api.liveTestModel(tool.id, provider.id, modelId);
+      setForm((previous) => ({
+        ...previous,
+        models: (previous.models ?? []).map((item) =>
+          item.id === modelId ? { ...item, checks: tested.model.checks ?? [] } : item
+        ),
+      }));
+      onModelTested(tested.model);
+      setModelNotices((previous) => ({
+        ...previous,
+        [modelId]: `${tested.result.status || "連線失敗"} · ${tested.result.ms}ms — ${tested.result.message}`,
+      }));
+    } catch (error) {
+      setModelError(errorText(error));
+    } finally {
+      setLiveTestingModels((previous) => {
+        const next = { ...previous };
+        delete next[modelId];
+        return next;
+      });
+    }
+  };
+
   const discoverModels = async () => {
     if (!provider) return;
     setModelError("");
@@ -340,6 +374,8 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   };
 
   const applyDiscoveredModels = (discovered: ModelProfile[]) => {
+    const syncedAt = Date.now();
+    const returned = new Set(discovered.map((model) => model.id));
     setForm((previous) => {
       const models = [...(previous.models ?? [])];
       for (const update of discovered) {
@@ -347,20 +383,53 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
         if (index >= 0) {
           models[index] = {
             ...update,
+            last_seen_at: syncedAt,
             checks: models[index].checks ?? update.checks ?? [],
           };
         } else {
-          models.push(update);
+          models.push({ ...update, last_seen_at: syncedAt });
         }
+      }
+      for (const model of models) {
+        if (returned.has(model.id)) model.last_seen_at = syncedAt;
       }
       return {
         ...previous,
         models,
         model: previous.model || models[0]?.id || "",
+        model_synced_at: syncedAt,
       };
     });
     setMetadataDrafts({});
     setModelDiscovery(null);
+  };
+
+  const toggleFavoriteModel = async (model: ModelProfile) => {
+    if (!provider || !model.id) return;
+    try {
+      const updated = await api.toggleModelFavorite(tool.id, provider.id, model.id, !model.favorite);
+      setForm((previous) => ({
+        ...previous,
+        models: (previous.models ?? []).map((item) => item.id === updated.id ? { ...item, favorite: updated.favorite } : item),
+      }));
+      onModelTested(updated);
+    } catch (error) {
+      setModelError(errorText(error));
+    }
+  };
+
+  const toggleArchiveModel = async (model: ModelProfile) => {
+    if (!provider || !model.id) return;
+    try {
+      const updated = await api.archiveModel(tool.id, provider.id, model.id, !model.archived);
+      setForm((previous) => ({
+        ...previous,
+        models: (previous.models ?? []).map((item) => item.id === updated.id ? { ...item, archived: updated.archived } : item),
+      }));
+      onModelTested(updated);
+    } catch (error) {
+      setModelError(errorText(error));
+    }
   };
 
   const applyPreset = (id: string) => {
@@ -541,9 +610,23 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
             <div className="detail-section-head">
               <div>
                 <h4>模型</h4>
-                <p>設定這個供應商可用的模型。圓點代表下次套用時要寫入 Harness 的模型。</p>
+                <p>
+                  設定這個供應商可用的模型。圓點代表下次套用時要寫入 Harness 的模型。
+                  {form.model_synced_at ? ` 上次同步：${new Date(form.model_synced_at).toLocaleString()}` : " 尚未同步模型目錄。"}
+                </p>
               </div>
               <div className="detail-section-actions">
+                {form.previous_model && form.previous_model !== form.model && (form.models ?? []).some((model) => model.id === form.previous_model) ? (
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={busy || dirty}
+                    onClick={() => void onSwitchModel(form.previous_model!)}
+                    title="切回上一個使用過的模型，並先顯示 diff"
+                  >
+                    ↶ {form.previous_model}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="ghost"
@@ -566,12 +649,24 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
             <div className="model-list">
               {(form.models ?? []).map((model, index) => {
                 const active = form.model === model.id && Boolean(model.id);
+                const stale = Boolean(form.model_synced_at && (!model.last_seen_at || model.last_seen_at < form.model_synced_at));
                 return (
-                  <article className={`model-card${active ? " active" : ""}`} key={`${index}-${model.id}`} aria-label={`模型 ${model.id || "新模型"}`}>
+                  <article className={`model-card${active ? " active" : ""}${model.archived ? " archived" : ""}${stale ? " stale" : ""}`} key={`${index}-${model.id}`} aria-label={`模型 ${model.id || "新模型"}`}>
                     <div className="model-actions">
                       <button type="button" className={`model-active${active ? " on" : ""}`} aria-pressed={active} onClick={() => selectModel(model)} title="把這個模型設為供應商預設">
                         <span className="model-dot" />
                         {active ? "目前模型" : "設為目前"}
+                      </button>
+                      <button
+                        type="button"
+                        className={`small ghost model-favorite${model.favorite ? " on" : ""}`}
+                        disabled={busy || !provider || !model.id}
+                        aria-label={model.favorite ? `取消常用模型 ${model.id}` : `設為常用模型 ${model.id}`}
+                        aria-pressed={Boolean(model.favorite)}
+                        onClick={() => void toggleFavoriteModel(model)}
+                        title="常用模型會排在快速切換選單前面"
+                      >
+                        {model.favorite ? "★ 常用" : "☆ 常用"}
                       </button>
                       <button
                         type="button"
@@ -592,9 +687,35 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                       >
                         {testingModels[model.id] ? <><span className="spin" /> 測試中</> : "測試"}
                       </button>
+                      <button
+                        type="button"
+                        className="small ghost live-test"
+                        aria-label={`實測模型 ${model.id || "新模型"}`}
+                        disabled={busy || !provider || !model.id.trim() || Boolean(liveTestingModels[model.id])}
+                        onClick={() => setConfirmLiveModel(model)}
+                        title="送出極小推論請求；可能產生少量費用"
+                      >
+                        {liveTestingModels[model.id] ? <><span className="spin" /> 實測中</> : "實測"}
+                      </button>
+                      <button
+                        type="button"
+                        className="small ghost"
+                        disabled={busy || !provider || !model.id}
+                        onClick={() => void toggleArchiveModel(model)}
+                        title="封存只影響 kumoSwitch 顯示，不會刪除任何設定"
+                      >
+                        {model.archived ? "取消封存" : "封存"}
+                      </button>
                       <button type="button" className="small danger model-remove" onClick={() => removeModel(index)}>移除</button>
                     </div>
                     <div className="model-fields">
+                      {(model.favorite || model.archived || stale) ? (
+                        <div className="model-card-status">
+                          {model.favorite ? <span className="badge ok">★ 常用</span> : null}
+                          {model.archived ? <span className="badge subtle">已封存</span> : null}
+                          {stale ? <span className="badge warn">本次未回報</span> : null}
+                        </div>
+                      ) : null}
                       <div className="field-row">
                         <div className="field">
                           <label>Model ID</label>
@@ -724,9 +845,23 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
           providerName={form.name || provider?.name || "供應商"}
           discovery={modelDiscovery}
           currentModels={form.models ?? []}
+          lastSyncedAt={form.model_synced_at}
           busy={busy}
           onCancel={() => setModelDiscovery(null)}
           onApply={applyDiscoveredModels}
+        />
+      ) : null}
+
+      {confirmLiveModel ? (
+        <ConfirmModal
+          title="進行真實模型實測？"
+          message={`會向「${provider?.name || form.name}」送出一個極小的推論請求，驗證模型「${confirmLiveModel.id}」是否真的可用。
+
+這不是 /models 檢查，供應商可能收取少量費用。`}
+          confirmLabel="送出實測"
+          busy={Boolean(liveTestingModels[confirmLiveModel.id])}
+          onCancel={() => setConfirmLiveModel(null)}
+          onConfirm={() => void runLiveModelTest(confirmLiveModel)}
         />
       ) : null}
 

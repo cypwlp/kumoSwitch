@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "../api";
 import type { Provider, ProxyConfig, ProxyMetrics, ProxyTargetPolicy, RoutingStrategy, ToolView } from "../types";
 
@@ -15,6 +15,8 @@ const DEFAULT_POLICY: ProxyTargetPolicy = {
   backoff_429_secs: 30,
   failure_threshold: 3,
   max_concurrency: 16,
+  allowed_models: [],
+  model_map: {},
 };
 
 const EMPTY_CONFIG: ProxyConfig = { enabled: false, port: 17890, stack: [], strategy: "ordered", policies: {} };
@@ -45,6 +47,10 @@ export function ProxyView({ onError, onToast }: Props) {
   const [providers, setProviders] = useState<Record<string, Provider[]>>({});
   const [attachTool, setAttachTool] = useState("");
   const [busy, setBusy] = useState(false);
+  const onErrorRef = useRef(onError);
+  const onToastRef = useRef(onToast);
+  onErrorRef.current = onError;
+  onToastRef.current = onToast;
 
   const refreshMetrics = useCallback(async () => {
     try {
@@ -62,12 +68,11 @@ export function ProxyView({ onError, onToast }: Props) {
         if (!alive) return;
         setConfig(cfg);
         setTools(ts);
-        const map: Record<string, Provider[]> = {};
-        for (const tool of ts) map[tool.id] = await api.providerList(tool.id);
-        if (alive) setProviders(map);
+        const entries = await Promise.all(ts.map(async (tool) => [tool.id, await api.providerList(tool.id)] as const));
+        if (alive) setProviders(Object.fromEntries(entries));
         await refreshMetrics();
       } catch (err) {
-        onError(errorText(err));
+        onErrorRef.current(errorText(err));
       }
     })();
     const timer = window.setInterval(() => void refreshMetrics(), 3000);
@@ -75,7 +80,7 @@ export function ProxyView({ onError, onToast }: Props) {
       alive = false;
       window.clearInterval(timer);
     };
-  }, [onError, refreshMetrics]);
+  }, [refreshMetrics]);
 
   const all = useMemo(() => {
     const rows: { ref: string; label: string }[] = [];
@@ -118,7 +123,7 @@ export function ProxyView({ onError, onToast }: Props) {
       const saved = await api.proxySave(config);
       setConfig(saved);
       await refreshMetrics();
-      onToast(saved.enabled ? `代理已啟動於 127.0.0.1:${saved.port}` : "代理已關閉", "ok");
+      onToastRef.current(saved.enabled ? `代理已啟動於 127.0.0.1:${saved.port}` : "代理已關閉", "ok");
     } catch (err) {
       onError(errorText(err));
     } finally {
@@ -131,7 +136,7 @@ export function ProxyView({ onError, onToast }: Props) {
     setBusy(true);
     try {
       const result = await api.proxyAttach(attachTool);
-      onToast(result.message, "ok");
+      onToastRef.current(result.message, "ok");
     } catch (err) {
       onError(errorText(err));
     } finally {
@@ -143,7 +148,7 @@ export function ProxyView({ onError, onToast }: Props) {
     try {
       await api.proxyResetMetrics();
       await refreshMetrics();
-      onToast("代理指標已清空", "ok");
+      onToastRef.current("代理指標已清空", "ok");
     } catch (err) {
       onError(errorText(err));
     }
@@ -208,6 +213,28 @@ export function ProxyView({ onError, onToast }: Props) {
                     <div className="field"><label>失敗門檻</label><input aria-label={`${row.label} 失敗門檻`} type="number" min={1} value={policy.failure_threshold} onChange={(event) => setPolicy(row.ref, { failure_threshold: Math.max(1, Number(event.target.value) || 1) })} /></div>
                     <div className="field"><label>熔斷冷卻（秒）</label><input aria-label={`${row.label} 熔斷冷卻`} type="number" min={1} value={policy.failure_cooldown_secs} onChange={(event) => setPolicy(row.ref, { failure_cooldown_secs: Math.max(1, Number(event.target.value) || 1) })} /></div>
                     <div className="field"><label>429 退避（秒）</label><input aria-label={`${row.label} 429 退避`} type="number" min={1} value={policy.backoff_429_secs} onChange={(event) => setPolicy(row.ref, { backoff_429_secs: Math.max(1, Number(event.target.value) || 1) })} /></div>
+                    <div className="field policy-wide">
+                      <label>允許模型（逗號分隔，留空表示全部）</label>
+                      <input
+                        aria-label={`${row.label} 允許模型`}
+                        value={policy.allowed_models.join(", ")}
+                        placeholder="glm-5.3-flash, deepseek-v4.1"
+                        onChange={(event) => setPolicy(row.ref, { allowed_models: event.target.value.split(",").map((model) => model.trim()).filter(Boolean) })}
+                      />
+                    </div>
+                    <div className="field policy-wide">
+                      <label>模型映射（每行來源=目標）</label>
+                      <textarea
+                        aria-label={`${row.label} 模型映射`}
+                        rows={2}
+                        value={Object.entries(policy.model_map).map(([from, to]) => `${from}=${to}`).join("\n")}
+                        placeholder={"gpt-5=provider-gpt-5\nclaude-sonnet=anthropic/claude-sonnet"}
+                        onChange={(event) => {
+                          const entries = event.target.value.split("\n").map((line) => line.split("=", 2).map((part) => part.trim())).filter(([from, to]) => from && to);
+                          setPolicy(row.ref, { model_map: Object.fromEntries(entries) });
+                        }}
+                      />
+                    </div>
                   </div>
                 </details>
               ) : null}

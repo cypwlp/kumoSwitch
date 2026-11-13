@@ -16,6 +16,7 @@ import type {
   ProxyConfig,
   ModelTestResult,
   ModelDiscovery,
+  DriftReport,
 } from "./types";
 
 /**
@@ -63,8 +64,8 @@ const PROVIDERS: Record<string, Provider[]> = {
         "主力",
       ),
       models: [
-        { id: "glm-5.3-flash", name: "GLM 5.3 Flash", context_window: 128000, max_output: 16384, reasoning: true, tools: true },
-        { id: "muse-spark-1.3", name: "Muse Spark 1.3", context_window: 128000, max_output: 16384, reasoning: true, tools: true },
+        { id: "glm-5.3-flash", name: "GLM 5.3 Flash", context_window: 128000, max_output: 16384, reasoning: true, tools: true, favorite: true, last_used_at: Date.now() - 120000 },
+        { id: "muse-spark-1.3", name: "Muse Spark 1.3", context_window: 128000, max_output: 16384, reasoning: true, tools: true, last_seen_at: Date.now() - 86400000 },
       ],
     },
     p(
@@ -610,9 +611,10 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   switch (cmd) {
     case "app_info":
       return {
-        version: "0.10.0",
+        version: "0.13.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
+        autoModelSync: false,
       } satisfies AppInfo;
 
     case "tool_list": {
@@ -622,6 +624,37 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       }
       return views;
     }
+
+    case "drift_overview": {
+      const views = toolViews();
+      return views.slice(0, 4).map((view, index) => {
+        const provider = (PROVIDERS[view.id] ?? [])[0];
+        const status: DriftReport["status"] = index === 0 ? "clean" : index === 1 ? "drifted" : index === 2 ? "unmanaged" : "empty";
+        return {
+          tool: view.id,
+          tool_name: view.name,
+          status,
+          active_id: provider?.id ?? null,
+          expected_name: provider?.name ?? null,
+          current_base_url: status === "empty" ? "" : index === 1 ? "https://changed.invalid/v1" : provider?.base_url ?? "",
+          current_model: status === "empty" ? "" : index === 1 ? "changed-model" : provider?.model ?? "",
+          current_key_tail: provider ? tail(provider.api_key) : "",
+          expected_base_url: provider?.base_url ?? "",
+          expected_model: provider?.model ?? "",
+          expected_key_tail: provider ? tail(provider.api_key) : "",
+          changed_fields: status === "drifted" ? ["Base URL", "模型"] : status === "unmanaged" ? ["供應商", "未納管供應商"] : [],
+          unmanaged_providers: status === "unmanaged" ? ["external-provider"] : [],
+          message: status === "clean" ? "kumoSwitch 與實際設定一致" : status === "drifted" ? "實際設定與 kumoSwitch 紀錄不同" : status === "unmanaged" ? "目前設定不在 kumoSwitch 清單中" : "尚未偵測到目前套用的供應商",
+        } satisfies DriftReport;
+      });
+    }
+
+    case "provider_search_index":
+      return toolViews().flatMap((view) => (PROVIDERS[view.id] ?? []).map((provider) => ({
+        tool: view.id,
+        tool_name: view.name,
+        provider: providerView(provider),
+      })));
 
     case "provider_list":
       return listOf(tool).map(providerView);
@@ -689,9 +722,32 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       const provider = findProvider(tool, id);
       const models = provider.models ?? [{ id: provider.model, name: provider.model }];
       if (!models.some((item) => item.id === model)) throw new Error(`這個供應商沒有模型「${model}」`);
+      if (provider.model && provider.model !== model) provider.previous_model = provider.model;
       provider.model = model;
-      provider.models = models;
+      provider.models = models.map((item) => item.id === model ? { ...item, last_used_at: Date.now() } : item);
       return providerView(provider);
+    }
+
+    case "toggle_model_favorite": {
+      const id = String(args.id ?? "");
+      const modelId = String(args.modelId ?? "");
+      const favorite = Boolean(args.favorite);
+      const provider = findProvider(tool, id);
+      const model = (provider.models ?? []).find((item) => item.id === modelId);
+      if (!model) throw new Error(`這個供應商沒有模型「${modelId}」`);
+      model.favorite = favorite;
+      return { ...model };
+    }
+
+    case "archive_model": {
+      const id = String(args.id ?? "");
+      const modelId = String(args.modelId ?? "");
+      const archived = Boolean(args.archived);
+      const provider = findProvider(tool, id);
+      const model = (provider.models ?? []).find((item) => item.id === modelId);
+      if (!model) throw new Error(`這個供應商沒有模型「${modelId}」`);
+      model.archived = archived;
+      return { ...model };
     }
 
     case "discover_provider_models": {
@@ -702,7 +758,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         {
           id: "glm-5.3-flash",
           name: "GLM 5.3 Flash",
-          context_window: 128000,
+          context_window: 256000,
           max_output: 16384,
           reasoning: true,
           tools: true,
@@ -754,6 +810,28 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       } satisfies TestResult;
       const checks = [...(model.checks ?? []), { ts: Date.now(), ok: result.ok, ms: result.ms, status }].slice(-20);
       const updated = { ...model, checks };
+      provider.models = (provider.models ?? []).map((item) => item.id === modelId ? updated : item);
+      return { model: updated, result } satisfies ModelTestResult;
+    }
+
+    case "live_test_model": {
+      const providerId = String(args.providerId ?? "");
+      const modelId = String(args.modelId ?? "");
+      const provider = findProvider(tool, providerId);
+      const model = (provider.models ?? []).find((item) => item.id === modelId);
+      if (!model) throw new Error(`這個供應商沒有模型「${modelId}」`);
+      await delay(750);
+      const bad = /command-code|ollama/.test(provider.config_id);
+      const result = {
+        ok: !bad,
+        status: bad ? 401 : 200,
+        ms: bad ? 618 : 842,
+        message: bad ? "Unauthorized：實測金鑰無效" : `HTTP 200 · 最小推論請求成功`,
+      } satisfies TestResult;
+      const updated = {
+        ...model,
+        checks: [...(model.checks ?? []), { ts: Date.now(), ok: result.ok, ms: result.ms, status: result.status }].slice(-20),
+      };
       provider.models = (provider.models ?? []).map((item) => item.id === modelId ? updated : item);
       return { model: updated, result } satisfies ModelTestResult;
     }
@@ -836,6 +914,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       }
       return { imported, skipped: seed.importable > 0 ? 1 : 0 } satisfies ImportResult;
     }
+
+    case "set_auto_model_sync":
+      return Boolean(args.enabled);
 
     case "proxy_status":
       return {
@@ -994,9 +1075,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "audit_log":
       return [
-        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.10.0" },
-        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.10.0" },
-        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.10.0" },
+        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.13.0" },
+        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.13.0" },
+        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.13.0" },
       ];
 
     case "import_providers_json": {

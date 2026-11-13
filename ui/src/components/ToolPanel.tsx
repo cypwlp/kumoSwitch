@@ -22,6 +22,7 @@ interface PanelProps {
   onImportConfig: () => void;
   onApply: (provider: Provider) => void;
   onReorder: (ids: string[]) => void;
+  onSwitchModel: (provider: Provider, modelId: string) => void;
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
   onTest: (provider: Provider) => void;
@@ -30,6 +31,8 @@ interface PanelProps {
   onCheckUpdate: () => void;
   autoHealth: boolean;
   onToggleAutoHealth: () => void;
+  autoModelSync: boolean;
+  onToggleAutoModelSync: () => void;
   sort: "manual" | "name" | "recent";
   onSort: (value: "manual" | "name" | "recent") => void;
 }
@@ -52,6 +55,7 @@ export function ToolPanel({
   onImportConfig,
   onApply,
   onReorder,
+  onSwitchModel,
   onEdit,
   onDelete,
   onTest,
@@ -60,6 +64,8 @@ export function ToolPanel({
   onCheckUpdate,
   autoHealth,
   onToggleAutoHealth,
+  autoModelSync,
+  onToggleAutoModelSync,
   sort,
   onSort,
 }: PanelProps) {
@@ -217,6 +223,9 @@ export function ToolPanel({
               <button type="button" role="menuitem" onClick={menuAction(onToggleAutoHealth)}>
                 {autoHealth ? "✓ 自動健康檢查（10 分鐘）" : "自動健康檢查（關）"}
               </button>
+              <button type="button" role="menuitem" onClick={menuAction(onToggleAutoModelSync)}>
+                {autoModelSync ? "✓ 自動模型同步（24 小時）" : "自動模型同步（關）"}
+              </button>
             </div>
           ) : null}
         </div>
@@ -232,6 +241,7 @@ export function ToolPanel({
         history={history}
         activeId={tool.active_id}
         onAttemptReorder={(ids) => onReorder(ids)}
+        onSwitchModel={onSwitchModel}
         onApply={onApply}
         onEdit={onEdit}
         onDelete={onDelete}

@@ -25,6 +25,7 @@ interface TableProps {
   total: number;
   tests: Record<string, TestState>;
   onAttemptReorder: (ids: string[]) => void;
+  onSwitchModel: (provider: Provider, modelId: string) => void;
   onApply: (provider: Provider) => void;
   onEdit: (provider: Provider) => void;
   onDelete: (provider: Provider) => void;
@@ -38,6 +39,7 @@ export function ProviderTable({
   total,
   tests,
   onAttemptReorder,
+  onSwitchModel,
   onApply,
   onEdit,
   onDelete,
@@ -160,6 +162,24 @@ export function ProviderTable({
             </button>
 
             <div className="provider-card-actions" role="group" aria-label={`${provider.name} 的操作`}>
+              {(provider.models?.filter((model) => !model.archived).length ?? 0) > 1 ? (
+                <select
+                  className="provider-model-quick"
+                  aria-label={`${provider.name} 快速切換模型`}
+                  value={provider.model}
+                  onChange={(event) => onSwitchModel(provider, event.target.value)}
+                  title="直接切換模型並預覽 diff"
+                >
+                  {[...(provider.models ?? [])]
+                    .filter((model) => !model.archived)
+                    .sort((left, right) => Number(Boolean(right.favorite)) - Number(Boolean(left.favorite)) || (right.last_used_at ?? 0) - (left.last_used_at ?? 0))
+                    .map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.favorite ? "★ " : ""}{model.name || model.id}
+                      </option>
+                    ))}
+                </select>
+              ) : null}
               <button
                 type="button"
                 className="small ghost"

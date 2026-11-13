@@ -21,6 +21,8 @@ interface RailProps {
   onStats: () => void;
   proxyActive: boolean;
   onProxy: () => void;
+  driftActive: boolean;
+  onDrift: () => void;
 }
 
 const THEMES: { mode: ThemeMode; label: string; icon: ReactNode }[] = [
@@ -46,6 +48,8 @@ export function Rail({
   onStats,
   proxyActive,
   onProxy,
+  driftActive,
+  onDrift,
 }: RailProps) {
   const q = filter.trim().toLowerCase();
   const visible = tools.filter(
@@ -123,6 +127,9 @@ export function Rail({
           </button>
           <button className={`ghost small${proxyActive ? " on" : ""}`} onClick={onProxy} title="本地代理與故障轉移">
             代理
+          </button>
+          <button className={`ghost small${driftActive ? " on" : ""}`} onClick={onDrift} title="檢查實際設定檔是否偏離 kumoSwitch">
+            漂移
           </button>
           <button className="ghost small" onClick={onExport} title="把所有供應商加密匯出成 .kumoswitch">
             匯出清單

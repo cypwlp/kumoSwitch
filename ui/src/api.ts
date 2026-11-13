@@ -24,6 +24,9 @@ import type {
   AuditEntry,
   ModelTestResult,
   ModelDiscovery,
+  ModelProfile,
+  DriftReport,
+  ProviderSearchRow,
 } from "./types";
 
 /** `?mock=1` runs the whole UI against the in-browser fake backend. */
@@ -37,6 +40,8 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 export const api = {
   appInfo: () => call<AppInfo>("app_info"),
   toolList: () => call<ToolView[]>("tool_list"),
+  driftOverview: () => call<DriftReport[]>("drift_overview"),
+  providerSearchIndex: () => call<ProviderSearchRow[]>("provider_search_index"),
   providerList: (tool: string) => call<Provider[]>("provider_list", { tool }),
   providerSave: (tool: string, provider: Provider) => call<Provider>("provider_save", { tool, provider }),
   providerClone: (tool: string, id: string) => call<Provider>("provider_clone", { tool, id }),
@@ -44,6 +49,8 @@ export const api = {
   providerConfigPreview: (tool: string, id: string) => call<ProviderConfigPreview[]>("provider_config_preview", { tool, id }),
   providerSelectModel: (tool: string, id: string, model: string) => call<Provider>("provider_select_model", { tool, id, model }),
   discoverModels: (tool: string, providerId: string) => call<ModelDiscovery>("discover_provider_models", { tool, providerId }),
+  toggleModelFavorite: (tool: string, id: string, modelId: string, favorite: boolean) => call<ModelProfile>("toggle_model_favorite", { tool, id, modelId, favorite }),
+  archiveModel: (tool: string, id: string, modelId: string, archived: boolean) => call<ModelProfile>("archive_model", { tool, id, modelId, archived }),
   providerReorder: (tool: string, ids: string[]) => call<Provider[]>("provider_reorder", { tool, ids }),
   providerDelete: (tool: string, id: string) => call<void>("provider_delete", { tool, id }),
   preview: (tool: string, providerId: string) => call<Preview>("preview", { tool, providerId }),
@@ -56,8 +63,10 @@ export const api = {
   importApply: (decisions: ImportDecision[]) => call<JsonImportResult>("import_apply", { decisions }),
   testProvider: (tool: string, providerId: string) => call<TestResult>("test_provider", { tool, providerId }),
   testModel: (tool: string, providerId: string, modelId: string) => call<ModelTestResult>("test_model", { tool, providerId, modelId }),
+  liveTestModel: (tool: string, providerId: string, modelId: string) => call<ModelTestResult>("live_test_model", { tool, providerId, modelId }),
   testHistory: (tool: string) => call<HistoryMap>("test_history", { tool }),
   setAutoHealth: (enabled: boolean) => call<boolean>("set_auto_health", { enabled }),
+  setAutoModelSync: (enabled: boolean) => call<boolean>("set_auto_model_sync", { enabled }),
   usageReport: (days: number) => call<UsageReport>("usage_report", { days }),
   providerPresets: () => call<Preset[]>("provider_presets"),
   healthOverview: () => call<HealthOverview>("health_overview"),

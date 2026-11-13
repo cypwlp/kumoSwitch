@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "../api";
 import { useFocusLayer } from "../focus";
-import type { Provider, ToolView } from "../types";
+import type { ModelProfile, Provider, ToolView } from "../types";
 
 interface Props {
   tools: ToolView[];
-  onPick: (tool: ToolView, provider: Provider) => void;
+  onPick: (tool: ToolView, provider: Provider, model?: ModelProfile) => void;
   onClose: () => void;
   onError: (message: string) => void;
 }
@@ -13,6 +13,7 @@ interface Props {
 interface Row {
   tool: ToolView;
   provider: Provider;
+  model?: ModelProfile;
 }
 
 /** Ctrl+K: jump to any provider of any tool without touching the rail. */
@@ -20,7 +21,10 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [cursor, setCursor] = useState(0);
+  const [loading, setLoading] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   const paletteRef = useRef<HTMLDivElement>(null);
   useFocusLayer(paletteRef, onClose);
 
@@ -28,21 +32,29 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
     let alive = true;
     (async () => {
       const collected: Row[] = [];
-      for (const tool of tools.filter((t) => t.provider_count > 0)) {
-        try {
-          const list = await api.providerList(tool.id);
-          if (!alive) return;
-          for (const provider of list) collected.push({ tool, provider });
-        } catch (err) {
-          onError(errorText(err));
+      try {
+        const index = await api.providerSearchIndex();
+        if (!alive) return;
+        const byId = new Map(tools.map((tool) => [tool.id, tool]));
+        for (const row of index) {
+          const tool = byId.get(row.tool) ?? { id: row.tool, name: row.tool_name } as ToolView;
+          collected.push({ tool, provider: row.provider });
+          for (const model of row.provider.models ?? []) {
+            if (!model.archived) collected.push({ tool, provider: row.provider, model });
+          }
         }
+      } catch (err) {
+        onErrorRef.current(errorText(err));
       }
-      if (alive) setRows(collected);
+      if (alive) {
+        setRows(collected);
+        setLoading(false);
+      }
     })();
     return () => {
       alive = false;
     };
-  }, [tools, onError]);
+  }, [tools]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -52,13 +64,13 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
     const q = query.trim().toLowerCase();
     const list = q
       ? rows.filter((row) =>
-          [row.provider.name, row.provider.base_url, row.provider.model, row.tool.name]
+          [row.provider.name, row.provider.base_url, row.provider.model, row.tool.name, row.model?.id, row.model?.name]
             .join(" ")
             .toLowerCase()
             .includes(q)
         )
-      : rows;
-    return list.slice(0, 60);
+      : rows.filter((row) => !row.model);
+    return list.slice(0, 80);
   }, [rows, query]);
 
   useEffect(() => {
@@ -67,7 +79,7 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
 
   const commit = (row: Row | undefined) => {
     if (!row) return;
-    onPick(row.tool, row.provider);
+    onPick(row.tool, row.provider, row.model);
   };
 
   return (
@@ -109,12 +121,12 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
         <div className="palette-list" id="palette-provider-list" role="listbox">
           {matches.length === 0 ? (
             <div className="palette-empty">
-              {rows.length === 0 ? "還沒有任何供應商" : "沒有符合的供應商"}
+              {loading ? "正在讀取供應商與模型…" : rows.length === 0 ? "還沒有任何供應商" : "沒有符合的供應商"}
             </div>
           ) : (
             matches.map((row, index) => (
               <button
-                key={`${row.tool.id}-${row.provider.id}`}
+                key={`${row.tool.id}-${row.provider.id}-${row.model?.id ?? "provider"}`}
                 id={`palette-option-${index}`}
                 role="option"
                 aria-selected={index === cursor}
@@ -124,9 +136,13 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
               >
                 <span className="palette-tool">{row.tool.name}</span>
                 <span className="palette-name">{row.provider.name}</span>
-                <span className="palette-url mono">{row.provider.base_url}</span>
-                {row.provider.model ? <span className="palette-model mono">{row.provider.model}</span> : null}
-                {row.tool.active_id === row.provider.id ? <span className="badge ok">使用中</span> : null}
+                {row.model ? (
+                  <span className="palette-model mono">{row.model.favorite ? "★ " : ""}{row.model.name || row.model.id}</span>
+                ) : (
+                  <span className="palette-url mono">{row.provider.base_url}</span>
+                )}
+                {row.model ? <span className="palette-url mono">{row.model.id}</span> : row.provider.model ? <span className="palette-model mono">{row.provider.model}</span> : null}
+                {row.tool.active_id === row.provider.id && (!row.model || row.provider.model === row.model.id) ? <span className="badge ok">使用中</span> : null}
               </button>
             ))
           )}
