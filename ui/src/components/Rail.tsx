@@ -122,21 +122,25 @@ export function Rail({
         </div>
 
         <div className="rail-actions">
-          <button className={`ghost small${statsActive ? " on" : ""}`} onClick={onStats} title="用量與成本統計">
-            統計
-          </button>
-          <button className={`ghost small${proxyActive ? " on" : ""}`} onClick={onProxy} title="本地代理與故障轉移">
-            代理
-          </button>
-          <button className={`ghost small${driftActive ? " on" : ""}`} onClick={onDrift} title="檢查實際設定檔是否偏離 kumoSwitch">
-            漂移
-          </button>
-          <button className="ghost small" onClick={onExport} title="把所有供應商加密匯出成 .kumoswitch">
-            匯出清單
-          </button>
-          <button className="ghost small" onClick={onImport} title="從 .kumoswitch 加密備份或舊 JSON 匯入供應商">
-            匯入清單
-          </button>
+          <div className="rail-action-row rail-view-actions">
+            <button className={`ghost small${statsActive ? " on" : ""}`} onClick={onStats} title="用量與成本統計">
+              統計
+            </button>
+            <button className={`ghost small${proxyActive ? " on" : ""}`} onClick={onProxy} title="本地代理與故障轉移">
+              代理
+            </button>
+            <button className={`ghost small${driftActive ? " on" : ""}`} onClick={onDrift} title="檢查實際設定檔是否偏離 kumoSwitch">
+              漂移
+            </button>
+          </div>
+          <div className="rail-action-row rail-data-actions">
+            <button className="ghost small" onClick={onExport} title="把所有供應商加密匯出成 .kumoswitch">
+              匯出清單
+            </button>
+            <button className="ghost small" onClick={onImport} title="從 .kumoswitch 加密備份或舊 JSON 匯入供應商">
+              匯入清單
+            </button>
+          </div>
         </div>
 
         <div className="rail-meta">

@@ -58,8 +58,10 @@ export function DriftView({ onError, onOpenDiff, onImport }: Props) {
     unmanaged: reports.filter((report) => report.status === "unmanaged").length,
   };
 
+  const countValue = (value: number) => (loading && reports.length === 0 ? "—" : value);
+
   return (
-    <section className="drift-view">
+    <section className="drift-view" aria-busy={loading}>
       <header className="drift-head">
         <div>
           <span className="eyebrow">Configuration integrity</span>
@@ -74,15 +76,30 @@ export function DriftView({ onError, onOpenDiff, onImport }: Props) {
         </div>
       </header>
 
-      <div className="drift-summary">
-        <div className="ok"><span>一致</span><strong>{counts.clean}</strong></div>
-        <div className="warn"><span>已漂移</span><strong>{counts.drifted}</strong></div>
-        <div className="bad"><span>未納管</span><strong>{counts.unmanaged}</strong></div>
-        <div><span>Harness 總數</span><strong>{reports.length}</strong></div>
+      <div className="drift-summary" aria-live="polite">
+        <div className="ok"><span>一致</span><strong>{countValue(counts.clean)}</strong></div>
+        <div className="warn"><span>已漂移</span><strong>{countValue(counts.drifted)}</strong></div>
+        <div className="bad"><span>未納管</span><strong>{countValue(counts.unmanaged)}</strong></div>
+        <div><span>Harness 總數</span><strong>{countValue(reports.length)}</strong></div>
       </div>
 
       {loading && reports.length === 0 ? (
-        <div className="empty"><span className="spin" /> 檢查所有 Harness 中…</div>
+        <div className="drift-skeleton" role="status" aria-label="正在檢查所有 Harness">
+          <span className="sr-only">正在檢查所有 Harness…</span>
+          {[0, 1, 2, 3].map((index) => (
+            <div className="drift-skeleton-card" key={index} aria-hidden="true">
+              <div className="drift-skeleton-head"><i /><span /></div>
+              <div className="drift-skeleton-line wide" />
+              <div className="drift-skeleton-compare"><i /><i /></div>
+              <div className="drift-skeleton-line short" />
+            </div>
+          ))}
+        </div>
+      ) : reports.length === 0 ? (
+        <div className="drift-empty empty">
+          <strong>沒有可檢查的 Harness</strong>
+          <span>確認至少一個 Harness 已安裝並有可讀取的設定檔，然後重新檢查。</span>
+        </div>
       ) : (
         <div className="drift-grid">
           {reports.map((report) => {

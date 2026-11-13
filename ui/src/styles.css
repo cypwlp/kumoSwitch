@@ -175,6 +175,17 @@ html, body {
 .mono { font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 :focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -282,8 +293,22 @@ html, body {
   padding-top: 11px;
   font-size: 11px;
 }
-.rail-actions { display: flex; gap: 6px; }
-.rail-actions button { flex: 1; }
+.rail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.rail-action-row { display: grid; gap: 6px; min-width: 0; }
+.rail-view-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rail-data-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rail-actions button {
+  min-width: 0;
+  padding-left: 6px;
+  padding-right: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .rail-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rail-meta .ver { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .rail-meta .ver span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1904,6 +1929,28 @@ button.ghost:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--l
 .drift-summary .ok strong { color: var(--ok); }
 .drift-summary .warn strong { color: var(--warn); }
 .drift-summary .bad strong { color: var(--danger); }
+.drift-skeleton { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.drift-skeleton-card { min-height: 224px; padding: 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--panel); overflow: hidden; }
+.drift-skeleton-head { display: flex; align-items: center; gap: 9px; }
+.drift-skeleton-head i { width: 24px; height: 24px; border-radius: 50%; }
+.drift-skeleton-head span { width: 118px; height: 14px; border-radius: 5px; }
+.drift-skeleton-line { height: 11px; margin-top: 14px; border-radius: 4px; }
+.drift-skeleton-line.wide { width: 72%; }
+.drift-skeleton-line.short { width: 42%; margin-top: 18px; }
+.drift-skeleton-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 24px; }
+.drift-skeleton-compare i { height: 96px; border-radius: 10px; }
+.drift-skeleton i, .drift-skeleton-head span, .drift-skeleton-line {
+  background: linear-gradient(90deg, var(--panel-2) 20%, var(--hover-tint) 50%, var(--panel-2) 80%);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+.drift-empty { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 54px 20px; border: 1px dashed var(--line-2); border-radius: 15px; background: var(--panel); text-align: center; }
+.drift-empty strong { color: var(--text); font-size: 14px; }
+.drift-empty span { max-width: 460px; font-size: 12px; line-height: 1.6; }
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
 .drift-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .drift-card { position: relative; padding: 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--panel); overflow: hidden; }
 .drift-card::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--line-2); }
@@ -1931,7 +1978,7 @@ button.ghost:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--l
 .stats, .proxy-view { padding-left: 26px; padding-right: 26px; }
 .empty { color: var(--muted); }
 @media (max-width: 1100px) {
-  .drift-grid { grid-template-columns: 1fr; }
+  .drift-grid, .drift-skeleton { grid-template-columns: 1fr; }
   .drift-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {

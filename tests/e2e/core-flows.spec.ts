@@ -153,6 +153,35 @@ test("drift center shows clean, drifted, unmanaged, and empty harnesses", async 
   await expect(page.getByText("external-provider", { exact: true })).toBeVisible();
 });
 
+test("rail actions stay contained at desktop and narrow widths", async ({ page }) => {
+  for (const width of [1222, 760, 480]) {
+    await page.setViewportSize({ width, height: 784 });
+    await page.goto(APP);
+    await expect(page.getByRole("button", { name: "匯入清單", exact: true })).toBeVisible();
+
+    const geometry = await page.evaluate(() => {
+      const rail = document.querySelector<HTMLElement>(".rail");
+      const actions = document.querySelector<HTMLElement>(".rail-actions");
+      if (!rail || !actions) return null;
+      const railRect = rail.getBoundingClientRect();
+      const buttons = Array.from(actions.querySelectorAll<HTMLElement>("button"));
+      return {
+        railScrolls: actions.scrollWidth > actions.clientWidth + 1,
+        documentScrolls: document.documentElement.scrollWidth > window.innerWidth + 1,
+        buttonsInside: buttons.every((button) => {
+          const rect = button.getBoundingClientRect();
+          return rect.left >= railRect.left - 1 && rect.right <= railRect.right + 1;
+        }),
+      };
+    });
+
+    expect(geometry).not.toBeNull();
+    expect(geometry?.railScrolls, `rail actions overflow at ${width}px`).toBe(false);
+    expect(geometry?.documentScrolls, `document overflows at ${width}px`).toBe(false);
+    expect(geometry?.buttonsInside, `rail button leaves rail at ${width}px`).toBe(true);
+  }
+});
+
 test("narrow window keeps the Harness usable without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 720, height: 700 });
   await page.goto(APP);
