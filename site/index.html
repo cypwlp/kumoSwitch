@@ -28,6 +28,7 @@
       <a href="#tools">支援工具</a>
       <a href="#principles">設計</a>
       <a href="#dl">下載</a>
+      <a href="install.html">安裝向導</a>
       <a class="gh" id="repoLink" href="#" target="_blank" rel="noopener">GitHub ↗</a>
     </nav>
   </div>
@@ -46,7 +47,7 @@
       <div class="cta">
         <a class="btn primary" id="dlSetup" href="#">下載 Windows 安裝檔</a>
         <a class="btn ghost" id="dlPortable" href="#">Windows 可攜版</a>
-        <a class="btn ghost" href="#dl">其他平台</a>
+        <a class="btn ghost" href="install.html">開啟安裝向導</a>
       </div>
       <p class="fineprint" id="releaseNote">正在取得最新版本…</p>
       <p class="fineprint">v0.8.0 起由 SwitchTower 更名為 kumoSwitch；更早版本名為 SwitchYard。</p>
@@ -114,7 +115,7 @@
         <h3>供應商 → 多模型管理</h3>
         <p>
           每個供應商可以保存多個模型與能力資訊。同步 <code>/models</code> 時顯示欄位級差異，
-          未回報模型只標記、不刪除；常用模型可從卡片、Ctrl+K 或托盤直接切換。
+          未回報模型只標記、不刪除；每個供應商可設定獨立同步間隔與退避，常用模型可從卡片、Ctrl+K 或托盤直接切換。
         </p>
       </article>
       <article class="card">
@@ -122,7 +123,7 @@
         <h3>智慧代理與可觀測性</h3>
         <p>
           固定順序、優先級、加權與健康優先路由；每個供應商可設定 timeout、允許模型、
-          模型映射、429 退避與熔斷，並即時查看成功率、TTFB 與換手原因。
+          模型映射、429 退避與熔斷，並即時查看成功率、TTFB、換手原因與逐請求決策軌跡。
         </p>
       </article>
       <article class="card">
@@ -130,14 +131,14 @@
         <h3>匯入前先解決衝突</h3>
         <p>
           掃描所有 Harness 後先預覽新增與衝突項目，再選保留本機、覆蓋、合併模型或建立副本；
-          漂移中心也會持續比對真實設定與 kumoSwitch 清單。
+          漂移中心也會持續比對真實設定與 kumoSwitch 清單，支援待處理篩選、批次重新套用與批次匯入。
         </p>
       </article>
       <article class="card">
         <div class="ico">⇥</div>
         <h3>首次啟動就會讀</h3>
         <p>
-          第一次打開會偵測你已經有的設定檔，列出可導入的供應商，
+          真實模型實測可一次選取多個模型，具備近 24 小時配額、輸出 token 上限與費用粗估。<br />第一次打開會偵測你已經有的設定檔，列出可導入的供應商，
           勾選後一鍵收進來——完全不動原本的檔案。
         </p>
       </article>
@@ -230,6 +231,7 @@
           <a class="btn ghost big" id="dlMacIntel" href="#">macOS Intel</a>
           <a class="btn ghost big" id="dlLinuxAppImage" href="#">Linux AppImage</a>
           <a class="btn ghost big" id="dlLinuxDeb" href="#">Linux deb</a>
+          <a class="btn ghost big" href="install.html">完整安裝向導</a>
           <a class="btn ghost big" id="allReleases" href="#" target="_blank" rel="noopener">所有版本</a>
         </div>
         <p class="notice"><b>未簽章 Beta：</b>Windows 可能顯示 SmartScreen「未知發行者」，macOS 可能顯示 Gatekeeper 警告；請確認下載來源，並用 SHA-256 核對檔案。</p>

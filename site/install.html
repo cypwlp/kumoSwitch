@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>安裝 kumoSwitch — 專屬安裝向導</title>
+<meta name="description" content="kumoSwitch 專屬安裝頁：自動辨識平台、取得最新版本、下載 Windows、macOS 或 Linux 安裝檔，並逐步完成首次設定。" />
+<meta name="theme-color" content="#0b1110" />
+<meta property="og:title" content="安裝 kumoSwitch" />
+<meta property="og:description" content="自動辨識平台、最新版本下載與完整首次設定向導。" />
+<meta property="og:image" content="assets/screenshot-panel.png" />
+<link rel="icon" href="assets/icon.png" />
+<link rel="stylesheet" href="install.css" />
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="index.html" aria-label="回到 kumoSwitch 首頁">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M7 12h11M14 8l4 4-4 4" stroke="#5ee0ad" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <path d="M25 20H14M18 16l-4 4 4 4" stroke="#efb35f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+      <span>kumoSwitch</span>
+    </a>
+    <nav class="links" aria-label="主要導覽">
+      <a href="index.html">首頁</a>
+      <a href="#steps">安裝步驟</a>
+      <a href="#security">安全性</a>
+      <a href="#faq">常見問題</a>
+      <a id="repoLink" class="repo" href="https://github.com/cypwlp/kumoSwitch" target="_blank" rel="noopener">GitHub ↗</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero wrap">
+    <div class="hero-copy">
+      <span class="eyebrow"><i></i> Dedicated installer · 未簽章 Beta</span>
+      <h1>安裝 <em>kumoSwitch</em><br />不用猜哪個檔案。</h1>
+      <p class="lede">這個頁面會自動判斷你的作業系統，從 GitHub 最新 Release 挑選正確的安裝檔，並給出對應的平台步驟與首次啟動指引。</p>
+      <div class="hero-meta">
+        <span id="versionBadge" class="meta-pill">取得最新版本中…</span>
+        <span class="meta-pill">Windows · macOS · Linux</span>
+        <span class="meta-pill">MIT License</span>
+      </div>
+      <div class="hero-actions">
+        <a id="heroDownload" class="btn primary" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載最新版</a>
+        <a class="btn subtle" href="#steps">查看完整步驟</a>
+      </div>
+      <p id="releaseMeta" class="fineprint" aria-live="polite">正在向 GitHub 查詢最新版本與檔案大小…</p>
+      <ul class="quick-facts">
+        <li>不需要帳號</li>
+        <li>設定與金鑰只留在本機</li>
+        <li>套用前一定顯示 diff</li>
+      </ul>
+    </div>
+
+    <aside class="installer" aria-label="平台安裝向導">
+      <div class="installer-top">
+        <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>快速安裝</span>
+        <span id="detectedBadge" class="detected">偵測中</span>
+      </div>
+      <div class="platform-tabs" role="tablist" aria-label="選擇作業系統">
+        <button type="button" role="tab" data-platform="windows" aria-selected="false">⊞ Windows</button>
+        <button type="button" role="tab" data-platform="mac-arm" aria-selected="false">● macOS ARM</button>
+        <button type="button" role="tab" data-platform="mac-intel" aria-selected="false">● Intel</button>
+        <button type="button" role="tab" data-platform="linux" aria-selected="false">◩ Linux</button>
+      </div>
+      <div class="platform-card" role="tabpanel">
+        <div class="platform-head">
+          <span id="platformIcon" class="platform-icon">⊞</span>
+          <div>
+            <span id="platformKicker" class="kicker">推薦下載</span>
+            <h2 id="platformTitle">Windows x64</h2>
+            <p id="platformDescription">NSIS 安裝版，包含開始功能表與自動更新。</p>
+          </div>
+        </div>
+        <div class="file-row">
+          <div>
+            <span>主要檔案</span>
+            <strong id="primaryFile">正在取得版本資訊…</strong>
+          </div>
+          <span id="primarySize" class="size">—</span>
+        </div>
+        <a id="primaryDownload" class="btn primary block" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載安裝檔</a>
+        <div class="alternate-row">
+          <span id="alternateLabel">免安裝版</span>
+          <a id="alternateDownload" href="https://github.com/cypwlp/kumoSwitch/releases/latest">前往 Releases</a>
+        </div>
+      </div>
+      <p id="platformNote" class="installer-note">Windows 目前為未簽章 Beta，SmartScreen 可能顯示「未知發行者」。</p>
+    </aside>
+  </section>
+
+  <section class="trust wrap" aria-label="下載保證">
+    <div><b>Latest release</b><span id="trustVersion">—</span></div>
+    <div><b>SHA-256</b><a id="checksumsLink" href="https://github.com/cypwlp/kumoSwitch/releases/latest">核對下載檔</a></div>
+    <div><b>Auto update</b><span>安裝版／AppImage／macOS 支援</span></div>
+    <div><b>Local-first</b><span>無帳號、無雲端、無遙測</span></div>
+  </section>
+
+  <section id="steps" class="section wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Install flow</span>
+        <h2>三步驟完成安裝</h2>
+        <p>平台步驟會跟著上方選擇切換；不需要先關閉既有 AI CLI。</p>
+      </div>
+      <span id="stepsPlatform" class="section-tag">Windows x64</span>
+    </div>
+    <div class="steps-layout">
+      <div class="download-panel">
+        <span class="kicker">目前選擇</span>
+        <h3 id="downloadTitle">Windows x64</h3>
+        <p id="downloadSummary">下載 NSIS 安裝檔，執行後依畫面完成安裝。</p>
+        <a id="stepsDownload" class="btn primary" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載 Windows 安裝檔</a>
+        <a id="stepsChecksums" class="text-link" href="https://github.com/cypwlp/kumoSwitch/releases/latest">下載 SHA-256 checksums</a>
+        <div class="mini-file">
+          <span>版本</span><strong id="panelVersion">—</strong>
+          <span>檔案</span><strong id="panelFile">—</strong>
+        </div>
+      </div>
+      <ol id="installSteps" class="step-list">
+        <li><b>下載安裝檔</b><span>正在取得平台資訊…</span></li>
+      </ol>
+      <aside class="requirements">
+        <span class="kicker">系統需求</span>
+        <ul id="requirementsList"><li>正在取得平台資訊…</li></ul>
+      </aside>
+    </div>
+  </section>
+
+  <section class="section wrap first-run">
+    <div class="first-run-copy">
+      <span class="eyebrow">First launch</span>
+      <h2>第一次打開就上手</h2>
+      <p>kumoSwitch 會自動掃描已安裝的 AI CLI。先看清楚目前設定，再決定要匯入、建立供應商，或直接切換。</p>
+      <ol class="compact-steps">
+        <li><b>選擇 Harness</b><span>左側選 Codex、Claude Code、Gemini CLI 等工具。</span></li>
+        <li><b>匯入或新增供應商</b><span>可讀取既有設定，也可手動填入 Base URL 與 API Key。</span></li>
+        <li><b>先看 diff 再套用</b><span>只改供應商相關鍵位；寫入前自動建立時間戳備份。</span></li>
+        <li><b>重開該 CLI 終端</b><span>多數工具只在新 session 讀取新設定。</span></li>
+      </ol>
+    </div>
+    <div class="first-run-shot">
+      <div class="shot-glow"></div>
+      <img src="assets/screenshot-panel.png" alt="kumoSwitch 主介面" />
+    </div>
+  </section>
+
+  <section id="security" class="section wrap">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Security & trust</span>
+        <h2>安裝前，先把風險講清楚</h2>
+        <p>目前是未簽章的公開 Beta。這不代表檔案有問題，但你應該知道會看到什麼，以及怎麼自行驗證。</p>
+      </div>
+    </div>
+    <div class="security-grid">
+      <article class="security-card warn">
+        <span class="security-icon">!</span>
+        <h3>Windows SmartScreen</h3>
+        <p>可能顯示「Windows 已保護您的電腦」或「未知發行者」。確認你是從本專案 GitHub Releases 下載後，可選擇「更多資訊 → 仍要執行」。</p>
+      </article>
+      <article class="security-card warn">
+        <span class="security-icon">!</span>
+        <h3>macOS Gatekeeper</h3>
+        <p>可能提示無法驗證開發者。可在 Finder 對 App 按右鍵 →「打開」，或到「系統設定 → 隱私權與安全性」允許。</p>
+      </article>
+      <article class="security-card ok">
+        <span class="security-icon">✓</span>
+        <h3>用 SHA-256 自己驗證</h3>
+        <p>下載 <code>SHA256SUMS.txt</code> 後，用系統內建工具比對檔案雜湊。這一頁只連到 GitHub Releases，不經過第三方下載站。</p>
+        <a id="securityChecksums" class="text-link" href="https://github.com/cypwlp/kumoSwitch/releases/latest">取得 checksums</a>
+      </article>
+    </div>
+  </section>
+
+  <section id="faq" class="section wrap faq">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">FAQ</span>
+        <h2>安裝常見問題</h2>
+      </div>
+    </div>
+    <details>
+      <summary>Windows 安裝版和可攜版差在哪？</summary>
+      <p>安裝版會建立開始功能表項目、支援自動更新，適合日常使用。可攜版解壓後直接執行，不寫入安裝目錄，但仍會使用你的 AppData 保存 kumoSwitch 設定。</p>
+    </details>
+    <details>
+      <summary>我的是 Apple Silicon 還是 Intel Mac？</summary>
+      <p>Apple 晶片（M1、M2、M3、M4 或更新）選 macOS ARM；Intel 處理器選 macOS Intel。頁面會先嘗試自動偵測，你也可以手動切換。</p>
+    </details>
+    <details>
+      <summary>Linux 要選 AppImage 還是 deb？</summary>
+      <p>不想由套件管理器管理時選 AppImage；Debian／Ubuntu 系列要整合桌面選單時選 deb。AppImage 下載後需先加執行權限。</p>
+    </details>
+    <details>
+      <summary>安裝後需要把原本的 cc-switch 關掉嗎？</summary>
+      <p>不需要關，但若兩個工具同時接管同一份設定，後寫入的會覆蓋前一個。kumoSwitch 會在偵測到代理接管時提示；建議同一時間只讓一個工具負責寫入。</p>
+    </details>
+    <details>
+      <summary>kumoSwitch 會上傳我的 API Key 嗎？</summary>
+      <p>不會。kumoSwitch 沒有帳號、雲端同步或遙測。設定與備份保存在本機；Windows 使用 DPAPI 加密，macOS／Linux 使用 Keychain／Secret Service 保存主金鑰。</p>
+    </details>
+    <details>
+      <summary>自動更新包含哪些平台？</summary>
+      <p>Windows 安裝版、macOS Apple Silicon／Intel 與 Linux AppImage 使用簽章驗證的 <code>latest.json</code> 自動更新。Windows 可攜版與 Linux deb 需手動替換。</p>
+    </details>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap footer-inner">
+    <div class="footer-brand"><span>kumoSwitch</span><span>MIT License</span></div>
+    <div class="footer-links">
+      <a href="index.html">首頁</a>
+      <a id="repoLink2" href="https://github.com/cypwlp/kumoSwitch" target="_blank" rel="noopener">GitHub</a>
+      <a id="releasesLink" href="https://github.com/cypwlp/kumoSwitch/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="#top">回到頂部 ↑</a>
+    </div>
+    <p>與 OpenAI、Anthropic、Google、xAI 等公司無關；第三方名稱與商標屬各自所有者。</p>
+  </div>
+</footer>
+
+<script src="config.js"></script>
+<script src="install.js"></script>
+</body>
+</html>
