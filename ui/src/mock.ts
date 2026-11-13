@@ -373,6 +373,18 @@ function toolViews(): ToolView[] {
     current: { ...s.current },
     kind_choices: [...s.kinds],
     importable: s.importable,
+    cc_switch: s.id === "codex" ? {
+      available: true,
+      mode: "proxy",
+      attached: true,
+      db_path: `${HOME}\\.cc-switch\\cc-switch.db`,
+      error: null,
+      providers: [
+        { id: "cc-opencode", name: "OpenCode Go", base_url: "https://opencode.ai/zen/go/v1", model: "deepseek-v4.1-flash", models: [{ id: "deepseek-v4.1-flash", name: "DeepSeek v4.1 Flash" }, { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3" }], kind: "responses", website_url: "https://opencode.ai/go", category: "third_party", icon: "opencode", icon_color: "#211E1E", is_current: true, in_failover_queue: true, has_api_key: true, already_imported: false },
+        { id: "cc-commandcode", name: "CommandCode", base_url: "https://api.commandcode.ai/provider/v1", model: "deepseek/deepseek-v4.1-flash", models: [{ id: "deepseek/deepseek-v4.1-flash", name: "deepseek-flash" }, { id: "meta/muse-spark-1.3-contributor", name: "Muse Spark" }], kind: "responses", website_url: "https://commandcode.ai", category: "third_party", icon: "commandcode", icon_color: "", is_current: false, in_failover_queue: true, has_api_key: true, already_imported: false },
+        { id: "cc-openrouter", name: "OpenRouter", base_url: "https://openrouter.ai/api/v1", model: "stealth/crouton-alpha", models: [{ id: "stealth/crouton-alpha", name: "Crouton Alpha" }, { id: "nvidia/nemotron-3-ultra-550b-a55b:free", name: "Nemotron 3 Ultra" }], kind: "responses", website_url: "https://openrouter.ai", category: "aggregator", icon: "openrouter", icon_color: "#6566F1", is_current: false, in_failover_queue: false, has_api_key: true, already_imported: false },
+      ],
+    } : null,
   }));
 }
 
@@ -623,7 +635,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.14.2",
+        version: "0.15.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
@@ -694,6 +706,21 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       if (at >= 0) bucket[at] = saved;
       else bucket.push(saved);
       return providerView(saved);
+    }
+
+    case "import_cc_switch_provider": {
+      const providerId = String(args.providerId ?? "");
+      const source = toolViews().find((view) => view.id === tool)?.cc_switch?.providers.find((item) => item.id === providerId);
+      if (!source) throw new Error("CC Switch 已找不到這個供應商");
+      const bucket = PROVIDERS[tool] ?? (PROVIDERS[tool] = []);
+      const existing = bucket.find((item) => item.name.toLowerCase() === source.name.toLowerCase() || item.base_url.replace(/\/$/, "") === source.base_url.replace(/\/$/, ""));
+      if (existing) return { provider: providerView(existing), already_imported: true };
+      const saved: Provider = {
+        ...p(`cc-import-${++counter}`, `cc-switch-${slug(source.name)}`, source.name, source.base_url, "sk-ccswitch-import", source.model, source.kind, "從 CC Switch 匯入"),
+        models: source.models,
+      };
+      bucket.push(saved);
+      return { provider: providerView(saved), already_imported: false };
     }
 
     case "provider_clone": {
@@ -1133,9 +1160,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "audit_log":
       return [
-        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.14.2" },
-        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.14.2" },
-        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.14.2" },
+        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.15.0" },
+        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.15.0" },
+        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.15.0" },
       ];
 
     case "import_providers_json": {

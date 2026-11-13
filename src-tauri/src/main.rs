@@ -3,6 +3,7 @@
 mod adapters;
 mod audit;
 mod backup;
+mod ccswitch;
 mod crypto;
 mod export_crypto;
 mod history;
@@ -39,6 +40,7 @@ struct ToolView {
     current: CurrentState,
     kind_choices: Vec<&'static str>,
     importable: usize,
+    cc_switch: Option<ccswitch::CcSwitchSource>,
 }
 
 #[derive(Serialize)]
@@ -302,6 +304,12 @@ struct ImportResult {
 }
 
 #[derive(Serialize)]
+struct CcSwitchImportResult {
+    provider: ProviderView,
+    already_imported: bool,
+}
+
+#[derive(Serialize)]
 struct ExportResult {
     path: String,
     count: usize,
@@ -378,6 +386,7 @@ fn same_endpoint(a: &str, b: &str) -> bool {
 #[tauri::command]
 fn tool_list() -> Vec<ToolView> {
     let data = store::load();
+    let cc_switch = ccswitch::read_snapshot();
     TOOLS
         .iter()
         .map(|spec| {
@@ -420,6 +429,7 @@ fn tool_list() -> Vec<ToolView> {
                 current,
                 kind_choices: spec.kind_choices.to_vec(),
                 importable: adapters::discover(spec).len(),
+                cc_switch: cc_switch.view_for(spec.id, &providers),
             }
         })
         .collect()
@@ -600,6 +610,34 @@ fn provider_clone(
     let saved = store::upsert(&tool, provider)?;
     tray::refresh(&app);
     Ok(saved.into())
+}
+
+#[tauri::command]
+fn import_cc_switch_provider(
+    tool: String,
+    provider_id: String,
+    app: tauri::AppHandle,
+) -> Result<CcSwitchImportResult, String> {
+    let snapshot = ccswitch::read_snapshot();
+    let candidate = snapshot.provider_for_import(&tool, &provider_id)?;
+    let existing = store::list(&tool);
+    if let Some(provider) = existing.into_iter().find(|provider| {
+        provider.name.eq_ignore_ascii_case(&candidate.name)
+            || same_endpoint(&provider.base_url, &candidate.base_url)
+    }) {
+        return Ok(CcSwitchImportResult {
+            provider: ProviderView::from(provider),
+            already_imported: true,
+        });
+    }
+    let name = candidate.name.clone();
+    let saved = store::upsert(&tool, candidate)?;
+    audit::record("import.cc_switch", format!("{tool}:{provider_id}:{name}"));
+    tray::refresh(&app);
+    Ok(CcSwitchImportResult {
+        provider: ProviderView::from(saved),
+        already_imported: false,
+    })
 }
 
 #[tauri::command]
@@ -1762,6 +1800,7 @@ fn main() {
             provider_list,
             provider_save,
             provider_clone,
+            import_cc_switch_provider,
             reveal_provider_key,
             provider_config_preview,
             provider_select_model,

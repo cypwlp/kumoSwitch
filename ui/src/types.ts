@@ -55,6 +55,32 @@ export interface CurrentState {
   source: string;
 }
 
+export interface CcSwitchProviderView {
+  id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  models: ModelProfile[];
+  kind: string;
+  website_url: string;
+  category: string;
+  icon: string;
+  icon_color: string;
+  is_current: boolean;
+  in_failover_queue: boolean;
+  has_api_key: boolean;
+  already_imported: boolean;
+}
+
+export interface CcSwitchSource {
+  available: boolean;
+  mode: string;
+  attached: boolean;
+  db_path: string;
+  providers: CcSwitchProviderView[];
+  error: string | null;
+}
+
 export interface ToolView {
   id: string;
   name: string;
@@ -71,6 +97,7 @@ export interface ToolView {
   current: CurrentState;
   kind_choices: string[];
   importable: number;
+  cc_switch: CcSwitchSource | null;
 }
 
 export interface ProviderSearchRow {
@@ -156,6 +183,11 @@ export interface AppInfo {
   version: string;
   dataDir: string;
   encrypted: boolean;
+}
+
+export interface CcSwitchImportResult {
+  provider: Provider;
+  already_imported: boolean;
 }
 
 export interface ImportResult {

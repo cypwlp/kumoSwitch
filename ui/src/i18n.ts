@@ -357,6 +357,19 @@ const DICT: Record<string, string> = {
   "儲存政策": "Save policy",
   "選取": "Select",
   "離線快取": "Offline cache",
+  "CC Switch 管理的供應商": "Providers managed by CC Switch",
+  "來自 cc-switch.db，不是 Codex 實際 config.toml": "From cc-switch.db, not Codex config.toml",
+  "代理／路由模式": "Proxy / route mode",
+  "CC Switch 資料庫": "CC Switch database",
+  "路由中": "Routing",
+  "候選": "Candidate",
+  "匯入 kumoSwitch": "Import to kumoSwitch",
+  "已匯入": "Imported",
+  "金鑰已保存": "Key stored",
+  "沒有金鑰": "No key",
+  "Codex 目前只把 CC Switch 的本地代理位址寫進 config.toml，所以 kumoSwitch 會看到 custom／127.0.0.1，而不是底層供應商。下面列出的才是 CC Switch 資料庫裡實際被路由的供應商。": "Codex currently writes only the CC Switch local proxy address into config.toml, so kumoSwitch sees custom / 127.0.0.1 instead of the upstream providers. The entries below are the providers actually routed by CC Switch.",
+  "下面是 CC Switch 自己資料庫中的供應商，和 Codex 實際 config.toml 是兩份不同資料。": "These providers come from the CC Switch database and are separate from the real Codex config.toml.",
+  "CC Switch 資料庫中目前沒有這個 App 的供應商。": "CC Switch has no providers for this app yet.",
 };
 
 interface Rule {

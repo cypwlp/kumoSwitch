@@ -1,6 +1,6 @@
 [package]
 name = "kumoswitch"
-version = "0.14.2"
+version = "0.15.0"
 description = "Switch AI CLI providers without rewriting your config"
 edition = "2021"
 rust-version = "1.88"
@@ -25,6 +25,7 @@ argon2 = "0.5"
 bytes = "1"
 zeroize = "1"
 sha2 = "0.10"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

@@ -49,6 +49,18 @@ test("API Key can be explicitly cleared without rewriting other fields", async (
   await expect(dialog.getByRole("button", { name: "清除金鑰", exact: true })).toHaveCount(0);
 });
 
+test("CC Switch managed providers are shown separately and can be imported", async ({ page }) => {
+  await expect(page.getByText("CC Switch 管理的供應商", { exact: true })).toBeVisible();
+  await expect(page.getByText(/來自 cc-switch\.db/)).toBeVisible();
+  const externalProviders = page.locator(".ccswitch-provider");
+  await expect(externalProviders).toHaveCount(3);
+  const openRouter = externalProviders.filter({ hasText: "OpenRouter" });
+  await expect(openRouter).toBeVisible();
+  await openRouter.getByRole("button", { name: "匯入 kumoSwitch" }).click();
+  await expect(page.getByText("已從 CC Switch 匯入「OpenRouter」")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "OpenRouter", exact: true })).toBeVisible();
+});
+
 test("provider keeps multiple models and can switch the active model", async ({ page }) => {
   await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
   const dialog = page.getByRole("dialog");

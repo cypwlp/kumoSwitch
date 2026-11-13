@@ -485,6 +485,21 @@ export default function App() {
     }
   };
 
+  const importCcSwitchProvider = async (providerId: string) => {
+    if (!selected) return;
+    const toolId = selected.id;
+    setBusy(true);
+    try {
+      const result = await api.importCcSwitchProvider(toolId, providerId);
+      push(result.already_imported ? `「${result.provider.name}」已經在 kumoSwitch 中` : `已從 CC Switch 匯入「${result.provider.name}」`, "ok");
+      await reload(toolId);
+    } catch (error) {
+      push(errorText(error), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const scanConfig = async () => {
     setBusy(true);
     try {
@@ -781,6 +796,7 @@ export default function App() {
               onBackups={() => void openBackups(selected.id)}
               onAdd={() => openEditor(null)}
               onImportConfig={() => void scanConfig()}
+              onImportCcSwitch={(providerId) => void importCcSwitchProvider(providerId)}
               sort={sort}
               onSort={setSort}
               onPalette={() => setPalette(true)}

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.0 — 2026-11-13
+- 新增 CC Switch 資料來源對照：以唯讀方式讀取 `cc-switch.db` 的 Codex／Claude／Gemini／Grok Build 供應商，不再把 CC Switch 自己的資料庫和真實 Harness config 混為一談。
+- Codex 頁面明確標示：當 CC Switch 使用代理／路由模式時，`config.toml` 只會看到本地代理 `custom`；CC Switch 的底層供應商會顯示在獨立區塊。
+- 新增 CC Switch 供應商資訊：名稱、Base URL、模型、目前路由／候選狀態、金鑰是否存在與資料庫來源。
+- 支援一鍵把 CC Switch 供應商匯入 kumoSwitch，API Key 會走 kumoSwitch 原本的加密儲存流程；重複供應商會自動辨識。
+- 新增真實 `cc-switch.db` schema 讀取測試與 UI E2E。
 ## 0.14.2 — 2026-11-13
 - 修正統計儀表板長時間停在「掃描 session log 中」：改為逐行串流讀取，不再把每個 JSONL 整檔載入記憶體。
 - session log 掃描移到 Tauri 背景執行，掃描期間 UI 不再被同步命令阻塞；並依檔案修改時間跳過時間範圍外的檔案。

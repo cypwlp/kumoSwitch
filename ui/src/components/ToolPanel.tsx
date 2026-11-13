@@ -20,6 +20,7 @@ interface PanelProps {
   onBackups: () => void;
   onAdd: () => void;
   onImportConfig: () => void;
+  onImportCcSwitch: (providerId: string) => void;
   onApply: (provider: Provider) => void;
   onReorder: (ids: string[]) => void;
   onSwitchModel: (provider: Provider, modelId: string) => void;
@@ -54,6 +55,7 @@ export function ToolPanel({
   onBackups,
   onAdd,
   onImportConfig,
+  onImportCcSwitch,
   onApply,
   onReorder,
   onSwitchModel,
@@ -170,6 +172,59 @@ export function ToolPanel({
           <span><b>模型</b><em>進入供應商後管理</em></span>
         </span>
       </nav>
+
+      {tool.cc_switch?.available ? (
+        <details className="ccswitch-source" open>
+          <summary>
+            <div className="ccswitch-source-title">
+              <span className="ccswitch-mark">CC</span>
+              <span>
+                <strong>CC Switch 管理的供應商</strong>
+                <em>來自 cc-switch.db，不是 Codex 實際 config.toml</em>
+              </span>
+            </div>
+            <div className="ccswitch-source-badges">
+              <span className={`badge ${tool.cc_switch.attached ? "warn" : "subtle"}`}>{tool.cc_switch.mode === "proxy" ? "代理／路由模式" : "CC Switch 資料庫"}</span>
+              <span className="badge subtle">{tool.cc_switch.providers.length} 個</span>
+            </div>
+          </summary>
+          <div className="ccswitch-explainer">
+            <p>
+              {tool.cc_switch.attached && tool.cc_switch.mode === "proxy"
+                ? "Codex 目前只把 CC Switch 的本地代理位址寫進 config.toml，所以 kumoSwitch 會看到 custom／127.0.0.1，而不是底層供應商。下面列出的才是 CC Switch 資料庫裡實際被路由的供應商。"
+                : "下面是 CC Switch 自己資料庫中的供應商，和 Codex 實際 config.toml 是兩份不同資料。"}
+            </p>
+            <code>{tool.cc_switch.db_path}</code>
+          </div>
+          {tool.cc_switch.error ? <div className="note error">{tool.cc_switch.error}</div> : null}
+          {!tool.cc_switch.providers.length && !tool.cc_switch.error ? <div className="note">CC Switch 資料庫中目前沒有這個 App 的供應商。</div> : null}
+          <div className="ccswitch-provider-grid">
+            {tool.cc_switch.providers.map((provider) => (
+              <article className="ccswitch-provider" key={provider.id}>
+                <div className="ccswitch-provider-head">
+                  <span className="provider-avatar">{provider.name.slice(0, 1).toUpperCase()}</span>
+                  <div><strong>{provider.name}</strong><span>{provider.category || provider.kind || "供應商"}</span></div>
+                  <div className="ccswitch-provider-state">
+                    {provider.is_current ? <span className="badge ok">路由中</span> : null}
+                    {provider.in_failover_queue && !provider.is_current ? <span className="badge warn">候選</span> : null}
+                  </div>
+                </div>
+                <code>{provider.base_url}</code>
+                <div className="provider-model-list">
+                  {provider.models.slice(0, 3).map((model) => <span className="provider-model-chip" key={model.id}>{model.name || model.id}</span>)}
+                  {provider.models.length > 3 ? <span className="provider-model-more">+{provider.models.length - 3}</span> : null}
+                </div>
+                <div className="ccswitch-provider-foot">
+                  <span>{provider.models.length} 個模型 · {provider.has_api_key ? "金鑰已保存" : "沒有金鑰"}</span>
+                  <button type="button" className="ghost small" disabled={provider.already_imported} onClick={() => onImportCcSwitch(provider.id)}>
+                    {provider.already_imported ? "已匯入" : "匯入 kumoSwitch"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </details>
+      ) : null}
 
       <div className="provider-list-head">
         <div>
