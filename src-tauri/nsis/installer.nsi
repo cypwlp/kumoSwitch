@@ -306,7 +306,7 @@ Function PageReinstall
   ${ElseIf} $R0 = 1
     StrCpy $R1 "$(olderOrUnknownVersionInstalled)"
     StrCpy $R2 "$(uninstallBeforeInstalling)"
-    StrCpy $R3 "$(dontUninstall)"
+    StrCpy $R3 "$(upgradeWithoutUninstall)"
     !insertmacro MUI_HEADER_TEXT "$(alreadyInstalled)" "$R5"
   ; Downgrading
   ${ElseIf} $R0 = -1
@@ -350,6 +350,13 @@ Function PageReinstall
     !endif
     ${NSD_OnClick} $R3 PageReinstallUpdateSelection
 
+    ; Upgrades should default to an in-place upgrade. This keeps settings and
+    ; avoids invoking the old uninstaller while the tray app is still running.
+    ${If} $R0 = 1
+    ${AndIf} $ReinstallPageCheck = 0
+      StrCpy $ReinstallPageCheck 2
+    ${EndIf}
+
     ; Check the first radio button if this the first time
     ; we enter this page or if the second button wasn't
     ; selected the last time we were on this page
@@ -359,7 +366,11 @@ Function PageReinstall
       SendMessage $R3 ${BM_SETCHECK} ${BST_CHECKED} 0
     ${EndIf}
 
-    ${NSD_SetFocus} $R2
+    ${If} $ReinstallPageCheck = 2
+      ${NSD_SetFocus} $R3
+    ${Else}
+      ${NSD_SetFocus} $R2
+    ${EndIf}
     nsDialogs::Show
   ${EndIf}
 FunctionEnd
@@ -417,6 +428,11 @@ Function PageLeaveReinstall
       ExecWait '$R1' $0
     ${Else}
       ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
+      ${If} $4 != ""
+        ; The tray app may still be running. Close it before asking the old
+        ; uninstaller to remove files, otherwise Windows keeps the EXE locked.
+        !insertmacro CheckIfAppIsRunning "$4\${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+      ${EndIf}
       ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
       ${IfThen} $UpdateMode = 1 ${|} StrCpy $R1 "$R1 /UPDATE" ${|} ; append /UPDATE
       ${IfThen} $PassiveMode = 1 ${|} StrCpy $R1 "$R1 /P" ${|} ; append /P

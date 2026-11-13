@@ -635,7 +635,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.16.0",
+        version: "0.16.1",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
@@ -1160,9 +1160,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "audit_log":
       return [
-        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.16.0" },
-        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.16.0" },
-        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.16.0" },
+        { ts: Date.now(), action: "provider.reveal_key", detail: "codex:cx-1", version: "0.16.1" },
+        { ts: Date.now() - 60000, action: "backup.export", detail: "providers=9", version: "0.16.1" },
+        { ts: Date.now() - 120000, action: "provider.apply", detail: "codex:cx-1", version: "0.16.1" },
       ];
 
     case "import_providers_json": {
