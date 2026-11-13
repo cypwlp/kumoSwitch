@@ -104,12 +104,53 @@ test("model discovery previews additions and preserves unreturned models", async
   await expect(sync.getByText("本次未回報的既有模型（1）")).toBeVisible();
   await expect(sync.getByText("muse-spark-1.3", { exact: true })).toBeVisible();
 
+  await sync.getByLabel("同步模型 glm-5.3-flash").check();
+  await expect(sync.getByRole("button", { name: /Context.*128K.*256K/ })).toBeVisible();
   await sync.getByRole("button", { name: "套用到模型清單" }).click();
   await expect(sync).toBeHidden();
   await expect(editor.getByRole("article", { name: "模型 deepseek-v4.1-flash" })).toBeVisible();
   await expect(editor.getByRole("article", { name: "模型 qwen3-coder-plus" })).toBeVisible();
-  await expect(editor.getByRole("article", { name: "模型 muse-spark-1.3" })).toBeVisible();
+  const missingModel = editor.getByRole("article", { name: "模型 muse-spark-1.3" });
+  await expect(missingModel).toBeVisible();
+  await expect(missingModel.getByText("本次未回報")).toBeVisible();
   await expect(editor.getByRole("tab", { name: /^模型\s*4/ })).toBeVisible();
+});
+
+test("provider cards and command palette can switch models directly", async ({ page }) => {
+  const quick = page.getByLabel("OpenCode Go 快速切換模型");
+  await quick.selectOption("muse-spark-1.3");
+  await expect(page.getByRole("heading", { name: "套用「OpenCode Go」到 Codex" })).toBeVisible();
+  await expect(page.locator("pre.diff")).toContainText('model = "muse-spark-1.3"');
+  await page.getByRole("dialog").getByRole("button", { name: "取消" }).click();
+
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: "快速切換" });
+  await palette.getByLabel("搜尋供應商").fill("Muse Spark");
+  const option = palette.getByRole("option").filter({ hasText: "Muse Spark 1.3" });
+  await expect(option).toBeVisible();
+  await option.click();
+  await expect(page.getByRole("heading", { name: "套用「OpenCode Go」到 Codex" })).toBeVisible();
+});
+
+test("live model test requires explicit cost warning", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByRole("tab", { name: /^模型/ }).click();
+  await editor.getByRole("button", { name: "實測模型 glm-5.3-flash" }).click();
+
+  const confirm = page.getByRole("dialog").filter({ hasText: "進行真實模型實測？" });
+  await expect(confirm.getByText(/供應商可能收取少量費用/)).toBeVisible();
+  await confirm.getByRole("button", { name: "送出實測" }).click();
+  await expect(editor.getByText(/最小推論請求成功/)).toBeVisible();
+});
+
+test("drift center shows clean, drifted, unmanaged, and empty harnesses", async ({ page }) => {
+  await page.getByRole("button", { name: "漂移", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "設定漂移中心" })).toBeVisible();
+  await expect(page.locator(".drift-summary").getByText("已漂移", { exact: true })).toBeVisible();
+  await expect(page.locator(".drift-summary").getByText("未納管", { exact: true })).toBeVisible();
+  await expect(page.getByText("實際設定與 kumoSwitch 紀錄不同")).toBeVisible();
+  await expect(page.getByText("external-provider", { exact: true })).toBeVisible();
 });
 
 test("narrow window keeps the Harness usable without horizontal overflow", async ({ page }) => {
@@ -146,6 +187,30 @@ test("Harness provider overview matches the visual baseline", async ({ page }) =
   });
 });
 
+test("dark visual system matches the v0.13 baseline", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("kumoswitch.theme", "dark"));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(APP);
+  await page.getByRole("heading", { name: "已設定的供應商" }).waitFor();
+  await expect(page).toHaveScreenshot("harness-overview-dark.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.06,
+    threshold: 0.3,
+  });
+});
+
+test("drift center matches the visual baseline", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(APP);
+  await page.getByRole("button", { name: "漂移", exact: true }).click();
+  await page.locator(".drift-card").first().waitFor();
+  await expect(page).toHaveScreenshot("drift-center.png", {
+    animations: "disabled",
+    maxDiffPixelRatio: 0.06,
+    threshold: 0.3,
+  });
+});
+
 test("Harness more menu closes on outside click and Escape", async ({ page }) => {
   const trigger = page.getByRole("button", { name: /^更多/ });
   await trigger.click();
@@ -173,6 +238,9 @@ test("proxy route strategy and observability are usable", async ({ page }) => {
   const policy = page.getByText("策略設定").first();
   await policy.click();
   await expect(page.getByLabel(/Codex · OpenCode Go 權重/)).toHaveValue("100");
+  await page.getByLabel(/Codex · OpenCode Go 允許模型/).fill("glm-5.3-flash, deepseek-v4.1");
+  await page.getByLabel(/Codex · OpenCode Go 模型映射/).fill("glm-5.3-flash=vendor/glm-5.3");
+  await expect(page.getByLabel(/Codex · OpenCode Go 允許模型/)).toHaveValue("glm-5.3-flash, deepseek-v4.1");
   await expect(page.getByText(/平均 TTFB/)).toBeVisible();
   await expect(page.getByText("upstream rate limited (429); cooling down")).toBeVisible();
 });
