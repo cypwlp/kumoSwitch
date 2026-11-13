@@ -90,6 +90,28 @@ test("each model can be tested and quickly switched without the full editor", as
   await expect(page.locator("pre.diff")).toContainText('model = "muse-spark-1.3"');
 });
 
+test("model discovery previews additions and preserves unreturned models", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByRole("tab", { name: /^模型/ }).click();
+  await editor.getByRole("button", { name: "↻ 同步模型" }).click();
+
+  const sync = page.getByRole("dialog").filter({ hasText: "同步模型 · OpenCode Go" });
+  await expect(sync.getByRole("heading", { name: "同步模型 · OpenCode Go" })).toBeVisible();
+  await expect(sync.getByLabel("同步模型 deepseek-v4.1-flash")).toBeChecked();
+  await expect(sync.getByLabel("同步模型 qwen3-coder-plus")).toBeChecked();
+  await expect(sync.getByLabel("同步模型 glm-5.3-flash")).not.toBeChecked();
+  await expect(sync.getByText("本次未回報的既有模型（1）")).toBeVisible();
+  await expect(sync.getByText("muse-spark-1.3", { exact: true })).toBeVisible();
+
+  await sync.getByRole("button", { name: "套用到模型清單" }).click();
+  await expect(sync).toBeHidden();
+  await expect(editor.getByRole("article", { name: "模型 deepseek-v4.1-flash" })).toBeVisible();
+  await expect(editor.getByRole("article", { name: "模型 qwen3-coder-plus" })).toBeVisible();
+  await expect(editor.getByRole("article", { name: "模型 muse-spark-1.3" })).toBeVisible();
+  await expect(editor.getByRole("tab", { name: /^模型\s*4/ })).toBeVisible();
+});
+
 test("narrow window keeps the Harness usable without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 720, height: 700 });
   await page.goto(APP);

@@ -9,10 +9,12 @@ import type {
   ProviderConfigPreview,
   AuditEntry,
   ModelCheck,
+  ModelDiscovery,
   ToolView,
 } from "../types";
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
+import { ModelSyncModal } from "./ModelSyncModal";
 
 interface EditorProps {
   tool: ToolView;
@@ -134,6 +136,8 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const [modelError, setModelError] = useState("");
   const [testingModels, setTestingModels] = useState<Record<string, boolean>>({});
   const [modelNotices, setModelNotices] = useState<Record<string, string>>({});
+  const [modelDiscovery, setModelDiscovery] = useState<ModelDiscovery | null>(null);
+  const [syncingModels, setSyncingModels] = useState(false);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [metadataDrafts, setMetadataDrafts] = useState<Record<string, string>>({});
   const [backups, setBackups] = useState<BackupInfo[]>([]);
@@ -322,6 +326,43 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     }
   };
 
+  const discoverModels = async () => {
+    if (!provider) return;
+    setModelError("");
+    setSyncingModels(true);
+    try {
+      setModelDiscovery(await api.discoverModels(tool.id, provider.id));
+    } catch (error) {
+      setModelError(errorText(error));
+    } finally {
+      setSyncingModels(false);
+    }
+  };
+
+  const applyDiscoveredModels = (discovered: ModelProfile[]) => {
+    setForm((previous) => {
+      const models = [...(previous.models ?? [])];
+      for (const update of discovered) {
+        const index = models.findIndex((model) => model.id === update.id);
+        if (index >= 0) {
+          models[index] = {
+            ...update,
+            checks: models[index].checks ?? update.checks ?? [],
+          };
+        } else {
+          models.push(update);
+        }
+      }
+      return {
+        ...previous,
+        models,
+        model: previous.model || models[0]?.id || "",
+      };
+    });
+    setMetadataDrafts({});
+    setModelDiscovery(null);
+  };
+
   const applyPreset = (id: string) => {
     const preset = presets.find((item) => item.id === id);
     if (!preset) return;
@@ -502,7 +543,18 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 <h4>模型</h4>
                 <p>設定這個供應商可用的模型。圓點代表下次套用時要寫入 Harness 的模型。</p>
               </div>
-              <button type="button" className="ghost" onClick={() => addModel()}>＋ 新增模型</button>
+              <div className="detail-section-actions">
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={busy || syncingModels || !provider}
+                  onClick={() => void discoverModels()}
+                  title="讀取供應商的 /models，先預覽再合併；不會刪除既有模型"
+                >
+                  {syncingModels ? <><span className="spin" /> 探索中</> : "↻ 同步模型"}
+                </button>
+                <button type="button" className="ghost" onClick={() => addModel()}>＋ 新增模型</button>
+              </div>
             </div>
             <div className="field compact-field">
               <label htmlFor="f-add-preset-models">從預設加入模型</label>
@@ -666,6 +718,17 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
           </div>
         ) : null}
       </Modal>
+
+      {modelDiscovery ? (
+        <ModelSyncModal
+          providerName={form.name || provider?.name || "供應商"}
+          discovery={modelDiscovery}
+          currentModels={form.models ?? []}
+          busy={busy}
+          onCancel={() => setModelDiscovery(null)}
+          onApply={applyDiscoveredModels}
+        />
+      ) : null}
 
       {confirmClose ? (
         <ConfirmModal title="放棄未儲存的變更？" message="你對供應商或模型所做的修改尚未儲存。關閉後這些變更會消失。" confirmLabel="放棄變更" danger busy={false} onCancel={() => setConfirmClose(false)} onConfirm={onCancel} />

@@ -101,6 +101,13 @@ export interface ModelTestResult {
   result: TestResult;
 }
 
+export interface ModelDiscovery {
+  models: ModelProfile[];
+  missing: string[];
+  endpoint: string;
+  message: string;
+}
+
 export interface AppInfo {
   autoHealth?: boolean;
   version: string;

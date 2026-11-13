@@ -1616,3 +1616,30 @@ kbd {
   .provider-card-actions { grid-template-columns: 1fr; }
   .model-actions { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   Model discovery and sync
+   ============================================================ */
+.detail-section-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.model-sync-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.model-sync-summary > div { display: flex; flex-direction: column; gap: 4px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.model-sync-summary span { color: var(--muted); font-size: 10.5px; }
+.model-sync-summary strong { font-size: 18px; line-height: 1; }
+.model-sync-note { margin-bottom: 10px; }
+.model-sync-note code { display: block; margin-top: 5px; color: var(--code-fg); overflow-wrap: anywhere; }
+.model-sync-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.model-sync-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.model-sync-row { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 9px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; transition: border-color 0.12s, background 0.12s; }
+.model-sync-row:hover { border-color: var(--line-2); background: var(--hover-tint); }
+.model-sync-row.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.model-sync-row.existing { background: var(--panel-2); }
+.model-sync-row input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--accent); }
+.model-sync-main { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.model-sync-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.model-sync-title strong { color: var(--text); font-size: 12.5px; }
+.model-sync-title code { color: var(--code-fg); font-size: 10.5px; overflow-wrap: anywhere; }
+.model-sync-tags { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .detail-section-actions { justify-content: flex-start; width: 100%; }
+  .model-sync-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

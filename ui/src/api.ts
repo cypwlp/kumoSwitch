@@ -23,6 +23,7 @@ import type {
   EncryptedBackupInfo,
   AuditEntry,
   ModelTestResult,
+  ModelDiscovery,
 } from "./types";
 
 /** `?mock=1` runs the whole UI against the in-browser fake backend. */
@@ -42,6 +43,7 @@ export const api = {
   revealProviderKey: (tool: string, id: string) => call<string>("reveal_provider_key", { tool, id }),
   providerConfigPreview: (tool: string, id: string) => call<ProviderConfigPreview[]>("provider_config_preview", { tool, id }),
   providerSelectModel: (tool: string, id: string, model: string) => call<Provider>("provider_select_model", { tool, id, model }),
+  discoverModels: (tool: string, providerId: string) => call<ModelDiscovery>("discover_provider_models", { tool, providerId }),
   providerReorder: (tool: string, ids: string[]) => call<Provider[]>("provider_reorder", { tool, ids }),
   providerDelete: (tool: string, id: string) => call<void>("provider_delete", { tool, id }),
   preview: (tool: string, providerId: string) => call<Preview>("preview", { tool, providerId }),

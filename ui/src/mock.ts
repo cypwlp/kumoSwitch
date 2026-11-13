@@ -15,6 +15,7 @@ import type {
   ToolView,
   ProxyConfig,
   ModelTestResult,
+  ModelDiscovery,
 } from "./types";
 
 /**
@@ -691,6 +692,49 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       provider.model = model;
       provider.models = models;
       return providerView(provider);
+    }
+
+    case "discover_provider_models": {
+      const providerId = String(args.providerId ?? "");
+      const provider = findProvider(tool, providerId);
+      await delay(460);
+      const models = [
+        {
+          id: "glm-5.3-flash",
+          name: "GLM 5.3 Flash",
+          context_window: 128000,
+          max_output: 16384,
+          reasoning: true,
+          tools: true,
+          metadata: { source: "mock-models-endpoint" },
+        },
+        {
+          id: "deepseek-v4.1-flash",
+          name: "DeepSeek v4.1 Flash",
+          context_window: 128000,
+          max_output: 16384,
+          reasoning: true,
+          tools: true,
+          metadata: { source: "mock-models-endpoint" },
+        },
+        {
+          id: "qwen3-coder-plus",
+          name: "Qwen3 Coder Plus",
+          context_window: 262144,
+          max_output: 32768,
+          reasoning: false,
+          tools: true,
+          metadata: { source: "mock-models-endpoint" },
+        },
+      ];
+      const returned = new Set(models.map((model) => model.id));
+      const missing = (provider.models ?? []).map((model) => model.id).filter((id) => !returned.has(id));
+      return {
+        models,
+        missing,
+        endpoint: `${provider.base_url.replace(/\/$/, "")}/models`,
+        message: `共找到 ${models.length} 個模型`,
+      } satisfies ModelDiscovery;
     }
 
     case "test_model": {

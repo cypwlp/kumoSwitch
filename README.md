@@ -27,6 +27,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **跨平台金鑰加密＋遮罩** —— Windows 使用 DPAPI；macOS／Linux 用 Keychain／Secret Service 保存隨機主金鑰，再以 AES-256-GCM 加密 `providers.json` 裡的金鑰。清單與 diff 只顯示末四碼，完整金鑰必須在編輯器按下「查看」才會載入，並於 30 秒後自動隱藏；複製後也會嘗試在 30 秒清空剪貼簿。舊的明文檔會自動遷移，安全儲存不可用時拒絕寫入明文。
 - **供應商 → 多模型管理** —— 每個供應商可保存多個模型、顯示名稱、context window、max output、reasoning／vision／tools 能力與自訂 metadata；可單獨切換模型並直接預覽 diff，不必改動整個供應商。
 - **逐模型健康度** —— 每個模型可獨立檢查 `/models` 是否列出該 ID，保存最近 20 次狀態與延遲；測試不會送 prompt，也不產生推論費用。
+- **自動模型探索與同步** —— 從供應商的 `/models` 讀取可用模型，預覽新增、已存在與本次未回報項目；可選擇性合併名稱、context window 與能力資訊，且永不自動刪除既有模型。
 - **一鍵導入與衝突預覽** —— 掃描所有 Harness 後先顯示新增／衝突項目，可保留本機、用設定檔覆蓋、合併模型或建立副本。
 - **連線測試** —— 套用前可先打一次 `/models` 確認端點與金鑰，回報 HTTP 狀態與延遲。
 - **加密清單備份** —— 換機時用 Argon2id＋AES-256-GCM 加密的 `.kumoswitch` 檔搬移供應商與金鑰；仍可匯入舊版明文 JSON。
@@ -118,14 +119,14 @@ cd src-tauri
 cargo test
 ```
 
-Windows 84、macOS／Linux 另含平台金鑰與檔案權限測試；另有 14 個 Playwright Chromium UI E2E，以及可在 Windows 建置產物上執行的真實 Tauri WebView E2E。主要涵蓋：
+Windows 87、macOS／Linux 另含平台金鑰與檔案權限測試；另有 15 個 Playwright Chromium UI E2E，以及可在 Windows 建置產物上執行的真實 Tauri WebView E2E。主要涵蓋：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
 3. **沙箱端到端測試** —— 在暫存目錄真的寫檔再讀回，涵蓋「重複套用冪等」「從無到有建立設定」「Gemini 雙檔寫入」「重新套用不覆蓋自訂 `models[]`／`compat`」。
 4. **代理端到端故障轉移與 SSE** —— 本機啟動 500／200 上游與代理監聽器，驗證策略排序、timeout、熔斷、最大併發、5xx／連線失敗換手、header／method 轉發、client 重用、413 body 上限，以及 SSE 先送達與多條並行串流互不串線。
 5. **金鑰與儲存安全** —— Windows 驗證 DPAPI；macOS／Linux 驗證 AES-GCM、原子寫入與 `0700/0600` 權限；另測 Argon2id／AES-256-GCM 備份往返、錯誤密碼與 malformed envelope。
-6. **Playwright UI E2E** —— 驗證 Harness 供應商詳情、多模型測試與快速切換、API Key 遮罩／查看／清除、窄視窗、視覺回歸、代理觀測、匯入衝突、加密匯出與匯入密碼流程，以及 Command Code 的非破壞性 diff。
+6. **Playwright UI E2E** —— 驗證 Harness 供應商詳情、模型探索與同步、多模型測試與快速切換、API Key 遮罩／查看／清除、窄視窗、視覺回歸、代理觀測、匯入衝突、加密匯出與匯入密碼流程，以及 Command Code 的非破壞性 diff。
 
 ## 授權
 

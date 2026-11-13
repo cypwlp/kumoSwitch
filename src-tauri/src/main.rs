@@ -73,6 +73,14 @@ struct ModelTestResult {
 }
 
 #[derive(Serialize)]
+struct ModelDiscoveryView {
+    models: Vec<ModelProfile>,
+    missing: Vec<String>,
+    endpoint: String,
+    message: String,
+}
+
+#[derive(Serialize)]
 struct ProviderView {
     id: String,
     config_id: String,
@@ -390,6 +398,51 @@ fn provider_select_model(
     audit::record("provider.select_model", format!("{tool}:{id}:{model}"));
     tray::refresh(&app);
     Ok(saved.into())
+}
+
+#[tauri::command]
+fn discover_provider_models(
+    tool: String,
+    provider_id: String,
+) -> Result<ModelDiscoveryView, String> {
+    let (_, mut provider) = load_provider(&tool, &provider_id)?;
+    let discovered = net::discover_models(
+        &provider.base_url,
+        &provider.api_key,
+        tool == "claude",
+    );
+    provider.api_key.zeroize();
+    let discovered = discovered?;
+    let existing: std::collections::BTreeSet<String> = provider
+        .models
+        .iter()
+        .map(|model| model.id.clone())
+        .collect();
+    let returned: std::collections::BTreeSet<String> = discovered
+        .models
+        .iter()
+        .map(|model| model.id.clone())
+        .collect();
+    let missing = existing
+        .iter()
+        .filter(|id| !returned.contains(*id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let new_count = returned.difference(&existing).count();
+    audit::record(
+        "model.discover",
+        format!(
+            "{tool}:{provider_id};returned={};new={new_count};missing={}",
+            returned.len(),
+            missing.len()
+        ),
+    );
+    Ok(ModelDiscoveryView {
+        models: discovered.models,
+        missing,
+        endpoint: discovered.endpoint,
+        message: discovered.message,
+    })
 }
 
 #[tauri::command]
@@ -1165,6 +1218,7 @@ fn main() {
             reveal_provider_key,
             provider_config_preview,
             provider_select_model,
+            discover_provider_models,
             test_model,
             provider_reorder,
             provider_delete,

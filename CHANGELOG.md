@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- 新增自動模型探索與同步：從供應商 `/models` 讀取模型目錄，預覽新增、已存在與本次未回報項目。
+- 可勾選新模型加入供應商，或選擇性更新既有模型的名稱、context window、max output、能力與 metadata。
+- 同步採合併策略，既有但本次未回報的模型永遠保留，不會因端點清單變動被自動刪除。
+- 模型目錄解析支援 OpenAI／Anthropic 常見 `data[]`、`models[]`、keyed object、頂層陣列與包裝物件格式，並自動去除重複 ID。
+
 ## 0.10.0 — 2026-11-12
 - 供應商改為多模型資料結構，支援 Model ID、顯示名稱、context window、max output、reasoning／vision／tools 能力、自訂 metadata，以及最近 20 次模型測試狀態與延遲。
 - 供應商詳情拆成概覽、模型、連線、紀錄、原始設定五個分頁；可只切換模型直接預覽 diff，不必重寫整份供應商表單。

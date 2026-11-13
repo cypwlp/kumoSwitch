@@ -930,7 +930,7 @@ fn map_keys(spec: &ToolSpec, file: &str, fmt: Fmt, path: &[&str]) -> Vec<String>
     }
 }
 
-fn model_profile_from_value(id: String, value: &Value) -> ModelProfile {
+pub(crate) fn model_profile_from_value(id: String, value: &Value) -> ModelProfile {
     let number = |paths: &[&str]| -> Option<u64> {
         paths.iter().find_map(|pointer| {
             value
@@ -944,14 +944,30 @@ fn model_profile_from_value(id: String, value: &Value) -> ModelProfile {
     ModelProfile {
         name: value
             .get("name")
+            .or_else(|| value.get("display_name"))
             .or_else(|| value.get("displayName"))
+            .or_else(|| value.get("label"))
             .and_then(Value::as_str)
             .filter(|name| !name.trim().is_empty())
             .unwrap_or(&id)
             .to_string(),
         id,
-        context_window: number(&["/context_window", "/contextWindow", "/context_length", "/limit/context"]),
-        max_output: number(&["/max_output", "/maxOutput", "/max_tokens", "/limit/output"]),
+        context_window: number(&[
+            "/context_window",
+            "/contextWindow",
+            "/context_length",
+            "/max_context_length",
+            "/input_token_limit",
+            "/limit/context",
+        ]),
+        max_output: number(&[
+            "/max_output",
+            "/maxOutput",
+            "/max_output_tokens",
+            "/max_tokens",
+            "/output_token_limit",
+            "/limit/output",
+        ]),
         reasoning: boolean(&["/reasoning", "/capabilities/reasoning", "/supports_reasoning"]),
         vision: boolean(&["/vision", "/capabilities/vision", "/attachment"]),
         tools: boolean(&["/tools", "/tool_call", "/capabilities/tools"]),

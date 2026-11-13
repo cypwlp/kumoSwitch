@@ -1,6 +1,9 @@
 //! Connectivity probe. Uses the system `curl` (ships with Windows 10/11) and
 //! feeds the request config through stdin so the API key never appears in argv.
 
+use crate::adapters::{model_profile_from_value, ModelProfile};
+use serde_json::Value;
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -113,33 +116,11 @@ pub fn probe(base_url: &str, api_key: &str, anthropic_style: bool) -> TestResult
 /// OpenAI-compatible `/models` responses. Discovery is intentionally read-only
 /// and never sends a prompt or spends inference tokens.
 pub fn body_lists_model(body: &str, model: &str) -> Option<bool> {
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
-    fn walk(value: &serde_json::Value, parent: Option<&str>, out: &mut Vec<String>) {
-        match value {
-            serde_json::Value::Object(map) => {
-                for (key, child) in map {
-                    walk(child, Some(key), out);
-                }
-            }
-            serde_json::Value::Array(items) => {
-                for child in items {
-                    walk(child, parent, out);
-                }
-            }
-            serde_json::Value::String(text)
-                if matches!(parent, Some("id" | "name" | "model" | "slug")) =>
-            {
-                out.push(text.clone());
-            }
-            _ => {}
-        }
-    }
-    let mut ids = Vec::new();
-    walk(&value, None, &mut ids);
-    Some(ids.iter().any(|id| {
-        id == model
-            || id.rsplit('/').next() == Some(model)
-            || id.rsplit(':').next() == Some(model)
+    let models = parse_model_catalogue(body).ok()?;
+    Some(models.iter().any(|item| {
+        item.id == model
+            || item.id.rsplit('/').next() == Some(model)
+            || item.id.rsplit(':').next() == Some(model)
     }))
 }
 
@@ -228,9 +209,193 @@ pub fn probe_model(base_url: &str, api_key: &str, anthropic_style: bool, model: 
     TestResult { ok, status, ms, message }
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ModelDiscovery {
+    pub models: Vec<ModelProfile>,
+    pub endpoint: String,
+    pub message: String,
+}
+
+fn entry_from_value(value: &Value, key_hint: Option<&str>) -> Option<(String, Value)> {
+    if let Some(id) = value.as_str() {
+        if !id.trim().is_empty() {
+            return Some((id.trim().to_string(), Value::Null));
+        }
+    }
+    let id = value
+        .get("id")
+        .or_else(|| value.get("model"))
+        .or_else(|| value.get("slug"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            key_hint
+                .filter(|key| !matches!(*key, "result" | "response" | "body" | "data" | "models"))
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            value
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+        })?;
+    Some((id, value.clone()))
+}
+
+fn collect_catalogue(value: &Value, key_hint: Option<&str>, out: &mut Vec<(String, Value)>) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                if let Some(entry) = entry_from_value(item, None) {
+                    out.push(entry);
+                }
+            }
+        }
+        Value::Object(map) => {
+            if let Some(list) = map.get("data").or_else(|| map.get("models")) {
+                match list {
+                    Value::Array(items) => {
+                        for item in items {
+                            if let Some(entry) = entry_from_value(item, None) {
+                                out.push(entry);
+                            }
+                        }
+                    }
+                    Value::Object(entries) => {
+                        for (key, item) in entries {
+                            if let Some(entry) = entry_from_value(item, Some(key)) {
+                                out.push(entry);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                return;
+            }
+            if let Some(entry) = entry_from_value(value, key_hint) {
+                out.push(entry);
+                return;
+            }
+            for wrapper in ["result", "response", "body"] {
+                if let Some(child) = map.get(wrapper) {
+                    collect_catalogue(child, Some(wrapper), out);
+                    if !out.is_empty() {
+                        return;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_model_catalogue(body: &str) -> Result<Vec<ModelProfile>, String> {
+    let value: Value = serde_json::from_str(body)
+        .map_err(|_| "端點回應不是合法 JSON，無法解析模型目錄".to_string())?;
+    let mut entries = Vec::new();
+    collect_catalogue(&value, None, &mut entries);
+    let mut seen = BTreeSet::new();
+    let mut models = Vec::new();
+    for (id, value) in entries {
+        if models.len() >= 2_000 || !seen.insert(id.clone()) {
+            continue;
+        }
+        let mut profile = if value.is_null() {
+            ModelProfile::new(id)
+        } else {
+            model_profile_from_value(id, &value)
+        };
+        profile.checks.clear();
+        models.push(profile);
+    }
+    if models.is_empty() {
+        return Err("端點回應成功，但找不到可用的模型 ID".into());
+    }
+    Ok(models)
+}
+
+fn fetch_models_response(
+    base_url: &str,
+    api_key: &str,
+    anthropic_style: bool,
+) -> Result<(u16, String), String> {
+    let base = base_url.trim_end_matches('/');
+    if base.is_empty() {
+        return Err("Base URL 是空的".into());
+    }
+    let url = format!("{base}/models");
+    let mut config = String::new();
+    config.push_str("silent\nshow-error\nmax-time = 30\n");
+    config.push_str("write-out = \"\\n%{http_code}\"\n");
+    config.push_str(&format!("url = \"{url}\"\n"));
+    if !api_key.is_empty() {
+        if anthropic_style {
+            config.push_str(&format!("header = \"x-api-key: {api_key}\"\n"));
+            config.push_str("header = \"anthropic-version: 2023-06-01\"\n");
+        } else {
+            config.push_str(&format!("header = \"Authorization: Bearer {api_key}\"\n"));
+        }
+    }
+
+    let child = Command::new(curl_bin())
+        .arg("--config")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("找不到 curl：{error}"))?;
+    let mut child = child;
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin
+            .write_all(config.as_bytes())
+            .map_err(|error| format!("無法送出模型探索請求：{error}"))?;
+    }
+    drop(child.stdin.take());
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("模型探索失敗：{error}"))?;
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let (body, status_text) = raw.rsplit_once('\n').unwrap_or((raw.as_ref(), ""));
+    let status: u16 = status_text.trim().parse().unwrap_or(0);
+    if status == 0 {
+        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let short = error.lines().last().unwrap_or("連線失敗").to_string();
+        return Err(format!("無法連線：{short}"));
+    }
+    Ok((status, body.to_string()))
+}
+
+/// Fetch and normalize the provider model catalogue. This only calls `/models`;
+/// it never sends a prompt or spends inference tokens.
+pub fn discover_models(
+    base_url: &str,
+    api_key: &str,
+    anthropic_style: bool,
+) -> Result<ModelDiscovery, String> {
+    let endpoint = format!("{}/models", base_url.trim_end_matches('/'));
+    let (status, body) = fetch_models_response(base_url, api_key, anthropic_style)?;
+    let models = match status {
+        200..=299 => parse_model_catalogue(&body)?,
+        401 | 403 => return Err(format!("HTTP {status} · 金鑰被拒或權限不足")),
+        404 => return Err("HTTP 404 · 這個端點沒有 /models 模型目錄".into()),
+        429 => return Err("HTTP 429 · 被限流，請稍後再同步模型".into()),
+        other => return Err(format!("HTTP {other} · 無法取得模型目錄")),
+    };
+    Ok(ModelDiscovery {
+        message: format!("共找到 {} 個模型", models.len()),
+        models,
+        endpoint,
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{body_lists_model, probe_model};
+    use super::{body_lists_model, discover_models, parse_model_catalogue, probe_model};
     use std::thread;
     use std::time::Duration;
 
@@ -249,6 +414,76 @@ mod tests {
             Some(false)
         );
         assert_eq!(body_lists_model("not-json", "missing"), None);
+    }
+
+    #[test]
+    fn model_catalogue_preserves_metadata_and_deduplicates() {
+        let models = parse_model_catalogue(r#"{
+          "data": [
+            {
+              "id": "glm-5.3-flash",
+              "display_name": "GLM 5.3 Flash",
+              "context_window": 128000,
+              "max_output_tokens": 16384,
+              "capabilities": { "reasoning": true, "vision": false, "tools": true }
+            },
+            { "id": "glm-5.3-flash", "display_name": "Duplicate" },
+            { "id": "qwen2.5-coder:14b", "name": "Qwen Coder" }
+          ]
+        }"#)
+        .unwrap();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "glm-5.3-flash");
+        assert_eq!(models[0].name, "GLM 5.3 Flash");
+        assert_eq!(models[0].context_window, Some(128000));
+        assert_eq!(models[0].max_output, Some(16384));
+        assert_eq!(models[0].reasoning, Some(true));
+        assert_eq!(models[0].tools, Some(true));
+        assert_eq!(models[0].metadata["display_name"], "GLM 5.3 Flash");
+    }
+
+    #[test]
+    fn model_catalogue_supports_keyed_and_wrapped_shapes() {
+        let keyed = parse_model_catalogue(r#"{
+          "models": {
+            "anthropic/claude-sonnet": { "name": "Claude Sonnet" },
+            "local/qwen3": { "name": "Qwen 3" }
+          }
+        }"#)
+        .unwrap();
+        assert_eq!(keyed.len(), 2);
+        assert_eq!(keyed[0].id, "anthropic/claude-sonnet");
+
+        let wrapped = parse_model_catalogue(r#"{
+          "result": { "data": ["model-a", "model-b"] }
+        }"#)
+        .unwrap();
+        assert_eq!(wrapped.len(), 2);
+        assert_eq!(wrapped[1].id, "model-b");
+    }
+
+    #[test]
+    fn model_discovery_reads_a_local_catalogue() {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let address = server.server_addr().to_ip().unwrap();
+        let join = thread::spawn(move || {
+            let request = server
+                .recv_timeout(Duration::from_secs(5))
+                .expect("local discovery request")
+                .expect("catalogue request");
+            let response = tiny_http::Response::from_string(
+                r#"{"data":[{"id":"alpha","context_window":64000},{"id":"beta"}]}"#,
+            )
+            .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
+            request.respond(response).unwrap();
+        });
+
+        let discovery = discover_models(&format!("http://{address}"), "", false).unwrap();
+        join.join().unwrap();
+        assert_eq!(discovery.models.len(), 2);
+        assert_eq!(discovery.models[0].id, "alpha");
+        assert_eq!(discovery.models[0].context_window, Some(64000));
+        assert!(discovery.endpoint.ends_with("/models"));
     }
 
     #[test]
