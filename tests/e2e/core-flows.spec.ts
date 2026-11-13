@@ -206,9 +206,11 @@ test("unsaved provider edits require confirmation before closing", async ({ page
 });
 
 test("Harness provider overview matches the visual baseline", async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "light"));
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(APP);
+  await page.reload();
   await expect(page.getByRole("heading", { name: "已設定的供應商" })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page).toHaveScreenshot("harness-overview.png", {
     animations: "disabled",
     maxDiffPixelRatio: 0.08,
@@ -217,10 +219,11 @@ test("Harness provider overview matches the visual baseline", async ({ page }) =
 });
 
 test("dark visual system matches the v0.13 baseline", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("kumoswitch.theme", "dark"));
+  await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "dark"));
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(APP);
+  await page.reload();
   await page.getByRole("heading", { name: "已設定的供應商" }).waitFor();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page).toHaveScreenshot("harness-overview-dark.png", {
     animations: "disabled",
     maxDiffPixelRatio: 0.06,
