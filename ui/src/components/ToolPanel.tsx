@@ -29,6 +29,7 @@ interface PanelProps {
   onPalette: () => void;
   onDiagnostics: () => void;
   onCheckUpdate: () => void;
+  onOpenInstall: () => void;
   autoHealth: boolean;
   onToggleAutoHealth: () => void;
   autoModelSync: boolean;
@@ -62,6 +63,7 @@ export function ToolPanel({
   onPalette,
   onDiagnostics,
   onCheckUpdate,
+  onOpenInstall,
   autoHealth,
   onToggleAutoHealth,
   autoModelSync,
@@ -136,7 +138,7 @@ export function ToolPanel({
         <div className="current-provider">
           <span className="eyebrow">目前套用</span>
           <strong>{activeProvider?.name || tool.current.model || "尚未選擇供應商"}</strong>
-          {tool.current.model ? <code>{tool.current.model}</code> : null}
+          {tool.current.model ? <span className="current-model"><span>模型</span><code>{tool.current.model}</code></span> : null}
         </div>
         <div className="current-meta">
           <span className="current-url mono" title={tool.current.base_url || "尚未設定 Base URL"}>
@@ -152,10 +154,28 @@ export function ToolPanel({
         <span className="current-restart">{tool.restart}</span>
       </div>
 
+      <nav className="resource-path" aria-label="Harness、供應商與模型層級">
+        <span className="resource-step complete">
+          <i>1</i>
+          <span><b>Harness</b><em>{tool.name}</em></span>
+        </span>
+        <span className="resource-chevron" aria-hidden="true">›</span>
+        <span className="resource-step active">
+          <i>2</i>
+          <span><b>供應商</b><em>{total} 個 endpoint／金鑰組合</em></span>
+        </span>
+        <span className="resource-chevron" aria-hidden="true">›</span>
+        <span className="resource-step">
+          <i>3</i>
+          <span><b>模型</b><em>進入供應商後管理</em></span>
+        </span>
+      </nav>
+
       <div className="provider-list-head">
         <div>
-          <h3>已設定的供應商</h3>
-          <p>這裡列出 {tool.name} Harness 的供應商。點擊供應商即可查看它的模型、Base URL 與金鑰設定。</p>
+          <span className="eyebrow">Provider directory</span>
+          <h3>供應商</h3>
+          <p>供應商是獨立的 endpoint＋金鑰；模型是供應商底下的子項目。先選供應商，再進入它的模型。</p>
         </div>
         <span className="badge subtle">{total} 個供應商</span>
       </div>
@@ -219,6 +239,9 @@ export function ToolPanel({
               </button>
               <button type="button" role="menuitem" onClick={menuAction(onCheckUpdate)}>
                 檢查更新
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onOpenInstall)}>
+                開啟安裝／更新向導
               </button>
               <button type="button" role="menuitem" onClick={menuAction(onToggleAutoHealth)}>
                 {autoHealth ? "✓ 自動健康檢查（10 分鐘）" : "自動健康檢查（關）"}

@@ -25,6 +25,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **接管狀態偵測** —— 偵測到其他代理工具正接管同一套設定時會提示，避免兩個工具互相覆蓋。
 - **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\kumoSwitch`；清單與歷史採原子寫入，Unix 上資料目錄為 `0700`、應用檔案為 `0600`。
 - **跨平台金鑰加密＋遮罩** —— Windows 使用 DPAPI；macOS／Linux 用 Keychain／Secret Service 保存隨機主金鑰，再以 AES-256-GCM 加密 `providers.json` 裡的金鑰。清單與 diff 只顯示末四碼，完整金鑰必須在編輯器按下「查看」才會載入，並於 30 秒後自動隱藏；複製後也會嘗試在 30 秒清空剪貼簿。舊的明文檔會自動遷移，安全儲存不可用時拒絕寫入明文。
+- **清楚的三層資源模型** —— 介面固定依照 `Harness → 供應商 → 模型` 呈現：先選 Endpoint＋金鑰組成的供應商，再進入該供應商底下的模型，不把兩者混在同一層。
 - **供應商 → 多模型管理** —— 每個供應商可保存多個模型、顯示名稱、context window、max output、reasoning／vision／tools 能力與自訂 metadata；可單獨切換模型並直接預覽 diff，不必改動整個供應商。
 - **逐模型健康度** —— 每個模型可獨立檢查 `/models` 是否列出該 ID，保存最近 20 次狀態與延遲；測試不會送 prompt，也不產生推論費用。
 - **自動模型探索與同步** —— 從供應商的 `/models` 讀取可用模型，預覽新增、已存在與本次未回報項目；可選擇性合併名稱、context window 與能力資訊，且永不自動刪除既有模型。
@@ -69,7 +70,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 
 ## 下載
 
-使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
+使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.14.1) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
 
 - Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `kumoSwitch-portable.exe`
 - macOS Apple Silicon／Intel：`.dmg`

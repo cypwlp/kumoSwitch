@@ -1698,6 +1698,20 @@ fn audit_log(limit: usize) -> Vec<audit::AuditEntry> {
 }
 
 #[tauri::command]
+fn open_install_page() -> Result<(), String> {
+    let url = concat!("https://cypwlp.github.io/kumoSwitch/install.html?v=", env!("CARGO_PKG_VERSION"));
+    #[cfg(target_os = "windows")]
+    let spawned = std::process::Command::new("rundll32.exe")
+        .args(["url.dll,FileProtocolHandler", url])
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let spawned = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let spawned = std::process::Command::new("xdg-open").arg(url).spawn();
+    spawned.map(|_| ()).map_err(|error| format!("無法開啟安裝向導：{error}"))
+}
+
+#[tauri::command]
 fn app_info() -> serde_json::Value {
     serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
@@ -1720,6 +1734,12 @@ fn main() {
             tray::show_main(app);
         }))
         .setup(|app| {
+            use tauri::Manager as _;
+            if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = window.set_icon(icon.clone());
+                }
+            }
             tray::install(app.handle())?;
             spawn_health_loop(app.handle().clone());
             spawn_model_sync_loop(app.handle().clone());
@@ -1779,6 +1799,7 @@ fn main() {
             reveal_config,
             reveal_path,
             audit_log,
+            open_install_page,
             app_info
         ])
         .run(tauri::generate_context!())

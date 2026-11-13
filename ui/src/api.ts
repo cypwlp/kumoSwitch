@@ -40,6 +40,7 @@ function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 
 export const api = {
   appInfo: () => call<AppInfo>("app_info"),
+  openInstallPage: () => call<void>("open_install_page"),
   toolList: () => call<ToolView[]>("tool_list"),
   driftOverview: () => call<DriftReport[]>("drift_overview"),
   providerSearchIndex: () => call<ProviderSearchRow[]>("provider_search_index"),

@@ -672,6 +672,15 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
           </>
         }
       >
+        <div className="provider-detail-context" aria-label="目前位置">
+          <span>{tool.name} Harness</span>
+          <b aria-hidden="true">›</b>
+          <span>供應商</span>
+          <b aria-hidden="true">›</b>
+          <strong>{form.name || provider?.name || "新供應商"}</strong>
+          <b aria-hidden="true">›</b>
+          <span>模型與連線</span>
+        </div>
         <div className="detail-tabs" role="tablist" aria-label="供應商詳情分類">
           {tabs.map((item) => (
             <button

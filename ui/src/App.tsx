@@ -786,6 +786,7 @@ export default function App() {
               onPalette={() => setPalette(true)}
               onDiagnostics={() => void diagnostics()}
               onCheckUpdate={() => void runUpdateCheck(true)}
+              onOpenInstall={() => void api.openInstallPage().catch((error) => push(errorText(error), "err"))}
               autoHealth={autoHealth}
               onToggleAutoHealth={() => void toggleAutoHealth()}
               autoModelSync={autoModelSync}

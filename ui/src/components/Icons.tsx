@@ -1,28 +1,25 @@
 export function Logo() {
   return (
-    <svg viewBox="0 0 32 32" aria-hidden="true">
-      <defs>
-        <linearGradient id="sy-logo" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#38bdf8" />
-          <stop offset="1" stopColor="#818cf8" />
-        </linearGradient>
-      </defs>
+    <svg viewBox="0 0 32 32" role="img" aria-label="kumoSwitch">
+      <rect x="1.5" y="1.5" width="29" height="29" rx="9" fill="#102019" stroke="#3b5648" strokeWidth="1.2" />
+      <rect x="4.5" y="4.5" width="23" height="23" rx="6.5" fill="#142820" opacity="0.92" />
       <path
-        d="M7 12h11M14 8l4 4-4 4"
-        stroke="url(#sy-logo)"
-        strokeWidth="3"
+        d="M8 11.5h10M14 7.5l4 4-4 4"
+        stroke="#5ee0ad"
+        strokeWidth="2.8"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
       />
       <path
-        d="M25 20H14M18 16l-4 4 4 4"
-        stroke="var(--logo-tail)"
-        strokeWidth="3"
+        d="M24 20.5H14M18 16.5l-4 4 4 4"
+        stroke="#efb35f"
+        strokeWidth="2.8"
         strokeLinecap="round"
         strokeLinejoin="round"
         fill="none"
       />
+      <circle cx="25.5" cy="7" r="1.7" fill="#5ee0ad" />
     </svg>
   );
 }

@@ -76,6 +76,8 @@ export function ProviderTable({
       {rows.map((provider) => {
         const active = activeId === provider.id;
         const test = tests[provider.id];
+        const visibleModels = (provider.models ?? []).filter((model) => !model.archived);
+        const providerInitial = (provider.name.trim()[0] || "?").toUpperCase();
         return (
           <article
             key={provider.id}
@@ -120,7 +122,9 @@ export function ProviderTable({
               aria-label={`查看供應商 ${provider.name} 的模型與設定`}
             >
               <div className="provider-card-head">
+                <span className="provider-avatar" aria-hidden="true">{providerInitial}</span>
                 <div className="provider-identity">
+                  <span className="provider-entity">供應商</span>
                   <h3>{provider.name}</h3>
                   <span className="provider-alias">{provider.note || provider.config_id}</span>
                 </div>
@@ -131,22 +135,15 @@ export function ProviderTable({
               </div>
 
               <dl className="provider-facts">
-                <div className="provider-fact model-fact">
-                  <dt>預設模型</dt>
-                  <dd>
-                    <span>{provider.model || "未指定，沿用 Harness 目前模型"}</span>
-                    {(provider.models?.length ?? 0) > 0 ? (
-                      <span className="model-count" title={`已設定 ${provider.models?.length ?? 0} 個模型`}>
-                        {provider.models?.length} 個
-                      </span>
-                    ) : null}
-                  </dd>
-                </div>
                 <div className="provider-fact url-fact">
                   <dt>Base URL</dt>
                   <dd className="mono" title={provider.base_url}>
                     {provider.base_url}
                   </dd>
+                </div>
+                <div className="provider-fact">
+                  <dt>協議／類型</dt>
+                  <dd>{provider.kind || "由 Harness 決定"}</dd>
                 </div>
                 <div className="provider-fact health-fact">
                   <dt>健康度</dt>
@@ -156,8 +153,24 @@ export function ProviderTable({
                 </div>
               </dl>
 
+              <div className="provider-models">
+                <div className="provider-models-head">
+                  <span className="eyebrow">此供應商的模型</span>
+                  <span className="model-count">{visibleModels.length} 個</span>
+                </div>
+                <div className="provider-model-list">
+                  {visibleModels.length ? visibleModels.slice(0, 4).map((model) => (
+                    <span className={`provider-model-chip${model.id === provider.model ? " active" : ""}`} key={model.id}>
+                      {model.favorite ? "★ " : ""}{model.name || model.id}
+                      {model.id === provider.model ? <em>預設</em> : null}
+                    </span>
+                  )) : <span className="provider-model-empty">尚未設定模型</span>}
+                  {visibleModels.length > 4 ? <span className="provider-model-more">+{visibleModels.length - 4}</span> : null}
+                </div>
+              </div>
+
               <span className="provider-open-hint">
-                查看模型與連線設定 <span aria-hidden="true">→</span>
+                進入供應商詳情 <span aria-hidden="true">→</span>
               </span>
             </button>
 
@@ -198,7 +211,7 @@ export function ProviderTable({
                 {active ? "重新套用" : "套用"}
               </button>
               <button type="button" className="small ghost" onClick={() => onEdit(provider)}>
-                編輯
+                詳情
               </button>
               <button type="button" className="small danger" onClick={() => onDelete(provider)}>
                 刪除
