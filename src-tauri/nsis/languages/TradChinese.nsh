@@ -6,6 +6,8 @@ LangString appRunningOkKill ${LANG_TRADCHINESE} "{{product_name}} 正在執行�
 LangString chooseMaintenanceOption ${LANG_TRADCHINESE} "請選擇維護操作。"
 LangString chooseHowToInstall ${LANG_TRADCHINESE} "請選擇 ${PRODUCTNAME} 的安裝方式。"
 LangString createDesktop ${LANG_TRADCHINESE} "建立桌面捷徑"
+LangString kumoRunText ${LANG_TRADCHINESE} "執行 kumoSwitch"
+LangString kumoDesktopText ${LANG_TRADCHINESE} "建立桌面捷徑"
 LangString dontUninstall ${LANG_TRADCHINESE} "不要解除安裝"
 LangString upgradeWithoutUninstall ${LANG_TRADCHINESE} "直接升級（保留設定）— 建議"
 LangString dontUninstallDowngrade ${LANG_TRADCHINESE} "不要解除安裝（此安裝器已停用降級）"

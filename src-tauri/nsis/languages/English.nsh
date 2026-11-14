@@ -6,6 +6,8 @@ LangString appRunningOkKill ${LANG_ENGLISH} "{{product_name}} is running. Select
 LangString chooseMaintenanceOption ${LANG_ENGLISH} "Choose a maintenance option."
 LangString chooseHowToInstall ${LANG_ENGLISH} "Choose how to install ${PRODUCTNAME}."
 LangString createDesktop ${LANG_ENGLISH} "Create a desktop shortcut"
+LangString kumoRunText ${LANG_ENGLISH} "Launch kumoSwitch"
+LangString kumoDesktopText ${LANG_ENGLISH} "Create a desktop shortcut"
 LangString dontUninstall ${LANG_ENGLISH} "Do not uninstall"
 LangString upgradeWithoutUninstall ${LANG_ENGLISH} "Direct upgrade (keep settings) — recommended"
 LangString dontUninstallDowngrade ${LANG_ENGLISH} "Do not uninstall (downgrades are disabled for this installer)"

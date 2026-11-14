@@ -91,6 +91,8 @@ Var UpdateMode
 Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
+Var KumoRunCheckbox
+Var KumoDesktopCheckbox
 
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
@@ -203,10 +205,43 @@ Function KumoDirectoryShow
   ${EndIf}
 FunctionEnd
 
+Function ToggleFinishRun
+  SendMessage $KumoRunCheckbox ${BM_CLICK} 0 0
+FunctionEnd
+
+Function ToggleFinishDesktop
+  SendMessage $KumoDesktopCheckbox ${BM_CLICK} 0 0
+FunctionEnd
+
 Function KumoFinishShow
   FindWindow $0 "#32770" "" $HWNDPARENT
   ${If} $0 != 0
+    ; MUI disables visual styles for checkbox text, but SetCtlColors still does
+    ; not recolor that text on some Windows builds. Keep the real checkboxes
+    ; as small square controls and draw accessible light labels on top.
     SetCtlColors $0 "EAF5EF" "0B1110"
+    System::Call 'user32::FindWindowEx(p r0, p 0, w "Button", w "$(kumoRunText)") p .r1'
+    ${If} $1 != 0
+      StrCpy $KumoRunCheckbox $1
+      SendMessage $1 ${WM_SETTEXT} 0 "STR:"
+      SetCtlColors $1 "EAF5EF" "0B1110"
+      ${NSD_CreateLabel} 130u 90u 185u 10u "$(kumoRunText)"
+      Pop $R3
+      SetCtlColors $R3 "EAF5EF" "0B1110"
+      System::Call 'user32::SetWindowPos(p $R3, p 0, i 0, i 0, i 0, i 0, i 3)'
+      ${NSD_OnClick} $R3 ToggleFinishRun
+    ${EndIf}
+    System::Call 'user32::FindWindowEx(p r0, p 0, w "Button", w "$(kumoDesktopText)") p .r2'
+    ${If} $2 != 0
+      StrCpy $KumoDesktopCheckbox $2
+      SendMessage $2 ${WM_SETTEXT} 0 "STR:"
+      SetCtlColors $2 "EAF5EF" "0B1110"
+      ${NSD_CreateLabel} 130u 110u 185u 10u "$(kumoDesktopText)"
+      Pop $R4
+      SetCtlColors $R4 "EAF5EF" "0B1110"
+      System::Call 'user32::SetWindowPos(p $R4, p 0, i 0, i 0, i 0, i 0, i 3)'
+      ${NSD_OnClick} $R4 ToggleFinishDesktop
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 
@@ -499,10 +534,11 @@ Var AppStartMenuFolder
 !define MUI_FINISHPAGE_NOAUTOCLOSE
 ; Use show readme button in the finish page as a button create a desktop shortcut
 !define MUI_FINISHPAGE_SHOWREADME
-!define MUI_FINISHPAGE_SHOWREADME_TEXT "$(createDesktop)"
+!define MUI_FINISHPAGE_SHOWREADME_TEXT "$(kumoDesktopText)"
 !define MUI_FINISHPAGE_SHOWREADME_FUNCTION CreateOrUpdateDesktopShortcut
 ; Show run app after installation.
 !define MUI_FINISHPAGE_RUN
+!define MUI_FINISHPAGE_RUN_TEXT "$(kumoRunText)"
 !define MUI_FINISHPAGE_RUN_FUNCTION RunMainBinary
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipIfPassive
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW KumoFinishShow
