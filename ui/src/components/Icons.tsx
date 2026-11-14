@@ -108,3 +108,13 @@ export function IconCheck({ className }: { className?: string } = {}) {
     </svg>
   );
 }
+
+export function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3.2v2.1M12 18.7v2.1M3.2 12h2.1M18.7 12h2.1M5.8 5.8l1.5 1.5M16.7 16.7l1.5 1.5M18.2 5.8l-1.5 1.5M7.3 16.7l-1.5 1.5" />
+      <circle cx="12" cy="12" r="3.4" />
+      <circle cx="12" cy="12" r="7.2" opacity=".35" />
+    </svg>
+  );
+}

@@ -31,6 +31,7 @@ import { StatsView } from "./components/StatsView";
 import { ProxyView } from "./components/ProxyView";
 import { DriftView } from "./components/DriftView";
 import { Toasts, useToasts } from "./components/Toasts";
+import { SettingsModal } from "./components/SettingsModal";
 import type { TestState } from "./components/ProviderTable";
 
 type ModalState =
@@ -78,6 +79,8 @@ export default function App() {
   const [sort, setSort] = useState<"manual" | "name" | "recent">("manual");
   const [update, setUpdate] = useState<UpdateCheck>({ kind: "idle" });
   const [updating, setUpdating] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [progress, setProgress] = useState(0);
   const [onboarded, setOnboarded] = useState<boolean>(() => {
     if (MOCK) {
@@ -289,12 +292,17 @@ export default function App() {
 
   const runUpdateCheck = useCallback(
     async (manual: boolean) => {
-      const result = await checkForUpdate();
-      setUpdate(result);
-      if (manual) {
-        if (result.kind === "none") push("已是最新版本", "ok");
-        else if (result.kind === "available") push(`有新版本 ${result.version}`, "ok");
-        else if (result.kind === "error") push(result.message, "err");
+      setUpdateChecking(true);
+      try {
+        const result = await checkForUpdate();
+        setUpdate(result);
+        if (manual) {
+          if (result.kind === "none") push("已是最新版本", "ok");
+          else if (result.kind === "available") push(`有新版本 ${result.version}`, "ok");
+          else if (result.kind === "error") push(result.message, "err");
+        }
+      } finally {
+        setUpdateChecking(false);
       }
     },
     [push],
@@ -737,6 +745,7 @@ export default function App() {
           onProxy={() => { setShowDrift(false); setShowStats(false); setShowProxy((v) => !v); }}
           driftActive={showDrift}
           onDrift={() => { setShowProxy(false); setShowStats(false); setShowDrift((v) => !v); }}
+          onSettings={() => setSettingsOpen(true)}
         />
 
         <main className="main">
@@ -801,7 +810,7 @@ export default function App() {
               onSort={setSort}
               onPalette={() => setPalette(true)}
               onDiagnostics={() => void diagnostics()}
-              onCheckUpdate={() => void runUpdateCheck(true)}
+              onCheckUpdate={() => { setSettingsOpen(true); void runUpdateCheck(true); }}
               onOpenInstall={() => void api.openInstallPage().catch((error) => push(errorText(error), "err"))}
               autoHealth={autoHealth}
               onToggleAutoHealth={() => void toggleAutoHealth()}
@@ -935,6 +944,29 @@ export default function App() {
           variant={modal.variant}
           onClose={() => setModal(null)}
           onReveal={() => void api.revealPath(modal.result.path)}
+        />
+      ) : null}
+
+      {settingsOpen ? (
+        <SettingsModal
+          info={info}
+          update={update}
+          checking={updateChecking}
+          updating={updating}
+          progress={progress}
+          theme={mode}
+          autoHealth={autoHealth}
+          autoModelSync={autoModelSync}
+          onTheme={setMode}
+          onCheckUpdate={() => void runUpdateCheck(true)}
+          onInstallUpdate={() => void startUpdate()}
+          onOpenInstall={() => void api.openInstallPage().catch((error) => push(errorText(error), "err"))}
+          onRevealDataDir={() => {
+            if (info) void api.revealPath(info.dataDir).catch((error) => push(errorText(error), "err"));
+          }}
+          onToggleAutoHealth={() => void toggleAutoHealth()}
+          onToggleAutoModelSync={() => void toggleAutoModelSync()}
+          onClose={() => setSettingsOpen(false)}
         />
       ) : null}
 

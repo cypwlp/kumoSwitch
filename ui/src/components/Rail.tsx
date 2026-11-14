@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import type { AppInfo, ToolView } from "../types";
 import type { ThemeMode } from "../theme";
 import { LangToggle } from "./LangToggle";
-import { AutoIcon, Logo, MoonIcon, SunIcon } from "./Icons";
+import { AutoIcon, Logo, MoonIcon, SettingsIcon, SunIcon } from "./Icons";
 
 interface RailProps {
   tools: ToolView[];
@@ -23,6 +23,7 @@ interface RailProps {
   onProxy: () => void;
   driftActive: boolean;
   onDrift: () => void;
+  onSettings: () => void;
 }
 
 const THEMES: { mode: ThemeMode; label: string; icon: ReactNode }[] = [
@@ -50,6 +51,7 @@ export function Rail({
   onProxy,
   driftActive,
   onDrift,
+  onSettings,
 }: RailProps) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const activeActionCount = Number(statsActive) + Number(proxyActive) + Number(driftActive);
@@ -155,6 +157,11 @@ export function Rail({
             </button>
           </div>
         </div>
+
+        <button className="ghost small rail-settings" onClick={onSettings} title="設定、版本與更新">
+          <SettingsIcon />
+          設定與更新
+        </button>
 
         <div className="rail-meta">
           <span className="ver muted" title={info?.dataDir ?? ""}>

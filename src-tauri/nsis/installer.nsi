@@ -217,10 +217,10 @@ Function KumoFinishShow
   FindWindow $0 "#32770" "" $HWNDPARENT
   ${If} $0 != 0
     ; MUI disables visual styles for checkbox text, but SetCtlColors still does
-    ; not recolor that text on some Windows builds. Keep the real checkboxes
-    ; as small square controls and draw accessible light labels on top.
+    ; not recolor that text on some Windows builds. The two controls have
+    ; stable IDs in this page; blank their labels and draw high-contrast labels.
     SetCtlColors $0 "EAF5EF" "0B1110"
-    System::Call 'user32::FindWindowEx(p r0, p 0, w "Button", w "$(kumoRunText)") p .r1'
+    GetDlgItem $1 $0 1203
     ${If} $1 != 0
       StrCpy $KumoRunCheckbox $1
       SendMessage $1 ${WM_SETTEXT} 0 "STR:"
@@ -231,7 +231,7 @@ Function KumoFinishShow
       System::Call 'user32::SetWindowPos(p $R3, p 0, i 0, i 0, i 0, i 0, i 3)'
       ${NSD_OnClick} $R3 ToggleFinishRun
     ${EndIf}
-    System::Call 'user32::FindWindowEx(p r0, p 0, w "Button", w "$(kumoDesktopText)") p .r2'
+    GetDlgItem $2 $0 1204
     ${If} $2 != 0
       StrCpy $KumoDesktopCheckbox $2
       SendMessage $2 ${WM_SETTEXT} 0 "STR:"

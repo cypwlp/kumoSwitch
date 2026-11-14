@@ -61,6 +61,19 @@ test("CC Switch managed providers are shown separately and can be imported", asy
   await expect(page.getByRole("heading", { name: "OpenRouter", exact: true })).toBeVisible();
 });
 
+test("settings exposes manual update and fallback installer", async ({ page }) => {
+  await page.getByRole("button", { name: "設定與更新" }).click();
+  const dialog = page.getByRole("dialog", { name: "設定與更新" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "版本與更新" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "檢查更新" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "開啟安裝／更新向導" })).toBeVisible();
+  await dialog.getByRole("button", { name: "檢查更新" }).click();
+  await expect(dialog.getByText("檢查失敗")).toBeVisible();
+  await dialog.locator(".sheet-foot").getByRole("button", { name: "關閉" }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
 test("provider keeps multiple models and can switch the active model", async ({ page }) => {
   await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
   const dialog = page.getByRole("dialog");
