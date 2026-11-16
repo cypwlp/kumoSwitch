@@ -80,7 +80,25 @@ pub struct Store {
     pub live_test_runs: Vec<u64>,
     #[serde(default)]
     pub proxy: crate::proxy::ProxyConfig,
+    /// Reusable, encrypted endpoint/key/model bundles shared across Harnesses.
+    #[serde(default)]
+    pub shared_profiles: Vec<crate::profiles::SharedProfile>,
+    /// Settings Guardian watcher and auto-repair policy.
+    #[serde(default)]
+    pub guardian: crate::guardian::GuardianPolicy,
+    /// Snapshot retention and scheduled-backup policy.
+    #[serde(default)]
+    pub backup: crate::backup::BackupPolicy,
+    /// stable or beta. The build channel is also reported by `app_info`.
+    #[serde(default = "default_channel")]
+    pub update_channel: String,
+    /// Capture local config snapshots immediately before installing an update.
+    #[serde(default = "default_true")]
+    pub pre_update_backup: bool,
 }
+
+fn default_channel() -> String { "stable".into() }
+fn default_true() -> bool { true }
 
 fn default_live_test_daily_limit() -> u32 {
     20
@@ -103,6 +121,11 @@ impl Default for Store {
             live_test_max_output_tokens: default_live_test_max_output_tokens(),
             live_test_runs: Vec::new(),
             proxy: crate::proxy::ProxyConfig::default(),
+            shared_profiles: Vec::new(),
+            guardian: crate::guardian::GuardianPolicy::default(),
+            backup: crate::backup::BackupPolicy::default(),
+            update_channel: default_channel(),
+            pre_update_backup: true,
         }
     }
 }
@@ -124,7 +147,24 @@ pub fn load() -> Store {
                     provider.api_key = key;
                 }
             }
+            for version in &mut provider.api_keys {
+                if version.secret.is_empty() && !version.secret_enc.is_empty() {
+                    if let Ok(secret) = crate::crypto::open(&version.secret_enc) {
+                        version.secret = secret;
+                    }
+                }
+            }
+            crate::keys::migrate_legacy(provider);
             crate::adapters::normalize_provider_models(provider);
+        }
+    }
+    for profile in &mut store.shared_profiles {
+        for version in &mut profile.keys {
+            if version.secret.is_empty() && !version.secret_enc.is_empty() {
+                if let Ok(secret) = crate::crypto::open(&version.secret_enc) {
+                    version.secret = secret;
+                }
+            }
         }
     }
     store
@@ -137,15 +177,30 @@ pub fn save(store: &Store) -> Result<(), String> {
     for list in outgoing.providers.values_mut() {
         for provider in list.iter_mut() {
             crate::adapters::normalize_provider_models(provider);
-            if provider.api_key.is_empty() {
-                continue;
-            }
             // An unreadable ciphertext must survive a metadata-only save.
             // Deleting the provider is the explicit way to remove its key.
-            let blob = crate::crypto::seal(&provider.api_key)
-                .map_err(|error| format!("無法加密 API Key：{error}"))?;
-            provider.api_key_enc = blob;
-            provider.api_key.zeroize();
+            if !provider.api_key.is_empty() {
+                let blob = crate::crypto::seal(&provider.api_key)
+                    .map_err(|error| format!("無法加密 API Key：{error}"))?;
+                provider.api_key_enc = blob;
+                provider.api_key.zeroize();
+            }
+            for version in &mut provider.api_keys {
+                if !version.secret.is_empty() {
+                    version.secret_enc = crate::crypto::seal(&version.secret)
+                        .map_err(|error| format!("無法加密 API Key 版本：{error}"))?;
+                    version.secret.zeroize();
+                }
+            }
+        }
+    }
+    for profile in &mut outgoing.shared_profiles {
+        for version in &mut profile.keys {
+            if !version.secret.is_empty() {
+                version.secret_enc = crate::crypto::seal(&version.secret)
+                    .map_err(|error| format!("無法加密共用 Profile 金鑰：{error}"))?;
+                version.secret.zeroize();
+            }
         }
     }
     let text = serde_json::to_string_pretty(&outgoing).map_err(|e| e.to_string())?;
@@ -164,7 +219,9 @@ pub fn needs_migration() -> bool {
     raw.providers
         .values()
         .flatten()
-        .any(|p| !p.api_key.is_empty() && p.api_key_enc.is_empty())
+        .any(|p| (!p.api_key.is_empty() && p.api_key_enc.is_empty())
+            || p.api_keys.iter().any(|key| !key.secret.is_empty() && key.secret_enc.is_empty()))
+        || raw.shared_profiles.iter().any(|profile| profile.keys.iter().any(|key| !key.secret.is_empty() && key.secret_enc.is_empty()))
 }
 
 pub fn migrate() -> Result<usize, String> {
@@ -209,13 +266,32 @@ pub fn upsert_with_key_action(
             if clear_key {
                 provider.api_key.zeroize();
                 provider.api_key_enc.zeroize();
-            } else if provider.api_key.is_empty() && !existing.api_key_enc.is_empty() {
-                provider.api_key = existing.api_key.clone();
-                provider.api_key_enc = existing.api_key_enc.clone();
+                for key in &mut provider.api_keys {
+                    key.status = "retired".into();
+                    key.secret.zeroize();
+                    key.secret_enc.zeroize();
+                }
+            } else {
+                if provider.api_key.is_empty() && !existing.api_key_enc.is_empty() {
+                    provider.api_key = existing.api_key.clone();
+                    provider.api_key_enc = existing.api_key_enc.clone();
+                }
+                if provider.api_keys.is_empty() {
+                    provider.api_keys = existing.api_keys.clone();
+                }
+                crate::keys::ensure_active_version(&mut provider);
+            }
+            if provider.profile_id.is_empty() {
+                provider.profile_id = existing.profile_id.clone();
             }
             *existing = provider.clone();
         }
-        None => entry.push(provider.clone()),
+        None => {
+            if !clear_key {
+                crate::keys::ensure_active_version(&mut provider);
+            }
+            entry.push(provider.clone());
+        }
     }
     save(&store)?;
     Ok(provider)

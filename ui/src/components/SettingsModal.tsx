@@ -1,6 +1,7 @@
 import type { AppInfo } from "../types";
 import type { ThemeMode } from "../theme";
 import type { UpdateCheck } from "../updater";
+import type { Density, TextScale, UiPreferences } from "../preferences";
 import { AutoIcon, MoonIcon, SunIcon } from "./Icons";
 import { Modal } from "./Modal";
 
@@ -13,7 +14,13 @@ interface SettingsModalProps {
   theme: ThemeMode;
   autoHealth: boolean;
   autoModelSync: boolean;
+  preferences: UiPreferences;
+  updateChannel: string;
+  preUpdateBackup: boolean;
   onTheme: (mode: ThemeMode) => void;
+  onPreferences: (patch: Partial<UiPreferences>) => void;
+  onUpdateChannel: (channel: string) => void;
+  onTogglePreUpdateBackup: () => void;
   onCheckUpdate: () => void;
   onInstallUpdate: () => void;
   onOpenInstall: () => void;
@@ -46,7 +53,13 @@ export function SettingsModal({
   theme,
   autoHealth,
   autoModelSync,
+  preferences,
+  updateChannel,
+  preUpdateBackup,
   onTheme,
+  onPreferences,
+  onUpdateChannel,
+  onTogglePreUpdateBackup,
   onCheckUpdate,
   onInstallUpdate,
   onOpenInstall,
@@ -92,6 +105,19 @@ export function SettingsModal({
             </div>
           ) : null}
           {update.kind === "error" ? <div className="note error">{update.message}</div> : null}
+          <div className="settings-update-preferences">
+            <label className="field inline-field">
+              <span>更新通道</span>
+              <select value={updateChannel} onChange={(event) => onUpdateChannel(event.target.value)}>
+                <option value="stable">Stable（自動更新）</option>
+                <option value="beta">Beta（向導手動下載）</option>
+              </select>
+            </label>
+            <button className={`settings-toggle compact${preUpdateBackup ? " on" : ""}`} onClick={onTogglePreUpdateBackup} aria-pressed={preUpdateBackup}>
+              <span><strong>更新前備份</strong><small>先為所有偵測到的 Harness 建立設定快照</small></span><i aria-hidden="true" />
+            </button>
+          </div>
+          <p className="settings-help">自動更新一律使用 Stable 的簽章清單；Beta 通道會開啟對應的預覽版安裝向導，避免預覽版誤推送給一般使用者。</p>
           <div className="settings-actions">
             <button className="primary" onClick={onCheckUpdate} disabled={checking || updating}>
               {checking ? "檢查中…" : "檢查更新"}
@@ -111,6 +137,11 @@ export function SettingsModal({
               <span>{progress}%</span>
             </div>
           ) : null}
+          <div className="settings-build-meta">
+            <span>Build channel <strong>{info?.releaseChannel ?? "stable"}</strong></span>
+            <span>Signing <strong>{info?.signing ?? "optional"}</strong></span>
+            {info?.buildCommit ? <span>Commit <code>{info.buildCommit.slice(0, 12)}</code></span> : null}
+          </div>
         </section>
 
         <section className="settings-card">
@@ -125,6 +156,44 @@ export function SettingsModal({
                 {label}
               </button>
             ))}
+          </div>
+        </section>
+
+        <section className="settings-card settings-accessibility-card">
+          <div className="settings-card-title">
+            <span className="kicker">Accessibility</span>
+            <h4>無障礙與閱讀</h4>
+          </div>
+          <button className={`settings-toggle${preferences.highContrast ? " on" : ""}`} onClick={() => onPreferences({ highContrast: !preferences.highContrast })} aria-pressed={preferences.highContrast}>
+            <span><strong>高對比模式</strong><small>提高文字、邊框與焦點環的對比</small></span>
+            <i aria-hidden="true" />
+          </button>
+          <button className={`settings-toggle${preferences.reduceMotion ? " on" : ""}`} onClick={() => onPreferences({ reduceMotion: !preferences.reduceMotion })} aria-pressed={preferences.reduceMotion}>
+            <span><strong>降低動態效果</strong><small>停用非必要的過場與脈動動畫</small></span>
+            <i aria-hidden="true" />
+          </button>
+          <div className="settings-choice-row">
+            <span>文字大小</span>
+            <div className="segmented compact" role="group" aria-label="文字大小">
+              {([
+                ["normal", "標準"],
+                ["large", "大"],
+                ["xlarge", "特大"],
+              ] as [TextScale, string][]).map(([value, label]) => (
+                <button key={value} className={preferences.textScale === value ? "on" : ""} aria-pressed={preferences.textScale === value} onClick={() => onPreferences({ textScale: value })}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-choice-row">
+            <span>介面密度</span>
+            <div className="segmented compact" role="group" aria-label="介面密度">
+              {([
+                ["comfortable", "舒適"],
+                ["compact", "緊湊"],
+              ] as [Density, string][]).map(([value, label]) => (
+                <button key={value} className={preferences.density === value ? "on" : ""} aria-pressed={preferences.density === value} onClick={() => onPreferences({ density: value })}>{label}</button>
+              ))}
+            </div>
           </div>
         </section>
 

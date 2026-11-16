@@ -36,6 +36,8 @@ jobs:
 
       - run: npm ci
       - run: npm ci --prefix ui
+      - name: Verify version consistency
+        run: node .github/scripts/verify-version.mjs
       - run: npm run build --prefix ui
       - name: Rust tests
         shell: pwsh

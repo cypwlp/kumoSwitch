@@ -32,8 +32,13 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **自動模型探索與同步** —— 從供應商的 `/models` 讀取可用模型，預覽新增、已存在與本次未回報項目；可選擇性合併名稱、context window 與能力資訊，且永不自動刪除既有模型。
 - **模型同步 v3** —— 顯示欄位級差異並可逐欄更新；每個供應商可設定獨立同步間隔與隨機延遲，失敗採指數式退避，成功後重新排程。既有模型清單同時作為離線快取，未回報模型只會標記、永不自動刪除。
 - **快速模型切換** —— 從供應商卡片、Ctrl+K、系統托盤直接切換模型；常用模型優先顯示，並可一鍵切回上一個模型。
-- **設定漂移中心** —— 一次比對全部 Harness 的實際設定與 kumoSwitch 紀錄，辨識外部修改、未知供應商、金鑰與模型漂移；待處理項目優先排序，支援狀態篩選、批次重新套用與批次匯入。
+- **設定守護中心 2.0** —— 背景以檔案指紋持續比對所有 Harness 的實際設定與 kumoSwitch 紀錄，辨識外部修改、未知供應商、金鑰與模型漂移；保留可歸因的變更時間線，支援批次操作與可選的自動修復。
+- **跨 Harness 共用 Profile** —— 一份加密的 endpoint、金鑰與模型組合可同步到多個 Harness，各自保留相容的 protocol、config id 與模型映射。
+- **模型能力與相容性矩陣** —— 檢查 context window、tool calling、reasoning、vision 與 protocol；明確不相容的組合會在套用前阻擋，並可用模型 metadata 明確覆寫。
+- **API Key 生命週期** —— 每個供應商可管理多把加密輪替金鑰，支援到期日、低成本的 `/models` 測試、切換、刪除與本機稽核。
 - **模型感知代理** —— 每個代理目標可設定允許模型與模型映射，讓相同請求跨供應商映射到各自的實際模型 ID。
+- **代理觀測與告警** —— 顯示成功率、TTFB、換手、請求決策、常見失敗原因與 429／連續失敗／慢請求／熔斷告警，並可匯出不含 prompt／金鑰的診斷。
+- **備份／遷移中心** —— 集中查看所有 Harness 的版本時間線、checksum、容量與排程快照；還原前自動建立安全快照，更新前也可選擇先備份。
 - **一鍵導入與衝突預覽** —— 掃描所有 Harness 後先顯示新增／衝突項目，可保留本機、用設定檔覆蓋、合併模型或建立副本。
 - **連線測試與模型實測** —— `/models` 檢查不會產生推論費用；真實實測需明確確認，支援多模型批次、近 24 小時配額、硬性輸出 token 上限與 provider pricing metadata 費用粗估。
 - **加密清單備份** —— 換機時用 Argon2id＋AES-256-GCM 加密的 `.kumoswitch` 檔搬移供應商與金鑰；仍可匯入舊版明文 JSON。
@@ -71,7 +76,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 
 ## 下載
 
-使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.17.0) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
+使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.18.0) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
 
 - Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `kumoSwitch-portable.exe`
 - macOS Apple Silicon／Intel：`.dmg`
@@ -101,10 +106,14 @@ src-tauri/src/
   adapters.rs    每個工具的宣告式步驟表（檔案 / 格式 / 鍵路徑 / 值）
   jsonc.rs       保留格式的 JSON / JSONC 定點編輯器
   yamlpatch.rs   行導向的 YAML 編輯器
-  backup.rs      時間戳快照與還原
+  backup.rs      時間戳快照、排程、集中版本樹與安全還原
   secure_fs.rs   原子寫入與私有檔案權限
   net.rs         連線與逐模型 /models 檢查
-  proxy.rs       本機反向代理、智慧路由、熔斷與觀測
+  compat.rs      Harness 模型能力與相容性矩陣
+  keys.rs        API Key 輪替、到期與稽核
+  profiles.rs    跨 Harness 共用供應商 Profile
+  guardian.rs    背景設定守護、來源歸因、時間線與自動修復
+  proxy.rs       本機反向代理、智慧路由、熔斷、告警與觀測
   export_crypto.rs  Argon2id / AES-256-GCM 加密備份
   audit.rs       敏感操作稽核紀錄
   store.rs       供應商清單、模型選擇與排序（本機）
@@ -125,7 +134,7 @@ cd src-tauri
 cargo test
 ```
 
-Windows 90、macOS／Linux 另含平台金鑰與檔案權限測試；另有 20 個 Playwright Chromium UI E2E，以及可在 Windows 建置產物上執行的真實 Tauri WebView E2E。主要涵蓋：
+Windows 101、macOS／Linux 另含平台金鑰與檔案權限測試；另有 37 個 Playwright Chromium UI E2E，以及可在 Windows 建置產物上執行的真實 Tauri WebView E2E。主要涵蓋：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。
@@ -138,6 +147,13 @@ Windows 90、macOS／Linux 另含平台金鑰與檔案權限測試；另有 20 �
 
 MIT。本專案與 OpenAI、Anthropic、Google、xAI、Z.ai、Nous Research、Cloudflare 等公司無關；文中第三方產品名稱與商標屬各自所有者。安全問題請依 [SECURITY.md](SECURITY.md) 私下回報。
 
+
+## 發行通道
+
+- **Stable**：`vX.Y.Z` tag，產生 `latest.json`，不標記 prerelease。
+- **Beta**：`vX.Y.Z-beta.N` tag，產生 `latest-beta.json` 並標記 prerelease；App 的設定頁可切換通道並開啟對應安裝向導。
+- Release workflow 會先驗證三平台產物、updater 簽章、SHA-256、必需平台與 manifest，再公開 draft release；同時產生 GitHub build provenance attestation。
+- 更新前備份預設開啟；安裝失敗或需要回復時，可從「備份／遷移中心」還原最近的更新前快照。
 
 ## 簽章（目前未啟用）
 

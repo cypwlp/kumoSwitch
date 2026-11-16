@@ -8,7 +8,7 @@
  * stay Chinese in the English UI.
  */
 
-export type Lang = "zh" | "en";
+export type Lang = "zh" | "zh-Hans" | "en";
 
 const KEY = "kumoswitch.lang";
 const LEGACY_KEYS = ["switchtower.lang", "switchyard.lang"];
@@ -130,7 +130,6 @@ const DICT: Record<string, string> = {
   "篩選供應商": "Filter providers",
   "篩選工具": "Filter tools",
   "篩選工具…": "Filter tools…",
-  "編輯": "Edit",
   "編輯供應商": "Edit provider",
   "聚焦搜尋 ·": "Focus search ·",
   "複製路徑": "Copy path",
@@ -147,7 +146,6 @@ const DICT: Record<string, string> = {
   "連線失敗": "Connection failed",
   "選填": "Optional",
   "選擇左側的工具開始": "Pick a tool on the left",
-  "還原": "Restore",
   "還原備份": "Restore backup",
   "還沒有任何供應商": "No providers yet",
   "還沒有供應商": "No providers yet",
@@ -261,7 +259,6 @@ const DICT: Record<string, string> = {
   "目前套用": "Currently applied",
   "尚未選擇供應商": "No provider selected",
   "尚未設定 Base URL": "No base URL configured",
-  "預設模型": "Default model",
   "未指定，沿用 Harness 目前模型": "Not specified; inherits the Harness model",
   "查看模型與連線設定": "View model and connection settings",
   "重新套用": "Reapply",
@@ -334,7 +331,6 @@ const DICT: Record<string, string> = {
   "把 Harness 掛載到代理": "Attach a Harness to the proxy",
   "選擇 Harness…": "Choose a Harness…",
   "寫入代理設定": "Write proxy config",
-  "即時觀測": "Live observability",
   "成功率": "Success rate",
   "平均 TTFB": "Average TTFB",
   "換手": "Failovers",
@@ -381,6 +377,97 @@ const DICT: Record<string, string> = {
   "Codex 目前只把 CC Switch 的本地代理位址寫進 config.toml，所以 kumoSwitch 會看到 custom／127.0.0.1，而不是底層供應商。下面列出的才是 CC Switch 資料庫裡實際被路由的供應商。": "Codex currently writes only the CC Switch local proxy address into config.toml, so kumoSwitch sees custom / 127.0.0.1 instead of the upstream providers. The entries below are the providers actually routed by CC Switch.",
   "下面是 CC Switch 自己資料庫中的供應商，和 Codex 實際 config.toml 是兩份不同資料。": "These providers come from the CC Switch database and are separate from the real Codex config.toml.",
   "CC Switch 資料庫中目前沒有這個 App 的供應商。": "CC Switch has no providers for this app yet.",
+  "共用供應商 Profile": "Shared provider profiles",
+  "共用 Profile": "Shared profiles",
+  "備份中心": "Backup center",
+  "守護": "Guardian",
+  "Cross-Harness library": "Cross-Harness library",
+  "新增 Profile": "Add profile",
+  "重新整理": "Refresh",
+  "從現有供應商建立": "Create from an existing provider",
+  "沿用其加密金鑰與模型目錄，不必重新輸入。": "Reuse its encrypted key and model catalogue without retyping them.",
+  "建立 Profile": "Create profile",
+  "同步全部": "Sync all",
+  "編輯": "Edit",
+  "尚未選擇要同步的 Harness": "No Harnesses selected yet",
+  "編輯共用 Profile": "Edit shared profile",
+  "新增共用 Profile": "Add shared profile",
+  "預設模型": "Default model",
+  "標籤": "Label",
+  "API Key（留空保留現有）": "API Key (leave blank to keep current)",
+  "清除 Profile 金鑰": "Clear profile key",
+  "取消清除金鑰": "Cancel key removal",
+  "要同步到哪些 Harness？": "Which Harnesses should receive this profile?",
+  "儲存 Profile": "Save profile",
+  "刪除共用 Profile？": "Delete shared profile?",
+  "確認刪除": "Confirm delete",
+  "設定守護中心": "Settings Guardian",
+  "背景守護中": "Watching in background",
+  "背景監看": "Background watch",
+  "自動修復": "Auto-repair",
+  "變更通知": "Change notifications",
+  "掃描間隔": "Scan interval",
+  "變更時間線": "Change timeline",
+  "清空": "Clear",
+  "外部工具": "External tool",
+  "來源不明": "Unknown source",
+  "備份／遷移中心": "Backup & migration center",
+  "匯入遷移包": "Import migration pack",
+  "建立加密遷移包": "Create encrypted migration pack",
+  "快照": "Snapshots",
+  "涵蓋檔案": "Files covered",
+  "本機容量": "Local size",
+  "最新／最舊": "Newest / oldest",
+  "排程與保留": "Schedule & retention",
+  "啟用排程快照": "Enable scheduled snapshots",
+  "只備份設定檔，不備份對話紀錄": "Config files only; no conversation logs",
+  "間隔（小時）": "Interval (hours)",
+  "每個 Harness 保留": "Keep per Harness",
+  "立即建立快照": "Create snapshot now",
+  "手動快照": "Manual snapshot",
+  "排程快照": "Scheduled snapshot",
+  "更新前快照": "Pre-update snapshot",
+  "還原前安全快照": "Pre-restore safety snapshot",
+  "套用供應商前": "Before provider apply",
+  "還原": "Restore",
+  "還原這份設定快照？": "Restore this snapshot?",
+  "確認還原": "Confirm restore",
+  "API Key 生命週期": "API key lifecycle",
+  "新增／輪替金鑰": "Add / rotate key",
+  "新 API Key": "New API Key",
+  "加密保存並切換": "Encrypt, save and activate",
+  "待命": "Standby",
+  "已過期": "Expired",
+  "切換使用": "Activate",
+  "隔離原則": "Isolation policy",
+  "Harness 相容性矩陣": "Harness compatibility matrix",
+  "相容": "Compatible",
+  "提醒": "Warning",
+  "不相容": "Incompatible",
+  "即時觀測": "Live observability",
+  "作用中告警": "Active alerts",
+  "告警規則與通知": "Alert rules & notifications",
+  "啟用告警": "Enable alerts",
+  "桌面內通知": "In-app notifications",
+  "至少請求數": "Minimum requests",
+  "成功率低於 %": "Success rate below %",
+  "慢 TTFB（ms）": "Slow TTFB (ms)",
+  "重複通知冷卻（秒）": "Notification cooldown (seconds)",
+  "常見失敗原因": "Common failure reasons",
+  "匯出代理診斷": "Export proxy diagnostics",
+  "無障礙與閱讀": "Accessibility & reading",
+  "高對比模式": "High contrast",
+  "降低動態效果": "Reduce motion",
+  "文字大小": "Text size",
+  "介面密度": "Interface density",
+  "標準": "Normal",
+  "大": "Large",
+  "特大": "Extra large",
+  "舒適": "Comfortable",
+  "緊湊": "Compact",
+  "更新通道": "Update channel",
+  "更新前備份": "Pre-update backup",
+  "立即建立設定快照": "Create a config snapshot now",
 };
 
 interface Rule {
@@ -447,27 +534,98 @@ const RULES: Rule[] = [
 
 const ATTRS = ["placeholder", "title", "aria-label", "alt"];
 
+const HANS_PHRASES: [string, string][] = [
+  ["設定與更新", "设置与更新"], ["供應商", "供应商"], ["設定", "设置"], ["連線", "连接"],
+  ["檢查", "检查"], ["測試", "测试"], ["備份", "备份"], ["還原", "还原"], ["紀錄", "记录"],
+  ["變更", "变更"], ["金鑰", "密钥"], ["帳號", "账号"], ["套用", "应用"], ["預覽", "预览"],
+  ["匯入", "导入"], ["匯出", "导出"], ["進階", "高级"], ["開關", "开关"], ["啟用", "启用"],
+  ["關閉", "关闭"], ["自動", "自动"], ["偵測", "侦测"], ["錯誤", "错误"], ["檔案", "文件"],
+  ["路徑", "路径"], ["資料", "数据"], ["選擇", "选择"], ["新增", "新增"], ["刪除", "删除"],
+  ["編輯", "编辑"], ["保存", "保存"], ["儲存", "保存"], ["載入", "加载"], ["讀取", "读取"],
+  ["寫入", "写入"], ["執行", "执行"], ["啟動", "启动"], ["停止", "停止"], ["逾時", "超时"],
+  ["延遲", "延迟"], ["成功", "成功"], ["失敗", "失败"], ["目前", "当前"], ["最近", "最近"],
+  ["狀態", "状态"], ["服務", "服务"], ["應用", "应用"], ["環境", "环境"], ["系統", "系统"],
+  ["隱藏", "隐藏"], ["顯示", "显示"], ["複製", "复制"], ["貼上", "粘贴"], ["搜尋", "搜索"],
+  ["篩選", "筛选"], ["排序", "排序"], ["模型", "模型"], ["協議", "协议"], ["類型", "类型"],
+  ["名稱", "名称"], ["備註", "备注"], ["版本", "版本"], ["更新", "更新"], ["下載", "下载"],
+  ["安裝", "安装"], ["解除安裝", "卸载"], ["還原前", "还原前"], ["更新前", "更新前"],
+  ["設定檔", "配置文件"], ["資料夾", "文件夹"], ["時間", "时间"], ["分鐘", "分钟"],
+  ["小時", "小时"], ["個月", "个月"], ["無障礙", "无障碍"], ["文字大小", "文字大小"],
+  ["介面密度", "界面密度"], ["高對比", "高对比"], ["動態效果", "动态效果"],
+  ["開發", "开发"], ["發行", "发布"], ["簽章", "签名"], ["驗證", "验证"], ["來源", "来源"],
+  ["文件", "文件"], ["工作", "工作"], ["安全", "安全"], ["本機", "本机"], ["平台", "平台"],
+  ["擴充", "扩展"], ["觀測", "观测"], ["告警", "告警"], ["路由", "路由"], ["代理", "代理"],
+  ["鏡像", "镜像"], ["相容", "兼容"], ["能力", "能力"], ["矩陣", "矩阵"], ["生命週期", "生命周期"],
+  ["輪替", "轮换"], ["稽核", "审计"], ["隔離", "隔离"], ["遷移", "迁移"], ["排程", "计划"],
+  ["保留", "保留"], ["權限", "权限"], ["密碼", "密码"], ["加密", "加密"], ["解密", "解密"],
+  ["歷史", "历史"], ["測試與變更", "测试与变更"], ["設定守護", "设置守护"],
+];
+
+const HANS_CHARS: [string, string][] = [
+  ["們","们"],["個","个"],["這","这"],["麼","么"],["為","为"],["與","与"],["來","来"],
+  ["時","时"],["會","会"],["說","说"],["對","对"],["於","于"],["過","过"],["還","还"],
+  ["進","进"],["實","实"],["現","现"],["開","开"],["關","关"],["發","发"],["現","现"],
+  ["動","动"],["態","态"],["點","点"],["擊","击"],["檢","检"],["測","测"],["試","试"],
+  ["錯","错"],["誤","误"],["讀","读"],["寫","写"],["檔","档"],["案","案"],["資","资"],
+  ["料","料"],["錄","录"],["變","变"],["更","更"],["鑰","钥"],["帳","账"],["號","号"],
+  ["預","预"],["覽","览"],["匯","汇"],["導","导"],["級","级"],["啟","启"],["閉","闭"],
+  ["認","认"],["證","证"],["確","确"],["佈","布"],["載","载"],["執","执"],["啟","启"],
+  ["週","周"],["際","际"],["離","离"],["遷","迁"],["權","权"],["鏈","链"],["結","结"],
+  ["協","协"],["議","议"],["類","类"],["別","别"],["稱","称"],["註","注"],["體","体"],
+  ["數","数"],["據","据"],["夾","夹"],["鐘","钟"],["無","无"],["礙","碍"],["對","对"],
+  ["比","比"],["籤","签"],["驗","验"],["擴","扩"],["觀","观"],["測","测"],["鏡","镜"],
+  ["像","像"],["容","容"],["據","据"],["輪","轮"],["替","替"],["稽","稽"],["隔","隔"],
+  ["離","离"],["隨","随"],["機","机"],["壓","压"],["縮","缩"],["風","风"],["險","险"],
+  ["穩","稳"],["優","优"],["質","质"],["廠","厂"],["商","商"],["網","网"],["頁","页"],
+  ["線","线"],["程","程"],["戶","户"],["從","从"],["將","将"],["並","并"],["檔","档"],
+  ["選","选"],["擇","择"],["單","单"],["雙","双"],["鍵","键"],["螢","荧"],["幕","幕"],
+  ["寬","宽"],["緊","紧"],["湊","凑"],["標","标"],["題","题"],["顯","显"],["示","示"],
+  ["隱","隐"],["藏","藏"],["複","复"],["貼","贴"],["搜","搜"],["尋","寻"],["篩","筛"],
+  ["穩","稳"],["總","总"],["計","计"],["統","统"],["圖","图"],["錶","表"],["勢","势"],
+  ["趨","趋"],["異","异"],["常","常"],["環","环"],["節","节"],["點","点"],["將","将"],
+  ["會","会"],["儲","储"],["僅","仅"],["帶","带"],["們","们"],["產","产"],["專","专"],
+  ["業","业"],["應該","应该"],["應","应"],["該","该"],["讓","让"],["這","这"],["邊","边"],
+  ["裡","里"],["後","后"],["前","前"],["間","间"],["現","现"],["實","实"],["際","际"],
+  ["運","运"],["轉","转"],["換","换"],["備","备"],["份","份"],["還","还"],["原","原"],
+  ["舊","旧"],["新","新"],["舊","旧"],["刪","删"],["除","除"],["確","确"],["認","认"],
+  ["頁","页"],["籤","签"],["證","证"],["書","书"],["碼","码"],["驗","验"],["證","证"],
+  ["據","据"],["庫","库"],["檔","档"],["檢","检"],["查","查"],["讀","读"],["寫","写"],
+  ["錯","错"],["誤","误"],["訊","讯"],["息","息"],["警","警"],["告","告"],["監","监"],
+  ["聽","听"],["埠","端口"],["網","网"],["址","址"],["權","权"],["限","限"],["製","制"],
+  ["造","造"],["應","应"],["用","用"],["發","发"],["佈","布"],["版","版"],["號","号"],
+];
+
+function simplify(input: string): string {
+  let text = input;
+  for (const [from, to] of HANS_PHRASES) text = text.split(from).join(to);
+  for (const [from, to] of HANS_CHARS) text = text.split(from).join(to);
+  return text;
+}
+
 export function readLang(): Lang {
   const hash = window.location.hash.toLowerCase();
   if (hash.includes("lang=en") || hash.split(",").includes("en")) return "en";
+  if (hash.includes("lang=zh-hans") || hash.includes("lang=zh-cn") || hash.split(",").includes("zh-hans")) return "zh-Hans";
   if (hash.includes("lang=zh") || hash.split(",").includes("zh")) return "zh";
   try {
     let stored = window.localStorage.getItem(KEY);
     if (stored === null) {
       for (const legacyKey of LEGACY_KEYS) {
         const legacy = window.localStorage.getItem(legacyKey);
-        if (legacy === "zh" || legacy === "en") {
+        if (legacy === "zh" || legacy === "zh-Hans" || legacy === "en") {
           window.localStorage.setItem(KEY, legacy);
           stored = legacy;
           break;
         }
       }
     }
-    if (stored === "zh" || stored === "en") return stored;
+    if (stored === "zh" || stored === "zh-Hans" || stored === "en") return stored;
   } catch {
     /* ignore */
   }
-  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const language = navigator.language.toLowerCase();
+  if (!language.startsWith("zh")) return "en";
+  return language.includes("cn") || language.includes("hans") || language.includes("sg") ? "zh-Hans" : "zh";
 }
 
 export function saveLang(lang: Lang) {
@@ -487,7 +645,6 @@ function translate(value: string): string | null {
     const m = trimmed.match(rule.re);
     if (m) return value.replace(trimmed, rule.out(m));
   }
-  // Text nodes split by <kbd> keep a separator; translate the core phrase.
   if (trimmed.endsWith(" ·")) {
     const core = translate(trimmed.slice(0, -2));
     if (core) return value.replace(trimmed, `${core} ·`);
@@ -496,7 +653,6 @@ function translate(value: string): string | null {
     const core = translate(trimmed.slice(2));
     if (core) return value.replace(trimmed, `· ${core}`);
   }
-  // "3 個供應商" style suffixes used inside badges.
   const badge = trimmed.match(/^(\d+) (個供應商|個工具)$/);
   if (badge) {
     const unit = badge[2] === "個工具" ? "tools" : "providers";
@@ -506,15 +662,54 @@ function translate(value: string): string | null {
 }
 
 const SKIP = new Set(["SCRIPT", "STYLE", "TEXTAREA", "CODE", "PRE"]);
+const originalText = new WeakMap<Text, string>();
+const renderedText = new WeakMap<Text, string>();
+const originalAttrs = new WeakMap<Element, Map<string, string>>();
+
+function translateFor(lang: Lang, value: string): string | null {
+  if (lang === "zh") return null;
+  if (lang === "en") return translate(value);
+  const simplified = simplify(value);
+  return simplified === value ? null : simplified;
+}
+
+function rememberAttr(el: Element, attr: string) {
+  let map = originalAttrs.get(el);
+  if (!map) {
+    map = new Map();
+    originalAttrs.set(el, map);
+  }
+  if (!map.has(attr)) map.set(attr, el.getAttribute(attr) ?? "");
+}
+
+function restore(root: Node) {
+  if (root.nodeType === Node.TEXT_NODE) {
+    const node = root as Text;
+    const original = originalText.get(node);
+    if (original != null && node.nodeValue !== original) node.nodeValue = original;
+    return;
+  }
+  if (root.nodeType !== Node.ELEMENT_NODE) return;
+  const el = root as HTMLElement;
+  const attrs = originalAttrs.get(el);
+  if (attrs) {
+    for (const [attr, value] of attrs) el.setAttribute(attr, value);
+  }
+  el.childNodes.forEach(restore);
+}
 
 function walk(root: Node, lang: Lang) {
-  if (lang === "zh") return;
   if (root.nodeType === Node.TEXT_NODE) {
-    const parent = root.parentElement;
+    const node = root as Text;
+    const parent = node.parentElement;
     if (parent && SKIP.has(parent.tagName)) return;
-    const text = root.nodeValue ?? "";
-    const next = translate(text);
-    if (next && next !== text) root.nodeValue = next;
+    const text = node.nodeValue ?? "";
+    if (!originalText.has(node)) originalText.set(node, text);
+    const source = originalText.get(node) ?? text;
+    const next = translateFor(lang, source);
+    const rendered = next ?? source;
+    renderedText.set(node, rendered);
+    if (node.nodeValue !== rendered) node.nodeValue = rendered;
     return;
   }
   if (root.nodeType !== Node.ELEMENT_NODE) return;
@@ -523,32 +718,41 @@ function walk(root: Node, lang: Lang) {
   for (const attr of ATTRS) {
     const value = el.getAttribute(attr);
     if (!value) continue;
-    const next = translate(value);
+    rememberAttr(el, attr);
+    const source = originalAttrs.get(el)?.get(attr) ?? value;
+    const next = translateFor(lang, source);
     if (next && next !== value) el.setAttribute(attr, next);
   }
   el.childNodes.forEach((child) => walk(child, lang));
 }
 
 let observer: MutationObserver | null = null;
+let currentLang: Lang = "zh";
 
 export function applyLang(lang: Lang) {
-  document.documentElement.lang = lang === "zh" ? "zh-Hant" : "en";
+  currentLang = lang;
+  document.documentElement.lang = lang === "en" ? "en" : lang === "zh-Hans" ? "zh-Hans" : "zh-Hant";
   if (observer) {
     observer.disconnect();
     observer = null;
   }
+  restore(document.body);
   if (lang === "zh") return;
   walk(document.body, lang);
   observer = new MutationObserver((records) => {
     for (const record of records) {
       if (record.type === "characterData") {
-        const text = record.target.nodeValue ?? "";
-        if (text) {
-          const next = translate(text);
-          if (next && next !== text) record.target.nodeValue = next;
-        }
+        const node = record.target as Text;
+        const current = node.nodeValue ?? "";
+        const previousRender = renderedText.get(node);
+        if (previousRender != null && current === previousRender) continue;
+        originalText.set(node, current);
+        const next = translateFor(currentLang, current);
+        const rendered = next ?? current;
+        renderedText.set(node, rendered);
+        if (rendered !== current) node.nodeValue = rendered;
       } else {
-        record.addedNodes.forEach((node) => walk(node, lang));
+        record.addedNodes.forEach((node) => walk(node, currentLang));
       }
     }
   });

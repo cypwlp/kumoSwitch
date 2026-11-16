@@ -4,9 +4,13 @@ mod adapters;
 mod audit;
 mod backup;
 mod ccswitch;
+mod compat;
 mod crypto;
 mod export_crypto;
+mod guardian;
 mod history;
+mod keys;
+mod profiles;
 #[cfg(test)]
 mod e2e_tests;
 mod jsonc;
@@ -20,6 +24,7 @@ mod tray;
 mod yamlpatch;
 
 use adapters::{CurrentState, Fmt, ModelCheck, ModelProfile, Provider, ToolSpec, TOOLS};
+use tauri::Emitter as _;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
@@ -150,6 +155,8 @@ struct ProviderView {
     models: Vec<ModelProfile>,
     kind: String,
     note: String,
+    profile_id: String,
+    api_keys: Vec<keys::ApiKeyView>,
     last_used: u64,
     model_synced_at: u64,
     previous_model: String,
@@ -166,6 +173,7 @@ impl From<Provider> for ProviderView {
         adapters::normalize_provider_models(&mut provider);
         let has_api_key = !provider.api_key.is_empty();
         let api_key_masked = mask_key(&provider.api_key);
+        let api_keys = keys::views(&provider);
         ProviderView {
             id: provider.id,
             config_id: provider.config_id,
@@ -178,6 +186,8 @@ impl From<Provider> for ProviderView {
             models: provider.models,
             kind: provider.kind,
             note: provider.note,
+            profile_id: provider.profile_id,
+            api_keys,
             last_used: provider.last_used,
             model_synced_at: provider.model_synced_at,
             previous_model: provider.previous_model,
@@ -214,6 +224,8 @@ struct ProviderInput {
     #[serde(default)]
     note: String,
     #[serde(default)]
+    profile_id: String,
+    #[serde(default)]
     last_used: u64,
     #[serde(default)]
     model_synced_at: u64,
@@ -246,6 +258,8 @@ impl From<ProviderInput> for Provider {
             models: provider.models,
             kind: provider.kind,
             note: provider.note,
+            profile_id: provider.profile_id,
+            api_keys: Vec::new(),
             last_used: provider.last_used,
             model_synced_at: provider.model_synced_at,
             previous_model: provider.previous_model,
@@ -275,12 +289,13 @@ fn redaction_keys(provider: &Provider) -> Vec<String> {
         .providers
         .values()
         .flatten()
-        .map(|item| item.api_key.clone())
+        .flat_map(|item| std::iter::once(item.api_key.clone()).chain(item.api_keys.iter().map(|key| key.secret.clone())))
         .filter(|key| key.chars().count() >= 4)
         .collect();
     if provider.api_key.chars().count() >= 4 {
         keys.push(provider.api_key.clone());
     }
+    keys.extend(provider.api_keys.iter().map(|key| key.secret.clone()).filter(|key| key.chars().count() >= 4));
     keys.sort();
     keys.dedup();
     keys.sort_by(|left, right| right.len().cmp(&left.len()));
@@ -307,6 +322,26 @@ struct ImportResult {
 struct CcSwitchImportResult {
     provider: ProviderView,
     already_imported: bool,
+}
+
+#[derive(Serialize)]
+struct CcSwitchBatchResult {
+    imported: usize,
+    skipped: usize,
+    providers: Vec<ProviderView>,
+}
+
+#[derive(Serialize)]
+struct CcSwitchRouteResult {
+    imported: usize,
+    stack: Vec<String>,
+    providers: Vec<ProviderView>,
+}
+
+#[derive(Serialize)]
+struct PreUpdateBackupResult {
+    snapshots: usize,
+    tools: usize,
 }
 
 #[derive(Serialize)]
@@ -971,7 +1006,49 @@ fn build_warnings(spec: &ToolSpec, provider: &Provider) -> Vec<String> {
     if takeover_state(spec.id) {
         warnings.push("cc-switch 正以代理模式接管此工具，套用後可能被它覆蓋。".into());
     }
+    warnings.extend(compat::preview_messages(spec.id, provider));
     warnings
+}
+
+#[tauri::command]
+fn model_compatibility(tool: String, provider_id: String) -> Result<Vec<compat::ModelCompatibility>, String> {
+    let (_, provider) = load_provider(&tool, &provider_id)?;
+    Ok(compat::evaluate_provider(&tool, &provider))
+}
+
+#[tauri::command]
+fn api_key_add(tool: String, input: keys::ApiKeyInput) -> Result<keys::ApiKeyView, String> {
+    let view = keys::add(&tool, input)?;
+    audit::record("api_key.add", format!("{tool}:{}:{}", view.id, view.fingerprint));
+    Ok(view)
+}
+
+#[tauri::command]
+fn api_key_update(tool: String, input: keys::ApiKeyInput) -> Result<keys::ApiKeyView, String> {
+    let view = keys::update(&tool, input)?;
+    audit::record("api_key.update", format!("{tool}:{}", view.id));
+    Ok(view)
+}
+
+#[tauri::command]
+fn api_key_activate(tool: String, provider_id: String, key_id: String) -> Result<keys::ApiKeyView, String> {
+    let view = keys::activate(&tool, &provider_id, &key_id)?;
+    audit::record("api_key.activate", format!("{tool}:{provider_id}:{key_id}"));
+    Ok(view)
+}
+
+#[tauri::command]
+fn api_key_remove(tool: String, provider_id: String, key_id: String) -> Result<(), String> {
+    keys::remove(&tool, &provider_id, &key_id)?;
+    audit::record("api_key.remove", format!("{tool}:{provider_id}:{key_id}"));
+    Ok(())
+}
+
+#[tauri::command]
+fn api_key_test(tool: String, provider_id: String, key_id: String) -> Result<keys::KeyTestResult, String> {
+    let result = keys::test(&tool, &provider_id, &key_id)?;
+    audit::record("api_key.test", format!("{tool}:{provider_id}:{key_id}:{}:{}ms", result.result.status, result.result.ms));
+    Ok(result)
 }
 
 #[tauri::command]
@@ -994,6 +1071,9 @@ fn write_atomic(path: &std::path::Path, text: &str) -> std::io::Result<()> {
 
 fn apply_core(tool: &str, provider_id: &str) -> Result<ApplyResult, String> {
     let (spec, provider) = load_provider(tool, provider_id)?;
+    if compat::has_blocking(tool, &provider) {
+        return Err("模型相容性檢查未通過；請修正能力或協議，或在模型 metadata 加入 compatibility_override: true 後再套用".into());
+    }
     let changes = adapters::plan(spec, &provider)?;
     let pending: Vec<_> = changes.iter().filter(|c| c.before != c.after).collect();
 
@@ -1008,8 +1088,9 @@ fn apply_core(tool: &str, provider_id: &str) -> Result<ApplyResult, String> {
     }
 
     let files: Vec<_> = pending.iter().map(|c| (c.path.clone(), c.file.clone())).collect();
-    let (backup_id, _) = backup::snapshot(&tool, &files)?;
+    let (backup_id, _) = backup::snapshot_with_reason(&tool, &files, "provider-apply")?;
 
+    guardian::mark_self_write();
     let mut written = Vec::new();
     for change in &pending {
         if let Some(parent) = change.path.parent() {
@@ -1022,6 +1103,7 @@ fn apply_core(tool: &str, provider_id: &str) -> Result<ApplyResult, String> {
     }
 
     store::touch(tool, provider_id);
+    guardian::mark_self_write();
     Ok(ApplyResult {
         changed: true,
         backup_id: Some(backup_id),
@@ -1216,8 +1298,12 @@ fn exportable_store() -> Result<(store::Store, usize), String> {
         .providers
         .values()
         .flatten()
-        .filter(|provider| !provider.api_key_enc.is_empty() && provider.api_key.is_empty())
-        .count();
+        .filter(|provider| {
+            (!provider.api_key_enc.is_empty() && provider.api_key.is_empty())
+                || provider.api_keys.iter().any(|key| !key.secret_enc.is_empty() && key.secret.is_empty())
+        })
+        .count()
+        + data.shared_profiles.iter().filter(|profile| profile.keys.iter().any(|key| !key.secret_enc.is_empty() && key.secret.is_empty())).count();
     if missing > 0 {
         return Err(format!(
             "有 {missing} 個 API Key 無法從系統安全儲存解密，為避免備份缺漏，已取消匯出"
@@ -1228,6 +1314,10 @@ fn exportable_store() -> Result<(store::Store, usize), String> {
         // The encrypted archive carries the decrypted value; keeping ciphertext
         // here would only tie the backup to the current machine.
         provider.api_key_enc.clear();
+        for key in &mut provider.api_keys { key.secret_enc.clear(); }
+    }
+    for profile in &mut data.shared_profiles {
+        for key in &mut profile.keys { key.secret_enc.clear(); }
     }
     Ok((data, count))
 }
@@ -1273,9 +1363,19 @@ fn merge_providers(current: &mut store::Store, incoming: store::Store) -> (usize
                 continue;
             }
             provider.id = format!("p{}", store::stamp() + imported as u128);
+            crate::keys::ensure_active_version(&mut provider);
             entry.push(provider);
             imported += 1;
         }
+    }
+    for mut profile in incoming.shared_profiles {
+        if current.shared_profiles.iter().any(|existing| existing.id == profile.id || (existing.name.eq_ignore_ascii_case(&profile.name) && existing.base_url == profile.base_url)) {
+            skipped += 1;
+            continue;
+        }
+        if profile.id.is_empty() { profile.id = format!("sp{}", store::stamp()); }
+        current.shared_profiles.push(profile);
+        imported += 1;
     }
     (imported, skipped)
 }
@@ -1405,7 +1505,36 @@ fn proxy_reset_metrics() {
 }
 
 #[tauri::command]
-fn proxy_save(config: proxy::ProxyConfig) -> Result<proxy::ProxyConfig, String> {
+fn proxy_export_diagnostics(destination: Option<String>) -> Result<ExportResult, String> {
+    let config = store::load().proxy;
+    let metrics = proxy::metrics();
+    let payload = serde_json::json!({
+        "exported_at": store::stamp() as u64,
+        "version": env!("CARGO_PKG_VERSION"),
+        "config": config,
+        "metrics": metrics,
+        "note": "Contains routing metadata, status codes, latency and failure reasons. Prompts and API keys are never recorded."
+    });
+    let text = serde_json::to_string_pretty(&payload).map_err(|error| error.to_string())?;
+    let path = destination
+        .filter(|value| !value.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| store::data_dir().join(format!("proxy-diagnostics-{}.json", store::stamp())));
+    secure_fs::write_private(&path, &text).map_err(|error| format!("匯出代理診斷失敗：{error}"))?;
+    audit::record("proxy.export", adapters::display_path(&path));
+    Ok(ExportResult {
+        path: adapters::display_path(&path),
+        count: metrics.traces.len(),
+        sha256: Some(export_crypto::checksum(&text)),
+    })
+}
+
+#[tauri::command]
+fn proxy_save(mut config: proxy::ProxyConfig) -> Result<proxy::ProxyConfig, String> {
+    config.alerts.min_requests = config.alerts.min_requests.max(1);
+    config.alerts.success_rate_below_pct = config.alerts.success_rate_below_pct.clamp(1, 100);
+    config.alerts.slow_ttfb_ms = config.alerts.slow_ttfb_ms.max(100);
+    config.alerts.cooldown_secs = config.alerts.cooldown_secs.max(30);
     let mut data = store::load();
     data.proxy = config.clone();
     store::save(&data)?;
@@ -1429,6 +1558,8 @@ fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, Stri
         models: Vec::new(),
         kind: String::new(),
         note: "經本地代理＋故障轉移".into(),
+        profile_id: String::new(),
+        api_keys: Vec::new(),
         last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),
@@ -1678,13 +1809,344 @@ fn spawn_health_loop(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn guardian_status() -> guardian::GuardianOverview {
+    let data = store::load();
+    let _ = guardian::observe(&data);
+    guardian::overview()
+}
+
+#[tauri::command]
+fn guardian_set_policy(policy: guardian::GuardianPolicy) -> Result<guardian::GuardianPolicy, String> {
+    let saved = guardian::set_policy(policy)?;
+    audit::record("guardian.policy", format!("enabled={};auto_repair={};notify={}", saved.enabled, saved.auto_repair, saved.notify));
+    Ok(saved)
+}
+
+#[tauri::command]
+fn guardian_repair(tool: String, provider_id: String, app: tauri::AppHandle) -> Result<ApplyResult, String> {
+    let result = apply_core(&tool, &provider_id);
+    match &result {
+        Ok(value) => guardian::record_repair(&tool, &provider_id, true, &value.message),
+        Err(error) => guardian::record_repair(&tool, &provider_id, false, error),
+    }
+    let result = result?;
+    audit::record("guardian.repair", format!("{tool}:{provider_id}"));
+    let _ = app.emit("kumoswitch://changed", ());
+    tray::refresh(&app);
+    Ok(result)
+}
+
+#[tauri::command]
+fn guardian_clear_events() -> Result<(), String> {
+    guardian::clear_events()
+}
+
+#[tauri::command]
+fn profile_list() -> Vec<profiles::SharedProfileView> {
+    profiles::list()
+}
+
+#[tauri::command]
+fn profile_save(input: profiles::SharedProfileInput, app: tauri::AppHandle) -> Result<profiles::SharedProfileView, String> {
+    let saved = profiles::save(input)?;
+    audit::record("profile.save", format!("{}:{}", saved.id, saved.name));
+    let _ = app.emit("kumoswitch://changed", ());
+    Ok(saved)
+}
+
+#[tauri::command]
+fn profile_delete(id: String, app: tauri::AppHandle) -> Result<(), String> {
+    profiles::remove(&id)?;
+    audit::record("profile.delete", id);
+    let _ = app.emit("kumoswitch://changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+fn profile_import_provider(tool: String, provider_id: String, app: tauri::AppHandle) -> Result<profiles::SharedProfileView, String> {
+    let saved = profiles::import_provider(&tool, &provider_id)?;
+    audit::record("profile.import_provider", format!("{tool}:{provider_id}:{}", saved.id));
+    let _ = app.emit("kumoswitch://changed", ());
+    Ok(saved)
+}
+
+#[tauri::command]
+fn profile_sync(profile_id: String, tools: Vec<String>, app: tauri::AppHandle) -> Result<profiles::ProfileSyncResult, String> {
+    let result = profiles::sync(&profile_id, &tools)?;
+    audit::record("profile.sync", format!("{}:{}", profile_id, result.synced.len()));
+    let _ = app.emit("kumoswitch://changed", ());
+    tray::refresh(&app);
+    Ok(result)
+}
+
+#[tauri::command]
+fn cc_switch_refresh() -> bool {
+    let snapshot = ccswitch::refresh_snapshot();
+    snapshot.public_error().is_none()
+}
+
+fn cc_import_candidate(
+    tool: &str,
+    provider_id: &str,
+    snapshot: &ccswitch::Snapshot,
+) -> Result<(ProviderView, bool), String> {
+    let candidate = snapshot.provider_for_import(tool, provider_id)?;
+    let existing = store::list(tool);
+    if let Some(provider) = existing.into_iter().find(|provider| {
+        provider.name.eq_ignore_ascii_case(&candidate.name)
+            || same_endpoint(&provider.base_url, &candidate.base_url)
+            || provider.config_id == candidate.config_id
+    }) {
+        return Ok((ProviderView::from(provider), true));
+    }
+    let saved = store::upsert(tool, candidate)?;
+    Ok((ProviderView::from(saved), false))
+}
+
+#[tauri::command]
+fn import_cc_switch_batch(
+    tool: String,
+    provider_ids: Vec<String>,
+    app: tauri::AppHandle,
+) -> Result<CcSwitchBatchResult, String> {
+    let snapshot = ccswitch::refresh_snapshot();
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    let mut providers = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for id in provider_ids {
+        if !seen.insert(id.clone()) { continue; }
+        match cc_import_candidate(&tool, &id, &snapshot) {
+            Ok((provider, existed)) => {
+                if existed { skipped += 1; } else { imported += 1; }
+                providers.push(provider);
+            }
+            Err(error) => {
+                skipped += 1;
+                audit::record("import.cc_switch_skip", format!("{tool}:{id}:{error}"));
+            }
+        }
+    }
+    audit::record("import.cc_switch_batch", format!("{tool}:imported={imported};skipped={skipped}"));
+    let _ = app.emit("kumoswitch://changed", ());
+    tray::refresh(&app);
+    Ok(CcSwitchBatchResult { imported, skipped, providers })
+}
+
+#[tauri::command]
+fn cc_switch_import_route_stack(tool: String, app: tauri::AppHandle) -> Result<CcSwitchRouteResult, String> {
+    let snapshot = ccswitch::refresh_snapshot();
+    let route_ids = snapshot.route_provider_ids(&tool);
+    if route_ids.is_empty() {
+        return Err("CC Switch 沒有可匯入的路由供應商".into());
+    }
+    let mut imported = 0usize;
+    let mut providers = Vec::new();
+    let mut stack = Vec::new();
+    for id in route_ids {
+        let (provider, existed) = cc_import_candidate(&tool, &id, &snapshot)?;
+        if !existed { imported += 1; }
+        stack.push(format!("{tool}:{}", provider.id));
+        providers.push(provider);
+    }
+    let mut data = store::load();
+    data.proxy.stack.retain(|reference| !reference.starts_with(&format!("{tool}:")));
+    data.proxy.stack.extend(stack.clone());
+    store::save(&data)?;
+    let _ = proxy::start();
+    audit::record("import.cc_switch_route", format!("{tool}:targets={}", stack.len()));
+    let _ = app.emit("kumoswitch://changed", ());
+    tray::refresh(&app);
+    Ok(CcSwitchRouteResult { imported, stack, providers })
+}
+
+fn backup_files_for(spec: &ToolSpec) -> Vec<(std::path::PathBuf, String)> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut files = Vec::new();
+    for step in spec.steps {
+        if !seen.insert(step.file) { continue; }
+        let path = adapters::resolve_file(spec, step.file);
+        if path.exists() {
+            files.push((path.clone(), adapters::display_path(&path)));
+        }
+    }
+    files
+}
+
+fn backup_all_tools(reason: &str) -> (usize, usize) {
+    let mut snapshots = 0usize;
+    let mut tools = 0usize;
+    for spec in TOOLS {
+        if !adapters::tool_dir(spec).exists() { continue; }
+        let files = backup_files_for(spec);
+        if files.is_empty() { continue; }
+        if backup::snapshot_with_reason(spec.id, &files, reason).is_ok() {
+            snapshots += 1;
+            tools += 1;
+        }
+    }
+    (snapshots, tools)
+}
+
+#[tauri::command]
+fn backup_center() -> backup::BackupCenter {
+    backup::center()
+}
+
+#[tauri::command]
+fn backup_create(tool: String) -> Result<backup::BackupInfo, String> {
+    let spec = spec(&tool)?;
+    let files = backup_files_for(spec);
+    if files.is_empty() {
+        return Err("這個 Harness 目前沒有可備份的設定檔".into());
+    }
+    let (id, _) = backup::snapshot_with_reason(&tool, &files, "manual")?;
+    audit::record("backup.manual", format!("{tool}:{id}"));
+    backup::list(&tool).into_iter().find(|backup| backup.id == id).ok_or_else(|| "備份已建立但找不到清單項目".into())
+}
+
+#[tauri::command]
+fn backup_delete(tool: String, id: String) -> Result<(), String> {
+    backup::remove(&tool, &id)?;
+    audit::record("backup.delete", format!("{tool}:{id}"));
+    Ok(())
+}
+
+#[tauri::command]
+fn backup_set_policy(policy: backup::BackupPolicy) -> Result<backup::BackupPolicy, String> {
+    let saved = backup::set_policy(policy)?;
+    audit::record("backup.policy", format!("scheduled={};hours={};keep={}", saved.scheduled, saved.interval_hours, saved.keep));
+    Ok(saved)
+}
+
+#[tauri::command]
+fn prepare_update_backup() -> Result<PreUpdateBackupResult, String> {
+    let data = store::load();
+    if !data.pre_update_backup {
+        return Ok(PreUpdateBackupResult { snapshots: 0, tools: 0 });
+    }
+    let (snapshots, tools) = backup_all_tools("pre-update");
+    audit::record("backup.pre_update", format!("snapshots={snapshots};tools={tools}"));
+    Ok(PreUpdateBackupResult { snapshots, tools })
+}
+
+#[tauri::command]
+fn set_update_preferences(channel: String, pre_update_backup: bool) -> Result<serde_json::Value, String> {
+    let channel = if channel == "beta" { "beta" } else { "stable" };
+    let mut data = store::load();
+    data.update_channel = channel.into();
+    data.pre_update_backup = pre_update_backup;
+    store::save(&data)?;
+    Ok(serde_json::json!({ "channel": channel, "preUpdateBackup": pre_update_backup }))
+}
+
+fn spawn_backup_loop(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(15 * 60));
+        let data = store::load();
+        let policy = data.backup.clone();
+        if !policy.scheduled { continue; }
+        let now = store::stamp() as u64;
+        let due = policy.last_run == 0 || now.saturating_sub(policy.last_run) >= u64::from(policy.interval_hours) * 3_600_000;
+        if !due { continue; }
+        let (snapshots, tools) = backup_all_tools("scheduled");
+        if snapshots > 0 {
+            let mut latest = store::load();
+            latest.backup.last_run = now;
+            let _ = store::save(&latest);
+            audit::record("backup.scheduled", format!("snapshots={snapshots};tools={tools}"));
+            let _ = app.emit("kumoswitch://changed", ());
+        }
+    });
+}
+
+fn spawn_guardian_loop(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let mut pending = std::collections::BTreeMap::<String, u32>::new();
+        let mut last_repair = std::collections::BTreeMap::<String, u64>::new();
+        loop {
+            let data = store::load();
+            let policy = data.guardian.clone();
+            if !policy.enabled {
+                pending.clear();
+                std::thread::sleep(std::time::Duration::from_secs(policy.poll_secs.clamp(2, 60)));
+                continue;
+            }
+            let transitions = guardian::observe(&data);
+            if !transitions.is_empty() && policy.notify {
+                let _ = app.emit("kumoswitch://guardian", &transitions);
+            }
+            if policy.auto_repair {
+                let overview = guardian::overview();
+                let now = store::stamp() as u64;
+                for status in overview.statuses.iter().filter(|status| status.status == "drifted") {
+                    let Some(provider_id) = status.active_id.clone() else { continue };
+                    let count = pending.entry(status.tool.clone()).or_default();
+                    *count = count.saturating_add(1);
+                    let cooled = last_repair.get(&status.tool).is_none_or(|at| now.saturating_sub(*at) >= 60_000);
+                    if *count >= 2 && cooled {
+                        match apply_core(&status.tool, &provider_id) {
+                            Ok(result) => guardian::record_repair(&status.tool, &provider_id, true, &result.message),
+                            Err(error) => guardian::record_repair(&status.tool, &provider_id, false, &error),
+                        }
+                        last_repair.insert(status.tool.clone(), now);
+                        pending.insert(status.tool.clone(), 0);
+                        let _ = app.emit("kumoswitch://changed", ());
+                        tray::refresh(&app);
+                    }
+                }
+                for tool in pending.keys().cloned().collect::<Vec<_>>() {
+                    if !overview.statuses.iter().any(|status| status.tool == tool && status.status == "drifted") {
+                        pending.remove(&tool);
+                    }
+                }
+            } else {
+                pending.clear();
+            }
+            std::thread::sleep(std::time::Duration::from_secs(policy.poll_secs.clamp(2, 60)));
+        }
+    });
+}
+
+fn spawn_cc_switch_refresh_loop(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let mut last_modified = ccswitch::database_modified_ms();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(20));
+            let modified = ccswitch::database_modified_ms();
+            if modified == 0 || modified == last_modified { continue; }
+            last_modified = modified;
+            let snapshot = ccswitch::refresh_snapshot();
+            if snapshot.public_error().is_none() {
+                audit::record("cc_switch.auto_refresh", format!("modified={modified}"));
+                let _ = app.emit("kumoswitch://changed", ());
+            }
+        }
+    });
+}
+
+fn spawn_proxy_alert_loop(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+        let notify = store::load().proxy.alerts.notify;
+        if !notify { continue; }
+        for alert in proxy::evaluate_alerts_now() {
+            let _ = app.emit("kumoswitch://proxy-alert", alert);
+        }
+    });
+}
+
+#[tauri::command]
 fn backup_list(tool: String) -> Vec<backup::BackupInfo> {
     backup::list(&tool)
 }
 
 #[tauri::command]
 fn backup_restore(tool: String, id: String) -> Result<Vec<String>, String> {
-    backup::restore(&tool, &id)
+    let restored = backup::restore(&tool, &id)?;
+    guardian::mark_self_write();
+    audit::record("backup.restore", format!("{tool}:{id};files={}", restored.len()));
+    Ok(restored)
 }
 
 #[tauri::command]
@@ -1738,27 +2200,36 @@ fn audit_log(limit: usize) -> Vec<audit::AuditEntry> {
 }
 
 #[tauri::command]
-fn open_install_page() -> Result<(), String> {
-    let url = concat!("https://cypwlp.github.io/kumoSwitch/install.html?v=", env!("CARGO_PKG_VERSION"));
+fn open_install_page(channel: Option<String>) -> Result<(), String> {
+    let channel = if channel.as_deref() == Some("beta") { "beta" } else { "stable" };
+    let url = format!("https://cypwlp.github.io/kumoSwitch/install.html?v={}&channel={channel}", env!("CARGO_PKG_VERSION"));
     #[cfg(target_os = "windows")]
     let spawned = std::process::Command::new("rundll32.exe")
-        .args(["url.dll,FileProtocolHandler", url])
+        .args(["url.dll,FileProtocolHandler", url.as_str()])
         .spawn();
     #[cfg(target_os = "macos")]
-    let spawned = std::process::Command::new("open").arg(url).spawn();
+    let spawned = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
-    let spawned = std::process::Command::new("xdg-open").arg(url).spawn();
+    let spawned = std::process::Command::new("xdg-open").arg(&url).spawn();
     spawned.map(|_| ()).map_err(|error| format!("無法開啟安裝向導：{error}"))
 }
 
 #[tauri::command]
 fn app_info() -> serde_json::Value {
+    let data = store::load();
     serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
         "dataDir": adapters::display_path(&store::data_dir()),
         "encrypted": crypto::available(),
-        "autoHealth": store::load().auto_health,
-        "autoModelSync": store::load().auto_model_sync,
+        "autoHealth": data.auto_health,
+        "autoModelSync": data.auto_model_sync,
+        "guardian": data.guardian,
+        "backup": data.backup,
+        "updateChannel": data.update_channel,
+        "preUpdateBackup": data.pre_update_backup,
+        "releaseChannel": option_env!("KUMOSWITCH_RELEASE_CHANNEL").unwrap_or("stable"),
+        "buildCommit": option_env!("KUMOSWITCH_BUILD_COMMIT").unwrap_or(""),
+        "signing": if cfg!(windows) { option_env!("KUMOSWITCH_SIGNED").unwrap_or("optional") } else { "optional" },
     })
 }
 
@@ -1783,6 +2254,10 @@ fn main() {
             tray::install(app.handle())?;
             spawn_health_loop(app.handle().clone());
             spawn_model_sync_loop(app.handle().clone());
+            spawn_guardian_loop(app.handle().clone());
+            spawn_backup_loop(app.handle().clone());
+            spawn_cc_switch_refresh_loop(app.handle().clone());
+            spawn_proxy_alert_loop(app.handle().clone());
             let _ = proxy::start();
             Ok(())
         })
@@ -1801,12 +2276,21 @@ fn main() {
             provider_save,
             provider_clone,
             import_cc_switch_provider,
+            import_cc_switch_batch,
+            cc_switch_import_route_stack,
+            cc_switch_refresh,
             reveal_provider_key,
             provider_config_preview,
             provider_select_model,
             toggle_model_favorite,
             archive_model,
             discover_provider_models,
+            model_compatibility,
+            api_key_add,
+            api_key_update,
+            api_key_activate,
+            api_key_remove,
+            api_key_test,
             test_model,
             live_test_model,
             live_test_policy,
@@ -1828,6 +2312,7 @@ fn main() {
             proxy_status,
             proxy_metrics,
             proxy_reset_metrics,
+            proxy_export_diagnostics,
             proxy_save,
             proxy_attach,
             export_providers_encrypted,
@@ -1836,7 +2321,22 @@ fn main() {
             inspect_encrypted_backup,
             import_providers_encrypted,
             backup_list,
+            backup_center,
+            backup_create,
+            backup_delete,
             backup_restore,
+            backup_set_policy,
+            guardian_status,
+            guardian_set_policy,
+            guardian_repair,
+            guardian_clear_events,
+            profile_list,
+            profile_save,
+            profile_delete,
+            profile_import_provider,
+            profile_sync,
+            prepare_update_backup,
+            set_update_preferences,
             reveal_config,
             reveal_path,
             audit_log,
@@ -1920,6 +2420,15 @@ mod redaction_tests {
             models: vec![ModelProfile::new("demo")],
             kind: "openai".into(),
             note: String::new(),
+            profile_id: String::new(),
+            api_keys: vec![adapters::ApiKeyVersion {
+                id: "key1".into(),
+                label: "Rotated".into(),
+                secret: "sk-key-version-secret-1111".into(),
+                fingerprint: "0011223344556677".into(),
+                status: "active".into(),
+                ..adapters::ApiKeyVersion::default()
+            }],
             last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),
@@ -1935,7 +2444,9 @@ mod redaction_tests {
         assert_eq!(view.api_key_masked, "••••9876");
         let serialized = serde_json::to_string(&view).unwrap();
         assert!(!serialized.contains("sk-very-secret-9876"));
+        assert!(!serialized.contains("sk-key-version-secret-1111"));
         assert!(serialized.contains("••••9876"));
+        assert!(serialized.contains("0011223344556677"));
     }
 
     #[test]

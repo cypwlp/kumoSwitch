@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "../api";
-import type { DriftReport, Provider } from "../types";
+import type { DriftReport, GuardianOverview, GuardianPolicy, Provider } from "../types";
 import { ConfirmModal } from "./ConfirmModal";
 
 interface Props {
@@ -55,13 +55,16 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<BatchAction | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
+  const [guardian, setGuardian] = useState<GuardianOverview | null>(null);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setReports(await api.driftOverview());
+      const [nextReports, nextGuardian] = await Promise.all([api.driftOverview(), api.guardianStatus()]);
+      setReports(nextReports);
+      setGuardian(nextGuardian);
       setSelected(new Set());
     } catch (error) {
       onErrorRef.current(errorText(error));
@@ -177,6 +180,27 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
     }
   };
 
+  const saveGuardianPolicy = async (patch: Partial<GuardianPolicy>) => {
+    if (!guardian) return;
+    try {
+      const policy = await api.guardianSetPolicy({ ...guardian.policy, ...patch });
+      setGuardian({ ...guardian, policy });
+      onToast("守護中心設定已更新", "ok");
+    } catch (error) {
+      onError(errorText(error));
+    }
+  };
+
+  const clearTimeline = async () => {
+    try {
+      await api.guardianClearEvents();
+      setGuardian((current) => current ? { ...current, events: [] } : current);
+      onToast("守護時間線已清空", "ok");
+    } catch (error) {
+      onError(errorText(error));
+    }
+  };
+
   const summaryCards: { id: DriftFilter; label: string; value: number; tone: string }[] = [
     { id: "clean", label: "一致", value: counts.clean, tone: "ok" },
     { id: "drifted", label: "已漂移", value: counts.drifted, tone: "warn" },
@@ -188,9 +212,9 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
     <section className="drift-view" aria-busy={loading}>
       <header className="drift-head">
         <div>
-          <span className="eyebrow">Configuration integrity</span>
-          <h2>設定漂移中心</h2>
-          <p>比對真實設定檔與 kumoSwitch 清單，及早發現外部修改、未知供應商與模型變更。</p>
+          <span className="eyebrow">Settings Guardian 2.0</span>
+          <h2>設定守護中心</h2>
+          <p>背景持續比對真實設定檔與 kumoSwitch 紀錄；保留變更時間線、標示可能來源，並可選擇穩定後自動修復。</p>
         </div>
         <div className="detail-section-actions">
           <button className="ghost" onClick={onImport}>匯入未納管供應商</button>
@@ -213,6 +237,26 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
             <strong>{countValue(card.value)}</strong>
           </button>
         ))}
+      </div>
+
+      <div className="guardian-live-bar">
+        <div className="guardian-live-status">
+          <span className={`guardian-pulse${guardian?.summary.drifted || guardian?.summary.unmanaged ? " alert" : ""}`} />
+          <div>
+            <strong>{guardian?.watching ? "背景守護中" : "守護已暫停"}</strong>
+            <span>上次掃描 {guardian?.last_scan ? new Date(guardian.last_scan).toLocaleTimeString() : "—"} · 監看 {guardian?.summary.watched_tools ?? 0} 個 Harness</span>
+          </div>
+        </div>
+        <button className={`settings-toggle compact${guardian?.policy.enabled ? " on" : ""}`} aria-pressed={guardian?.policy.enabled ?? false} onClick={() => void saveGuardianPolicy({ enabled: !(guardian?.policy.enabled ?? false) })}>
+          <span><strong>背景監看</strong><small>依間隔檢查設定檔指紋</small></span><i aria-hidden="true" />
+        </button>
+        <button className={`settings-toggle compact${guardian?.policy.auto_repair ? " on" : ""}`} aria-pressed={guardian?.policy.auto_repair ?? false} onClick={() => void saveGuardianPolicy({ auto_repair: !(guardian?.policy.auto_repair ?? false) })}>
+          <span><strong>自動修復</strong><small>漂移連續兩次後重新套用</small></span><i aria-hidden="true" />
+        </button>
+        <button className={`settings-toggle compact${guardian?.policy.notify ? " on" : ""}`} aria-pressed={guardian?.policy.notify ?? false} onClick={() => void saveGuardianPolicy({ notify: !(guardian?.policy.notify ?? false) })}>
+          <span><strong>變更通知</strong><small>只在偵測到偏離時提示</small></span><i aria-hidden="true" />
+        </button>
+        <label className="field inline-field guardian-interval"><span>掃描間隔</span><input type="number" min={2} max={60} value={guardian?.policy.poll_secs ?? 5} onChange={(event) => guardian && setGuardian({ ...guardian, policy: { ...guardian.policy, poll_secs: Number(event.target.value) || 5 } })} onBlur={() => void saveGuardianPolicy({ poll_secs: guardian?.policy.poll_secs ?? 5 })} /></label>
       </div>
 
       <div className="drift-toolbar">
@@ -338,6 +382,33 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
           })}
         </div>
       )}
+
+      <section className="guardian-timeline">
+        <div className="detail-section-head">
+          <div><h3>變更時間線</h3><p>只保存欄位名稱、狀態、檔案時間與來源分類，不保存 prompt 或完整金鑰。</p></div>
+          <button className="ghost small" onClick={() => void clearTimeline()} disabled={!guardian?.events.length}>清空</button>
+        </div>
+        {guardian?.events.length ? (
+          <div className="guardian-events">
+            {guardian.events.slice(0, 40).map((event) => (
+              <article className={`guardian-event ${event.severity}`} key={event.id}>
+                <div className="guardian-event-line">
+                  <span className={`guardian-event-dot ${event.kind}`} />
+                  <time>{new Date(event.ts).toLocaleString()}</time>
+                  <strong>{event.tool_name}</strong>
+                  <span className="badge subtle">{event.kind}</span>
+                  <span className={`badge ${event.actor === "external" ? "warn" : event.actor === "kumoSwitch" ? "ok" : "subtle"}`}>{event.actor === "external" ? "外部工具" : event.actor === "kumoSwitch" ? "kumoSwitch" : "來源不明"}</span>
+                  {event.changed_fields.map((field) => <span className="badge warn" key={field}>{field}</span>)}
+                </div>
+                <p>{event.message}</p>
+                <span className="guardian-event-meta">實際 {event.current_model || "—"} · {event.current_base_url || "—"}{event.expected_name ? ` · 預期 ${event.expected_name}` : ""}</span>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="empty small">尚未記錄到設定變更。首次掃描會建立基準，之後的偏離與恢復會出現在這裡。</div>
+        )}
+      </section>
 
       {pendingAction ? (
         <ConfirmModal

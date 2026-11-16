@@ -19,7 +19,14 @@ const DEFAULT_POLICY: ProxyTargetPolicy = {
   model_map: {},
 };
 
-const EMPTY_CONFIG: ProxyConfig = { enabled: false, port: 17890, stack: [], strategy: "ordered", policies: {} };
+const EMPTY_CONFIG: ProxyConfig = {
+  enabled: false,
+  port: 17890,
+  stack: [],
+  strategy: "ordered",
+  policies: {},
+  alerts: { enabled: true, notify: true, min_requests: 5, success_rate_below_pct: 70, slow_ttfb_ms: 8000, cooldown_secs: 300 },
+};
 
 const STRATEGIES: { id: RoutingStrategy; label: string; note: string }[] = [
   { id: "ordered", label: "固定順序", note: "照勾選順序逐一嘗試" },
@@ -54,6 +61,7 @@ export function ProxyView({ onError, onToast }: Props) {
   const [providers, setProviders] = useState<Record<string, Provider[]>>({});
   const [attachTool, setAttachTool] = useState("");
   const [busy, setBusy] = useState(false);
+  const [traceFilter, setTraceFilter] = useState<"all" | "success" | "failed" | "slow">("all");
   const onErrorRef = useRef(onError);
   const onToastRef = useRef(onToast);
   onErrorRef.current = onError;
@@ -162,7 +170,27 @@ export function ProxyView({ onError, onToast }: Props) {
   };
 
   const logRows = metrics?.logs.slice().reverse().slice(0, 30) ?? [];
-  const traceRows = metrics?.traces?.slice().reverse().slice(0, 20) ?? [];
+  const allTraceRows = metrics?.traces?.slice().reverse() ?? [];
+  const traceRows = allTraceRows
+    .filter((trace) => traceFilter === "all"
+      || (traceFilter === "success" && trace.outcome === "success")
+      || (traceFilter === "failed" && trace.outcome !== "success")
+      || (traceFilter === "slow" && trace.total_ms >= 5000))
+    .slice(0, 30);
+  const failureReasons = Object.entries(allTraceRows.flatMap((trace) => trace.attempts).filter((attempt) => attempt.outcome !== "success" && attempt.outcome !== "skipped").reduce<Record<string, number>>((counts, attempt) => {
+    const key = attempt.reason || attempt.outcome;
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {})).sort((left, right) => right[1] - left[1]).slice(0, 5);
+
+  const exportDiagnostics = async () => {
+    try {
+      const result = await api.proxyExportDiagnostics();
+      onToastRef.current(`代理診斷已匯出：${result.path}`, "ok");
+    } catch (error) {
+      onErrorRef.current(errorText(error));
+    }
+  };
 
   return (
     <section className="stats proxy-view">
@@ -183,6 +211,7 @@ export function ProxyView({ onError, onToast }: Props) {
         <div className="spacer" />
         <button className="ghost" onClick={() => void resetMetrics()} disabled={busy}>清空指標</button>
         <button className="ghost" onClick={() => void refreshMetrics()} disabled={busy}>重新整理指標</button>
+        <button className="ghost" onClick={() => void exportDiagnostics()} disabled={busy}>匯出代理診斷</button>
         <button className="primary" onClick={() => void save()} disabled={busy}>{busy ? <span className="spin" /> : null} 儲存並套用</button>
       </div>
 
@@ -263,6 +292,37 @@ export function ProxyView({ onError, onToast }: Props) {
 
       <div className="proxy-observability">
         <div className="detail-section-head"><div><h3>即時觀測</h3><p>TTFB、成功率、熔斷狀態與最近失敗原因；不記錄 prompt 或 API Key。</p></div><span className="badge subtle">{metrics?.strategy ?? config.strategy}</span></div>
+        <div className="proxy-summary-strip">
+          <div><span>請求</span><strong>{metrics?.summary.requests ?? 0}</strong></div>
+          <div><span>成功率</span><strong>{percent(metrics?.summary.success_rate ?? 0)}</strong></div>
+          <div><span>平均 TTFB</span><strong>{metrics?.summary.avg_ttfb_ms ?? 0}ms</strong></div>
+          <div><span>換手</span><strong>{metrics?.summary.failovers ?? 0}</strong></div>
+          <div className={metrics?.alerts.length ? "has-alert" : ""}><span>作用中告警</span><strong>{metrics?.alerts.length ?? 0}</strong></div>
+        </div>
+        <details className="proxy-alert-rules">
+          <summary>告警規則與通知</summary>
+          <div className="proxy-alert-rule-grid">
+            <label className="onboard-item on"><input type="checkbox" checked={config.alerts.enabled} onChange={(event) => setConfig((current) => ({ ...current, alerts: { ...current.alerts, enabled: event.target.checked } }))} /><span className="onboard-name">啟用告警</span></label>
+            <label className="onboard-item on"><input type="checkbox" checked={config.alerts.notify} onChange={(event) => setConfig((current) => ({ ...current, alerts: { ...current.alerts, notify: event.target.checked } }))} /><span className="onboard-name">桌面內通知</span></label>
+            <div className="field"><label>至少請求數</label><input type="number" min={1} value={config.alerts.min_requests} onChange={(event) => setConfig((current) => ({ ...current, alerts: { ...current.alerts, min_requests: Math.max(1, Number(event.target.value) || 1) } }))} /></div>
+            <div className="field"><label>成功率低於 %</label><input type="number" min={1} max={100} value={config.alerts.success_rate_below_pct} onChange={(event) => setConfig((current) => ({ ...current, alerts: { ...current.alerts, success_rate_below_pct: Math.min(100, Math.max(1, Number(event.target.value) || 1)) } }))} /></div>
+            <div className="field"><label>慢 TTFB（ms）</label><input type="number" min={100} value={config.alerts.slow_ttfb_ms} onChange={(event) => setConfig((current) => ({ ...current, alerts: { ...current.alerts, slow_ttfb_ms: Math.max(100, Number(event.target.value) || 100) } }))} /></div>
+            <div className="field"><label>重複通知冷卻（秒）</label><input type="number" min={30} value={config.alerts.cooldown_secs} onChange={(event) => setConfig((current) => ({ ...current, alerts: { ...current.alerts, cooldown_secs: Math.max(30, Number(event.target.value) || 30) } }))} /></div>
+          </div>
+        </details>
+        {metrics?.alerts.length ? (
+          <div className="proxy-alert-list" role="status" aria-live="polite">
+            {metrics.alerts.slice(0, 8).map((alert) => (
+              <div className={`proxy-alert ${alert.severity}`} key={alert.id}>
+                <span className={`badge ${alert.severity === "error" ? "err" : "warn"}`}>{alert.severity === "error" ? "錯誤" : "警告"}</span>
+                <strong>{labels.get(alert.target) ?? alert.target}</strong>
+                <span>{alert.message}</span>
+                <code>{alert.value}</code>
+                <time>{new Date(alert.ts).toLocaleTimeString()}</time>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="proxy-metric-grid">
           {Object.entries(metrics?.targets ?? {}).length ? Object.entries(metrics?.targets ?? {}).map(([ref, metric]) => (
             <article className="proxy-metric-card" key={ref}>
@@ -272,7 +332,20 @@ export function ProxyView({ onError, onToast }: Props) {
             </article>
           )) : <div className="empty small">尚無代理請求。</div>}
         </div>
-        <div className="detail-subhead">最近請求決策</div>
+        <div className="detail-subhead proxy-trace-head">
+          <span>最近請求決策</span>
+          <div className="segmented compact" role="group" aria-label="請求決策篩選">
+            {([["all", "全部"], ["failed", "失敗"], ["slow", "慢請求"], ["success", "成功"]] as const).map(([value, label]) => (
+              <button key={value} className={traceFilter === value ? "on" : ""} aria-pressed={traceFilter === value} onClick={() => setTraceFilter(value)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        {failureReasons.length ? (
+          <div className="proxy-failure-reasons">
+            <span>常見失敗原因</span>
+            {failureReasons.map(([reason, count]) => <span className="badge warn" key={reason}>{reason} · {count}</span>)}
+          </div>
+        ) : null}
         <div className="proxy-trace-list">
           {traceRows.length ? traceRows.map((trace) => (
             <details className="proxy-trace" key={trace.id}>

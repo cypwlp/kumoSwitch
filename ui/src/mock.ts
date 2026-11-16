@@ -18,6 +18,11 @@ import type {
   ModelDiscovery,
   LiveTestPolicy,
   DriftReport,
+  BackupCenter,
+  GuardianOverview,
+  SharedProfileView,
+  ModelCompatibility,
+  ProxyMetrics,
 } from "./types";
 
 /**
@@ -313,18 +318,43 @@ const SEEDS: Seed[] = [
   },
 ];
 
+const MOCK_PROFILES: SharedProfileView[] = [{
+  id: "sp-zen",
+  name: "OpenCode Zen",
+  base_url: "https://opencode.ai/zen/go/v1",
+  kind: "responses",
+  model: "glm-5.3-flash",
+  models: [{ id: "glm-5.3-flash", name: "GLM 5.3 Flash", context_window: 128000, max_output: 16384, reasoning: true, tools: true }],
+  note: "可重用到多個 Harness 的共用端點",
+  tags: ["personal", "fallback"],
+  targets: [
+    { tool: "codex", provider_id: "cx-1", model: "glm-5.3-flash", kind: "responses", enabled: true, last_synced_at: Date.now() - 60000 },
+    { tool: "claude", provider_id: "", model: "claude-sonnet-4-6", kind: "", enabled: true, last_synced_at: 0 },
+    { tool: "opencode", provider_id: "oc-1", model: "glm-5.3-flash", kind: "openai", enabled: true, last_synced_at: Date.now() - 30000 },
+  ],
+  key_count: 2,
+  active_key_label: "主力金鑰",
+  api_key_masked: "••••f2a",
+  has_api_key: true,
+  created_at: Date.now() - 86400000 * 9,
+  updated_at: Date.now() - 60000,
+}];
+
+const MOCK_BACKUP_POLICY = { scheduled: true, interval_hours: 24, keep: 30, last_run: Date.now() - 7200000 };
+
 const BACKUPS: Record<string, BackupInfo[]> = {
   codex: [
-    { id: "20261110-091422", created: "2026-11-10 09:14:22", files: [`${HOME}\\.codex\\config.toml`] },
-    { id: "20261109-183007", created: "2026-11-09 18:30:07", files: [`${HOME}\\.codex\\config.toml`] },
+    { id: "20261110-091422", created: "2026-11-10 09:14:22", files: [`${HOME}\\.codex\\config.toml`], tool: "codex", tool_name: "Codex", reason: "provider-apply", version: "0.18.0", size_bytes: 18420, checksum: "1f74a9c72f11" },
+    { id: "20261109-183007", created: "2026-11-09 18:30:07", files: [`${HOME}\\.codex\\config.toml`], tool: "codex", tool_name: "Codex", reason: "manual", version: "0.17.0", size_bytes: 18102, checksum: "bc91a13cb2de" },
     {
       id: "20261108-220155",
       created: "2026-11-08 22:01:55",
       files: [`${HOME}\\.codex\\config.toml`, `${HOME}\\.codex\\auth.json`],
+      tool: "codex", tool_name: "Codex", reason: "pre-update", version: "0.17.0", size_bytes: 24904, checksum: "f09e31ab424c",
     },
   ],
-  claude: [{ id: "20261110-080512", created: "2026-11-10 08:05:12", files: [`${HOME}\\.claude\\settings.json`] }],
-  dsh: [{ id: "20261107-141233", created: "2026-11-07 14:12:33", files: [`${HOME}\\.dsh\\settings.yaml`] }],
+  claude: [{ id: "20261110-080512", created: "2026-11-10 08:05:12", files: [`${HOME}\\.claude\\settings.json`], tool: "claude", tool_name: "Claude Code", reason: "provider-apply", version: "0.18.0", size_bytes: 4510, checksum: "872adfe38db1" }],
+  dsh: [{ id: "20261107-141233", created: "2026-11-07 14:12:33", files: [`${HOME}\\.dsh\\settings.yaml`], tool: "dsh", tool_name: "DSH", reason: "manual", version: "0.17.0", size_bytes: 3380, checksum: "5c1a9a8c412e" }],
 };
 
 function displayPath(rel: string): string {
@@ -379,6 +409,7 @@ function toolViews(): ToolView[] {
       attached: true,
       db_path: `${HOME}\\.cc-switch\\cc-switch.db`,
       error: null,
+      last_refreshed: Date.now(),
       providers: [
         { id: "cc-opencode", name: "OpenCode Go", base_url: "https://opencode.ai/zen/go/v1", model: "deepseek-v4.1-flash", models: [{ id: "deepseek-v4.1-flash", name: "DeepSeek v4.1 Flash" }, { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3" }], kind: "responses", website_url: "https://opencode.ai/go", category: "third_party", icon: "opencode", icon_color: "#211E1E", is_current: true, in_failover_queue: true, has_api_key: true, already_imported: false },
         { id: "cc-commandcode", name: "CommandCode", base_url: "https://api.commandcode.ai/provider/v1", model: "deepseek/deepseek-v4.1-flash", models: [{ id: "deepseek/deepseek-v4.1-flash", name: "deepseek-flash" }, { id: "meta/muse-spark-1.3-contributor", name: "Muse Spark" }], kind: "responses", website_url: "https://commandcode.ai", category: "third_party", icon: "commandcode", icon_color: "", is_current: false, in_failover_queue: true, has_api_key: true, already_imported: false },
@@ -623,6 +654,20 @@ function providerView(provider: Provider): Provider {
     model_sync_retry_at: provider.model_sync_retry_at ?? 0,
     model_sync_failures: provider.model_sync_failures ?? 0,
     model_sync_last_error: provider.model_sync_last_error ?? "",
+    api_keys: provider.api_key ? [{
+      id: `${provider.id}-key-active`,
+      label: "目前金鑰",
+      fingerprint: provider.api_key.slice(-8),
+      created_at: Date.now() - 86_400_000 * 42,
+      expires_at: 0,
+      last_tested_at: Date.now() - 3_600_000,
+      last_ok_at: Date.now() - 3_600_000,
+      last_status: 200,
+      status: "active",
+      note: "Mock 預覽資料",
+      active: true,
+      expired: false,
+    }] : [],
   };
 }
 
@@ -635,10 +680,15 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.17.0",
+        version: "0.18.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
+        updateChannel: "stable",
+        preUpdateBackup: true,
+        releaseChannel: "stable",
+        buildCommit: "mock-build",
+        signing: "optional",
       } satisfies AppInfo;
 
     case "tool_list": {
@@ -933,7 +983,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       };
       const stamp = "20261110-101500";
       const list = BACKUPS[tool] ?? (BACKUPS[tool] = []);
-      list.unshift({ id: stamp, created: "2026-11-10 10:15:00", files: preview.files.map((f) => f.file) });
+      list.unshift({ id: stamp, created: "2026-11-10 10:15:00", files: preview.files.map((f) => f.file), tool, tool_name: seed.name, reason: "provider-apply", version: "0.18.0", size_bytes: 18420, checksum: "1f74a9c72f11" });
       return {
         changed: true,
         backup_id: stamp,
@@ -986,6 +1036,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         stack: [],
         strategy: "ordered",
         policies: {},
+        alerts: { enabled: true, notify: true, min_requests: 5, success_rate_below_pct: 70, slow_ttfb_ms: 8000, cooldown_secs: 300 },
       } satisfies ProxyConfig;
     case "proxy_save":
       return args.config;
@@ -1031,7 +1082,13 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
           total_ms: 221,
           outcome: "success",
         }],
-      };
+        alerts: [
+          { id: 1, ts: Date.now() - 5000, target: "codex:cx-2", kind: "rate_limit", severity: "warning", message: "上游回傳 429 rate limit", value: "429", circuit_open_until: Date.now() + 30000 },
+          { id: 2, ts: Date.now() - 42000, target: "codex:cx-2", kind: "slow_ttfb", severity: "warning", message: "平均 TTFB 超過 8000ms", value: "8240ms", circuit_open_until: 0 },
+        ],
+        summary: { targets_configured: 3, targets_reporting: 1, requests: 48, success_rate: 0.958, avg_ttfb_ms: 138, failovers: 3, active_alerts: 2 },
+        rules: { enabled: true, notify: true, min_requests: 5, success_rate_below_pct: 70, slow_ttfb_ms: 8000, cooldown_secs: 300 },
+      } satisfies ProxyMetrics;
     case "proxy_attach":
       return { changed: true, backup_id: "mock", written: ["config"], message: "已掛載代理" };
 
@@ -1176,6 +1233,227 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       const rows = Array.isArray(parsed) ? parsed : [];
       return { imported: Math.max(rows.length, 3), skipped: 1 } satisfies JsonImportResult;
     }
+
+    case "cc_switch_refresh":
+      return true;
+
+    case "import_cc_switch_batch": {
+      const ids = Array.isArray(args.providerIds) ? args.providerIds.map(String) : [];
+      const source = toolViews().find((view) => view.id === tool)?.cc_switch?.providers ?? [];
+      const imported: Provider[] = [];
+      for (const id of ids) {
+        const candidate = source.find((item) => item.id === id);
+        if (!candidate) continue;
+        const row = p(`cc-import-${++counter}`, `cc-switch-${candidate.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, candidate.name, candidate.base_url, "sk-ccswitch-import", candidate.model, candidate.kind, "從 CC Switch 批次匯入");
+        row.models = candidate.models;
+        (PROVIDERS[tool] ?? (PROVIDERS[tool] = [])).push(row);
+        imported.push(providerView(row));
+      }
+      return { imported: imported.length, skipped: ids.length - imported.length, providers: imported };
+    }
+
+    case "cc_switch_import_route_stack": {
+      const source = toolViews().find((view) => view.id === tool)?.cc_switch?.providers ?? [];
+      const rows = source.map((candidate) => p(`cc-route-${++counter}`, `cc-switch-route-${candidate.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, candidate.name, candidate.base_url, "sk-ccswitch-route", candidate.model, candidate.kind, "CC Switch 路由鏡像"));
+      (PROVIDERS[tool] ?? (PROVIDERS[tool] = [])).push(...rows);
+      return { imported: rows.length, stack: rows.map((row) => `${tool}:${row.id}`), providers: rows.map(providerView) };
+    }
+
+    case "model_compatibility": {
+      const providerId = String(args.providerId ?? "");
+      const provider = findProvider(tool, providerId);
+      const out: ModelCompatibility[] = (provider.models ?? []).map((model) => ({
+        tool,
+        tool_name: seedOf(tool).name,
+        provider_id: provider.id,
+        provider_name: provider.name,
+        model_id: model.id,
+        model_name: model.name || model.id,
+        status: model.tools === false ? "incompatible" : model.context_window && model.context_window < 32000 ? "warning" : model.tools == null ? "warning" : "compatible",
+        score: model.tools === false ? 40 : model.tools == null ? 82 : 96,
+        checks: [
+          { key: "context", label: "Context window", status: (model.context_window ?? 0) >= 32000 ? "ok" : "warn", detail: model.context_window ? `${model.context_window} tokens` : "尚未標記" },
+          { key: "tools", label: "Tool calling", status: model.tools === false ? "fail" : model.tools ? "ok" : "warn", detail: model.tools === false ? "Harness 需要工具呼叫" : "工具能力符合" },
+          { key: "protocol", label: "Protocol", status: "ok", detail: provider.kind || "Harness 預設" },
+        ],
+        issues: model.tools == null ? ["工具能力未知；建議先實測"] : [],
+      }));
+      return out;
+    }
+
+    case "api_key_add": {
+      const input = (args.input ?? {}) as Record<string, unknown>;
+      return {
+        id: `key-${++counter}`,
+        label: String(input.label || "輪替金鑰"),
+        fingerprint: String(input.secret ?? "mock-key").slice(-8),
+        created_at: Date.now(),
+        expires_at: Number(input.expires_at ?? 0),
+        last_tested_at: 0,
+        last_ok_at: 0,
+        last_status: 0,
+        status: "active",
+        note: String(input.note ?? ""),
+        active: true,
+        expired: false,
+      };
+    }
+    case "api_key_update":
+    case "api_key_activate": {
+      const providerId = String(args.providerId ?? "");
+      const keyId = String(args.keyId ?? "key-active");
+      const provider = findProvider(tool, providerId);
+      const existing = providerView(provider).api_keys?.find((key) => key.id === keyId);
+      return existing ?? { id: keyId, label: "輪替金鑰", fingerprint: "9f2ac112", created_at: Date.now() - 86400000, expires_at: 0, last_tested_at: 0, last_ok_at: 0, last_status: 0, status: "active", note: "", active: true, expired: false };
+    }
+    case "api_key_remove":
+      return undefined;
+    case "api_key_test": {
+      const providerId = String(args.providerId ?? "");
+      const provider = findProvider(tool, providerId);
+      const key = providerView(provider).api_keys?.[0] ?? { id: "key-active", label: "目前金鑰", fingerprint: "9f2ac112", created_at: Date.now() - 86400000, expires_at: 0, last_tested_at: 0, last_ok_at: 0, last_status: 0, status: "active", note: "", active: true, expired: false };
+      return { key: { ...key, last_tested_at: Date.now(), last_ok_at: Date.now(), last_status: 200 }, result: { ok: true, status: 200, ms: 126, message: "OK" } };
+    }
+
+    case "guardian_status": {
+      const statuses = SEEDS.map((seed, index) => ({
+        tool: seed.id,
+        tool_name: seed.name,
+        status: index === 1 ? "drifted" : index === 7 ? "unmanaged" : seed.current.base_url ? "clean" : "empty",
+        active_id: ACTIVE[seed.id] ?? null,
+        expected_name: seed.current.base_url ? `${seed.name} 主力` : null,
+        current_base_url: seed.current.base_url,
+        current_model: seed.current.model,
+        current_key_tail: seed.current.api_key_tail,
+        expected_base_url: seed.current.base_url,
+        expected_model: seed.current.model,
+        changed_fields: index === 1 ? ["模型"] : index === 7 ? ["未納管供應商"] : [],
+        unmanaged_providers: index === 7 ? ["external-provider"] : [],
+        message: index === 1 ? "實際設定與 kumoSwitch 紀錄不同" : index === 7 ? "設定檔中存在尚未納管的供應商" : seed.current.base_url ? "kumoSwitch 與實際設定一致" : "尚未偵測到目前套用的供應商",
+        actor: "external",
+        files: [{ file: seed.file, path: displayPath(seed.file), exists: seed.detected, modified_at: Date.now() - index * 120000, fingerprint: `fp-${index}` }],
+        drift_signature: `mock-${seed.id}-${index}`,
+        last_checked: Date.now(),
+      }));
+      const overview: GuardianOverview = {
+        policy: { enabled: true, auto_repair: false, notify: true, poll_secs: 5, retention: 200 },
+        watching: true,
+        last_scan: Date.now(),
+        last_self_write: Date.now() - 600000,
+        summary: {
+          clean: statuses.filter((item) => item.status === "clean").length,
+          drifted: statuses.filter((item) => item.status === "drifted").length,
+          unmanaged: statuses.filter((item) => item.status === "unmanaged").length,
+          empty: statuses.filter((item) => item.status === "empty").length,
+          error: 0,
+          watched_tools: statuses.length,
+        },
+        statuses,
+        events: [
+          { id: "ev-3", ts: Date.now() - 180000, tool: "claude", tool_name: "Claude Code", kind: "drift", status: "drifted", severity: "warning", actor: "external", changed_fields: ["模型"], message: "偵測到外部設定偏離", current_base_url: "https://api.example.com/v1", current_model: "claude-sonnet-4-6", expected_name: "Zen Anthropic", file_modified_at: Date.now() - 190000 },
+          { id: "ev-2", ts: Date.now() - 900000, tool: "codex", tool_name: "Codex", kind: "resolved", status: "clean", severity: "success", actor: "kumoSwitch", changed_fields: [], message: "設定已恢復，且與 kumoSwitch 紀錄一致", current_base_url: "https://opencode.ai/zen/go/v1", current_model: "glm-5.3-flash", expected_name: "OpenCode Go", file_modified_at: Date.now() - 910000 },
+        ],
+      };
+      return overview;
+    }
+    case "guardian_set_policy":
+      return args.policy;
+    case "guardian_repair":
+      return { changed: true, backup_id: "mock", written: ["config"], message: "守護中心已重新套用設定" } satisfies ApplyResult;
+    case "guardian_clear_events":
+      return undefined;
+
+    case "profile_list":
+      return MOCK_PROFILES;
+    case "profile_save": {
+      const input = (args.input ?? {}) as Record<string, unknown>;
+      const view: SharedProfileView = {
+        id: String(input.id || `sp-${++counter}`),
+        name: String(input.name || "新 Profile"),
+        base_url: String(input.base_url || ""),
+        kind: String(input.kind || "responses"),
+        model: String(input.model || ""),
+        models: Array.isArray(input.models) ? input.models as SharedProfileView["models"] : [],
+        note: String(input.note || ""),
+        tags: Array.isArray(input.tags) ? input.tags.map(String) : [],
+        targets: Array.isArray(input.targets) ? input.targets as SharedProfileView["targets"] : [],
+        key_count: 1,
+        active_key_label: "Profile 金鑰",
+        api_key_masked: "••••mock",
+        has_api_key: true,
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      };
+      const index = MOCK_PROFILES.findIndex((profile) => profile.id === view.id);
+      if (index >= 0) MOCK_PROFILES[index] = view; else MOCK_PROFILES.push(view);
+      return view;
+    }
+    case "profile_delete": {
+      const id = String(args.id ?? "");
+      const index = MOCK_PROFILES.findIndex((profile) => profile.id === id);
+      if (index >= 0) MOCK_PROFILES.splice(index, 1);
+      return undefined;
+    }
+    case "profile_import_provider": {
+      const providerId = String(args.providerId ?? "");
+      const provider = findProvider(tool, providerId);
+      const view: SharedProfileView = {
+        id: `sp-${++counter}`,
+        name: provider.name,
+        base_url: provider.base_url,
+        kind: provider.kind,
+        model: provider.model,
+        models: provider.models ?? [],
+        note: provider.note,
+        tags: ["imported"],
+        targets: [{ tool, provider_id: provider.id, model: provider.model, kind: provider.kind, enabled: true, last_synced_at: Date.now() }],
+        key_count: 1,
+        active_key_label: "目前金鑰",
+        api_key_masked: providerView(provider).api_key_masked ?? "",
+        has_api_key: Boolean(provider.api_key),
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      };
+      MOCK_PROFILES.push(view);
+      return view;
+    }
+    case "profile_sync":
+      return {
+        profile_id: String(args.profileId ?? ""),
+        synced: [{ tool: "codex", provider_id: "cx-1", provider_name: "OpenCode Go", model: "glm-5.3-flash", created: false }],
+        skipped: [],
+      };
+
+    case "backup_center": {
+      const backups = Object.values(BACKUPS).flat();
+      const center: BackupCenter = {
+        backups,
+        stats: { snapshots: backups.length, tools: Object.keys(BACKUPS).length, files: backups.reduce((sum, backup) => sum + backup.files.length, 0), size_bytes: backups.reduce((sum, backup) => sum + backup.size_bytes, 0), newest: backups[0]?.created ?? "", oldest: backups.at(-1)?.created ?? "" },
+        policy: MOCK_BACKUP_POLICY,
+      };
+      return center;
+    }
+    case "backup_create": {
+      const seed = seedOf(tool);
+      const created: BackupInfo = { id: `20261110-${String(++counter).padStart(6, "0")}`, created: new Date().toISOString().slice(0, 19).replace("T", " "), files: [displayPath(seed.file)], tool, tool_name: seed.name, reason: "manual", version: "0.18.0", size_bytes: 16420, checksum: "9ac6d31b7af2" };
+      (BACKUPS[tool] ?? (BACKUPS[tool] = [])).unshift(created);
+      return created;
+    }
+    case "backup_delete": {
+      const id = String(args.id ?? "");
+      BACKUPS[tool] = (BACKUPS[tool] ?? []).filter((backup) => backup.id !== id);
+      return undefined;
+    }
+    case "backup_set_policy":
+      Object.assign(MOCK_BACKUP_POLICY, args.policy ?? {});
+      return MOCK_BACKUP_POLICY;
+    case "prepare_update_backup":
+      return { snapshots: 3, tools: 3 };
+    case "set_update_preferences":
+      return { channel: String(args.channel ?? "stable"), preUpdateBackup: Boolean(args.preUpdateBackup) };
+
+    case "proxy_export_diagnostics":
+      return { path: `${HOME}\\Documents\\proxy-diagnostics-20261110.json`, count: 42, sha256: "71b10fa87f45" } satisfies ExportResult;
 
     default:
       throw new Error(`預覽模式沒有實作的指令：${cmd}`);

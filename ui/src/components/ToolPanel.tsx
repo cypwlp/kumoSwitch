@@ -21,6 +21,9 @@ interface PanelProps {
   onAdd: () => void;
   onImportConfig: () => void;
   onImportCcSwitch: (providerId: string) => void;
+  onRefreshCcSwitch: () => void;
+  onImportCcSwitchBatch: (providerIds: string[]) => void;
+  onMirrorCcSwitchRoute: () => void;
   onApply: (provider: Provider) => void;
   onReorder: (ids: string[]) => void;
   onSwitchModel: (provider: Provider, modelId: string) => void;
@@ -56,6 +59,9 @@ export function ToolPanel({
   onAdd,
   onImportConfig,
   onImportCcSwitch,
+  onRefreshCcSwitch,
+  onImportCcSwitchBatch,
+  onMirrorCcSwitchRoute,
   onApply,
   onReorder,
   onSwitchModel,
@@ -74,6 +80,7 @@ export function ToolPanel({
   onSort,
 }: PanelProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [ccSelected, setCcSelected] = useState<Set<string>>(new Set());
   const moreRef = useRef<HTMLDivElement>(null);
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -186,8 +193,17 @@ export function ToolPanel({
             <div className="ccswitch-source-badges">
               <span className={`badge ${tool.cc_switch.attached ? "warn" : "subtle"}`}>{tool.cc_switch.mode === "proxy" ? "代理／路由模式" : "CC Switch 資料庫"}</span>
               <span className="badge subtle">{tool.cc_switch.providers.length} 個</span>
+              <span className="badge subtle">快取 {tool.cc_switch.last_refreshed ? new Date(tool.cc_switch.last_refreshed).toLocaleTimeString() : "—"}</span>
             </div>
           </summary>
+          <div className="ccswitch-batch-bar">
+            <button type="button" className="ghost small" onClick={onRefreshCcSwitch}>重新整理資料庫</button>
+            <span className="muted small">{ccSelected.size ? `已選 ${ccSelected.size} 個` : "可批次匯入或鏡像路由順序"}</span>
+            <span className="spacer" />
+            <button type="button" className="ghost small" onClick={() => setCcSelected(new Set(tool.cc_switch!.providers.filter((provider) => !provider.already_imported).map((provider) => provider.id)))}>全選未匯入</button>
+            <button type="button" className="ghost small" disabled={!ccSelected.size} onClick={() => onImportCcSwitchBatch([...ccSelected])}>批次匯入</button>
+            <button type="button" className="primary small" onClick={onMirrorCcSwitchRoute}>鏡像 CC Switch 路由堆疊</button>
+          </div>
           <div className="ccswitch-explainer">
             <p>
               {tool.cc_switch.attached && tool.cc_switch.mode === "proxy"
@@ -201,6 +217,18 @@ export function ToolPanel({
           <div className="ccswitch-provider-grid">
             {tool.cc_switch.providers.map((provider) => (
               <article className="ccswitch-provider" key={provider.id}>
+                <label className="ccswitch-select" title="選取這個供應商進行批次操作">
+                  <input
+                    type="checkbox"
+                    checked={ccSelected.has(provider.id)}
+                    onChange={(event) => setCcSelected((current) => {
+                      const next = new Set(current);
+                      if (event.target.checked) next.add(provider.id); else next.delete(provider.id);
+                      return next;
+                    })}
+                  />
+                  <span className="sr-only">選取 {provider.name}</span>
+                </label>
                 <div className="ccswitch-provider-head">
                   <span className="provider-avatar">{provider.name.slice(0, 1).toUpperCase()}</span>
                   <div><strong>{provider.name}</strong><span>{provider.category || provider.kind || "供應商"}</span></div>

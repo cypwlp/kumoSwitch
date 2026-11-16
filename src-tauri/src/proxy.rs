@@ -122,6 +122,42 @@ impl Default for ProxyTargetPolicy {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ProxyAlertRules {
+    #[serde(default = "alert_enabled")]
+    pub enabled: bool,
+    #[serde(default = "alert_notify")]
+    pub notify: bool,
+    #[serde(default = "alert_min_requests")]
+    pub min_requests: u64,
+    #[serde(default = "alert_success_rate")]
+    pub success_rate_below_pct: u32,
+    #[serde(default = "alert_slow_ttfb")]
+    pub slow_ttfb_ms: u64,
+    #[serde(default = "alert_cooldown")]
+    pub cooldown_secs: u64,
+}
+
+fn alert_enabled() -> bool { true }
+fn alert_notify() -> bool { true }
+fn alert_min_requests() -> u64 { 5 }
+fn alert_success_rate() -> u32 { 70 }
+fn alert_slow_ttfb() -> u64 { 8_000 }
+fn alert_cooldown() -> u64 { 300 }
+
+impl Default for ProxyAlertRules {
+    fn default() -> Self {
+        Self {
+            enabled: alert_enabled(),
+            notify: alert_notify(),
+            min_requests: alert_min_requests(),
+            success_rate_below_pct: alert_success_rate(),
+            slow_ttfb_ms: alert_slow_ttfb(),
+            cooldown_secs: alert_cooldown(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -135,6 +171,8 @@ pub struct ProxyConfig {
     /// Per-target routing and resiliency policy, keyed by "tool:provider_id".
     #[serde(default)]
     pub policies: BTreeMap<String, ProxyTargetPolicy>,
+    #[serde(default)]
+    pub alerts: ProxyAlertRules,
 }
 
 fn default_port() -> u16 {
@@ -149,6 +187,7 @@ impl Default for ProxyConfig {
             stack: Vec::new(),
             strategy: RoutingStrategy::Ordered,
             policies: BTreeMap::new(),
+            alerts: ProxyAlertRules::default(),
         }
     }
 }
@@ -245,19 +284,48 @@ pub struct TargetMetrics {
     pub last_used: u64,
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct ProxyAlert {
+    pub id: u64,
+    pub ts: u64,
+    pub target: String,
+    pub kind: String,
+    pub severity: String,
+    pub message: String,
+    pub value: String,
+    pub circuit_open_until: u64,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct ProxySummary {
+    pub targets_configured: usize,
+    pub targets_reporting: usize,
+    pub requests: u64,
+    pub success_rate: f64,
+    pub avg_ttfb_ms: u64,
+    pub failovers: u64,
+    pub active_alerts: usize,
+}
+
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct ProxyMetrics {
     pub strategy: String,
     pub targets: BTreeMap<String, TargetMetrics>,
     pub logs: Vec<ProxyLogEntry>,
     pub traces: Vec<ProxyTrace>,
+    pub alerts: Vec<ProxyAlert>,
+    pub summary: ProxySummary,
+    pub rules: ProxyAlertRules,
 }
 
 static TARGET_STATE: Mutex<BTreeMap<String, TargetState>> = Mutex::new(BTreeMap::new());
 static PROXY_LOGS: Mutex<VecDeque<ProxyLogEntry>> = Mutex::new(VecDeque::new());
 static PROXY_TRACES: Mutex<VecDeque<ProxyTrace>> = Mutex::new(VecDeque::new());
+static PROXY_ALERTS: Mutex<VecDeque<ProxyAlert>> = Mutex::new(VecDeque::new());
+static ALERT_LAST: Mutex<BTreeMap<String, u64>> = Mutex::new(BTreeMap::new());
 static ROUTE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static TRACE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static ALERT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -490,6 +558,102 @@ fn acquire_target(reference: &str, max_concurrency: usize) -> Option<TargetPermi
     Some(TargetPermit { reference: reference.to_string() })
 }
 
+fn push_alert(config: &ProxyConfig, target: &str, state: &TargetState, kind: &str, severity: &str, message: String, value: String) {
+    if !config.alerts.enabled { return; }
+    let now = now_ms();
+    let dedupe = format!("{target}:{kind}");
+    let cooldown = config.alerts.cooldown_secs.saturating_mul(1000).max(30_000);
+    {
+        let mut last = ALERT_LAST.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if last.get(&dedupe).is_some_and(|previous| now.saturating_sub(*previous) < cooldown) {
+            return;
+        }
+        last.insert(dedupe, now);
+    }
+    let alert = ProxyAlert {
+        id: ALERT_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1,
+        ts: now,
+        target: target.to_string(),
+        kind: kind.to_string(),
+        severity: severity.to_string(),
+        message,
+        value,
+        circuit_open_until: state.open_until_ms,
+    };
+    let mut alerts = PROXY_ALERTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if alerts.len() >= 100 { alerts.pop_front(); }
+    alerts.push_back(alert);
+}
+
+fn evaluate_alerts(config: &ProxyConfig, states: &BTreeMap<String, TargetState>) -> Vec<ProxyAlert> {
+    if !config.alerts.enabled { return Vec::new(); }
+    let before: std::collections::BTreeSet<u64> = PROXY_ALERTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .map(|alert| alert.id)
+        .collect();
+    for (reference, state) in states {
+        let threshold = config.policies.get(reference).map(|policy| policy.failure_threshold).unwrap_or(default_failure_threshold()).max(1);
+        if state.requests >= config.alerts.min_requests {
+            let success_rate = if state.requests == 0 { 0.0 } else { state.successes as f64 / state.requests as f64 };
+            if success_rate * 100.0 < f64::from(config.alerts.success_rate_below_pct) {
+                push_alert(
+                    config,
+                    reference,
+                    state,
+                    "success_rate",
+                    "error",
+                    format!("成功率低於 {}%", config.alerts.success_rate_below_pct),
+                    format!("{:.0}%", success_rate * 100.0),
+                );
+            }
+        }
+        if state.consecutive_failures >= threshold {
+            push_alert(
+                config,
+                reference,
+                state,
+                "consecutive_failures",
+                "error",
+                format!("連續失敗達 {} 次，熔斷器可能已開啟", threshold),
+                state.consecutive_failures.to_string(),
+            );
+        }
+        if state.last_status == 429 {
+            push_alert(config, reference, state, "rate_limit", "warning", "上游回傳 429 rate limit".into(), "429".into());
+        }
+        let avg_ttfb = if state.ttfb_samples == 0 { 0 } else { state.total_ttfb_ms / state.ttfb_samples };
+        if state.ttfb_samples >= config.alerts.min_requests && avg_ttfb >= config.alerts.slow_ttfb_ms {
+            push_alert(
+                config,
+                reference,
+                state,
+                "slow_ttfb",
+                "warning",
+                format!("平均 TTFB 超過 {}ms", config.alerts.slow_ttfb_ms),
+                format!("{avg_ttfb}ms"),
+            );
+        }
+        if state.open_until_ms > now_ms() {
+            push_alert(config, reference, state, "circuit_open", "error", "供應商目前處於熔斷冷卻".into(), state.open_until_ms.to_string());
+        }
+    }
+    PROXY_ALERTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .filter(|alert| !before.contains(&alert.id))
+        .cloned()
+        .collect()
+}
+
+pub fn evaluate_alerts_now() -> Vec<ProxyAlert> {
+    let config = crate::store::load().proxy;
+    let states = target_states().clone();
+    evaluate_alerts(&config, &states)
+}
+
 pub fn metrics() -> ProxyMetrics {
     let config = crate::store::load().proxy;
     let states = target_states();
@@ -524,7 +688,31 @@ pub fn metrics() -> ProxyMetrics {
                 },
             )
         })
-        .collect();
+        .collect::<BTreeMap<_, _>>();
+    let _generated = evaluate_alerts(&config, &states);
+    drop(states);
+    let alerts = PROXY_ALERTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+        .rev()
+        .cloned()
+        .collect::<Vec<_>>();
+    let total_requests: u64 = targets.values().map(|target| target.requests).sum();
+    let successes: u64 = targets.values().map(|target| target.successes).sum();
+    let failovers: u64 = targets.values().map(|target| target.failovers).sum();
+    let ttfb_weighted: u64 = targets.values().map(|target| target.avg_ttfb_ms.saturating_mul(target.requests)).sum();
+    let alert_window = config.alerts.cooldown_secs.saturating_mul(1000).max(30_000);
+    let current_time = now_ms();
+    let summary = ProxySummary {
+        targets_configured: config.stack.len(),
+        targets_reporting: targets.len(),
+        requests: total_requests,
+        success_rate: if total_requests == 0 { 0.0 } else { successes as f64 / total_requests as f64 },
+        avg_ttfb_ms: if total_requests == 0 { 0 } else { ttfb_weighted / total_requests },
+        failovers,
+        active_alerts: alerts.iter().filter(|alert| current_time.saturating_sub(alert.ts) < alert_window).count(),
+    };
     let logs = PROXY_LOGS
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -542,6 +730,9 @@ pub fn metrics() -> ProxyMetrics {
         targets,
         logs,
         traces,
+        alerts,
+        summary,
+        rules: config.alerts,
     }
 }
 
@@ -552,6 +743,14 @@ pub fn reset_metrics() {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clear();
     PROXY_TRACES
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    PROXY_ALERTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clear();
+    ALERT_LAST
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .clear();

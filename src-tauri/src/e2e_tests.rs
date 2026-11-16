@@ -30,6 +30,8 @@ fn provider(config_id: &str) -> Provider {
         models: vec![adapters::ModelProfile::new("e2e-model")],
         kind: String::new(),
         note: String::new(),
+        profile_id: String::new(),
+        api_keys: Vec::new(),
         last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),

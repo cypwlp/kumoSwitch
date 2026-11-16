@@ -61,6 +61,15 @@ test("CC Switch managed providers are shown separately and can be imported", asy
   await expect(page.getByRole("heading", { name: "OpenRouter", exact: true })).toBeVisible();
 });
 
+test("CC Switch batch import and route-stack mirroring are available", async ({ page }) => {
+  const openRouter = page.locator(".ccswitch-provider").filter({ hasText: "OpenRouter" });
+  await openRouter.getByRole("checkbox", { name: /選取 OpenRouter/ }).check();
+  await page.getByRole("button", { name: "批次匯入", exact: true }).click();
+  await expect(page.getByText(/批次匯入 1 個供應商/)).toBeVisible();
+  await page.getByRole("button", { name: "鏡像 CC Switch 路由堆疊" }).click();
+  await expect(page.getByText(/已鏡像 CC Switch 路由堆疊/)).toBeVisible();
+});
+
 test("settings exposes manual update and fallback installer", async ({ page }) => {
   await page.getByRole("button", { name: "設定與更新" }).click();
   const dialog = page.getByRole("dialog", { name: "設定與更新" });
@@ -170,8 +179,8 @@ test("live model test requires explicit cost warning", async ({ page }) => {
 });
 
 test("drift center sorts attention first and filters by status", async ({ page }) => {
-  await page.getByRole("button", { name: "漂移", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "設定漂移中心" })).toBeVisible();
+  await page.getByRole("button", { name: "守護", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "設定守護中心" })).toBeVisible();
   await expect(page.locator(".drift-summary").getByText("已漂移", { exact: true })).toBeVisible();
   await expect(page.locator(".drift-summary").getByText("未納管", { exact: true })).toBeVisible();
   await expect(page.locator(".drift-card").first().getByRole("heading", { name: "Claude Code" })).toBeVisible();
@@ -187,7 +196,7 @@ test("drift center sorts attention first and filters by status", async ({ page }
 });
 
 test("drift batch selection can reapply drifted Harnesses", async ({ page }) => {
-  await page.getByRole("button", { name: "漂移", exact: true }).click();
+  await page.getByRole("button", { name: "守護", exact: true }).click();
   await page.getByRole("button", { name: /選取待處理/ }).click();
   await expect(page.getByRole("button", { name: /批次重新套用 1/ })).toBeEnabled();
   await page.getByRole("button", { name: /批次重新套用 1/ }).click();
@@ -198,7 +207,7 @@ test("drift batch selection can reapply drifted Harnesses", async ({ page }) => 
 });
 
 test("drift batch selection can import unmanaged Harnesses", async ({ page }) => {
-  await page.getByRole("button", { name: "漂移", exact: true }).click();
+  await page.getByRole("button", { name: "守護", exact: true }).click();
   await page.getByRole("checkbox", { name: "選取 Gemini CLI" }).check();
   await page.getByRole("button", { name: /批次匯入 1/ }).click();
   const confirm = page.getByRole("dialog");
@@ -338,7 +347,7 @@ test("dark visual system matches the v0.14 baseline", async ({ page }) => {
 test("drift center matches the visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(APP);
-  await page.getByRole("button", { name: "漂移", exact: true }).click();
+  await page.getByRole("button", { name: "守護", exact: true }).click();
   await page.locator(".drift-card").first().waitFor();
   await expect(page).toHaveScreenshot("drift-center.png", {
     animations: "disabled",
@@ -403,7 +412,8 @@ test("proxy route strategy and observability are usable", async ({ page }) => {
   await page.getByLabel(/Codex · OpenCode Go 允許模型/).fill("glm-5.3-flash, deepseek-v4.1");
   await page.getByLabel(/Codex · OpenCode Go 模型映射/).fill("glm-5.3-flash=vendor/glm-5.3");
   await expect(page.getByLabel(/Codex · OpenCode Go 允許模型/)).toHaveValue("glm-5.3-flash, deepseek-v4.1");
-  await expect(page.getByText(/平均 TTFB/)).toBeVisible();
+  await expect(page.locator(".proxy-summary-strip").getByText("平均 TTFB", { exact: true })).toBeVisible();
+  await expect(page.locator(".proxy-alert-list")).toContainText("429 rate limit");
   await expect(page.getByText("upstream rate limited (429); cooling down")).toBeVisible();
 });
 
@@ -481,4 +491,94 @@ test("Command Code preview shows the intended non-destructive diff", async ({ pa
   await expect(diff).toContainText("••••41d7");
   await expect(diff).toContainText("••••9f2a");
   await expect(dialog.getByRole("button", { name: "確認套用" })).toBeVisible();
+});
+
+
+test("shared Profile library syncs the same provider across Harnesses", async ({ page }) => {
+  await page.goto("/?mock=1&onboarded=1#profiles,lang=zh");
+  await expect(page.getByRole("heading", { name: "共用供應商 Profile" })).toBeVisible();
+  const card = page.locator(".profile-card").first();
+  await expect(card.getByRole("heading", { name: "OpenCode Zen" })).toBeVisible();
+  await expect(card.getByText("3 個 Harness")).toBeVisible();
+  await card.getByRole("button", { name: "同步全部" }).click();
+  await expect(page.getByText(/已同步 1 個 Harness/)).toBeVisible();
+  await card.getByRole("button", { name: "編輯" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "編輯共用 Profile" })).toBeVisible();
+  await expect(dialog.getByLabel("OpenCode 模型映射")).toHaveValue("glm-5.3-flash");
+  await expect(dialog.getByLabel("Claude Code protocol 映射")).toHaveValue("");
+});
+
+test("backup center exposes version metadata and safe restore", async ({ page }) => {
+  await page.goto("/?mock=1&onboarded=1#backup-center,lang=zh");
+  await expect(page.getByRole("heading", { name: "備份／遷移中心" })).toBeVisible();
+  await expect(page.locator(".backup-stats")).toContainText("最新／最舊");
+  await expect(page.locator(".backup-entry")).toHaveCount(5);
+  await page.getByRole("button", { name: "立即建立快照" }).click();
+  await expect(page.getByText(/已建立 .* 的設定快照/)).toBeVisible();
+  await page.locator(".backup-entry").first().getByRole("button", { name: "還原" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/還原前會先為目前內容建立/)).toBeVisible();
+  await dialog.getByRole("button", { name: "確認還原" }).click();
+  await expect(page.getByText(/已還原 \d+ 個設定檔，並先建立安全快照/)).toBeVisible();
+});
+
+test("guardian timeline records drift and auto-repair is opt-in", async ({ page }) => {
+  await page.goto("/?mock=1&onboarded=1#guardian,lang=zh");
+  await expect(page.getByRole("heading", { name: "設定守護中心" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "變更時間線" })).toBeVisible();
+  await expect(page.locator(".guardian-event")).toHaveCount(2);
+  const autoRepair = page.getByRole("button", { name: /自動修復/ });
+  await expect(autoRepair).toHaveAttribute("aria-pressed", "false");
+  await autoRepair.click();
+  await expect(autoRepair).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("守護中心設定已更新")).toBeVisible();
+});
+
+test("API key lifecycle supports a new encrypted rotation key", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /金鑰生命週期/ }).click();
+  await expect(dialog.getByText("API Key 生命週期")).toBeVisible();
+  await expect(dialog.getByText("目前金鑰", { exact: true })).toBeVisible();
+  await dialog.getByLabel("標籤").fill("Q4 輪替");
+  await dialog.getByLabel("新 API Key").fill("sk-rotated-test-7788");
+  await dialog.getByLabel("備註").fill("測試輪替流程");
+  await dialog.getByRole("button", { name: "加密保存並切換" }).click();
+  await expect(dialog.getByText("新金鑰已加密保存並切換為使用中。")).toBeVisible();
+});
+
+test("compatibility matrix and accessibility preferences are visible", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /^模型/ }).click();
+  await expect(dialog.getByText("Harness 相容性矩陣", { exact: false }).first()).toBeVisible();
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+
+  await page.getByRole("button", { name: "設定與更新" }).click();
+  dialog = page.getByRole("dialog", { name: "設定與更新" });
+  await dialog.getByRole("button", { name: /高對比模式/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-contrast", "high");
+  await dialog.locator(".settings-choice-row").filter({ hasText: "文字大小" }).getByRole("button", { name: "大", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-text-scale", "large");
+});
+
+test("Simplified Chinese locale applies to the full interface", async ({ page }) => {
+  await page.getByRole("button", { name: "简中" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
+  await expect(page.getByRole("button", { name: "设置与更新" })).toBeVisible();
+  await page.getByRole("button", { name: "简中" }).click();
+  await page.getByRole("button", { name: "繁中" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hant");
+});
+
+
+test("English locale covers the new roadmap screens", async ({ page }) => {
+  await page.getByRole("button", { name: "EN", exact: true }).click();
+  await page.getByRole("button", { name: "Shared profiles" }).click();
+  await expect(page.getByRole("heading", { name: "Shared provider profiles" })).toBeVisible();
+  await page.getByRole("button", { name: "Backup center" }).click();
+  await expect(page.getByRole("heading", { name: "Backup & migration center" })).toBeVisible();
+  await page.getByRole("button", { name: "Guardian" }).click();
+  await expect(page.getByRole("heading", { name: "Settings Guardian" })).toBeVisible();
 });

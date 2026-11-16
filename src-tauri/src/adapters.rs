@@ -21,6 +21,37 @@ pub struct ModelCheck {
     pub status: u16,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ApiKeyVersion {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub label: String,
+    /// Plaintext is available only while loading or editing and is zeroized on save.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub secret: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub secret_enc: String,
+    #[serde(default)]
+    pub fingerprint: String,
+    #[serde(default)]
+    pub created_at: u64,
+    /// Unix millis. Zero means the key has no known expiry.
+    #[serde(default)]
+    pub expires_at: u64,
+    #[serde(default)]
+    pub last_tested_at: u64,
+    #[serde(default)]
+    pub last_ok_at: u64,
+    #[serde(default)]
+    pub last_status: u16,
+    /// active, standby, expired, or retired.
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub note: String,
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelProfile {
     #[serde(default)]
@@ -119,6 +150,13 @@ pub struct Provider {
     pub kind: String,
     #[serde(default)]
     pub note: String,
+    /// Shared cross-Harness profile this provider was synchronised from.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub profile_id: String,
+    /// Rotatable credentials. The active key is mirrored into `api_key` for
+    /// the adapter layer, while older keys remain available for rollback.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub api_keys: Vec<ApiKeyVersion>,
     /// Unix millis of the last successful apply, used for sorting.
     #[serde(default)]
     pub last_used: u64,
@@ -1087,6 +1125,8 @@ fn imported(config_id: &str, name: String, base_url: String, api_key: String, mo
         models,
         kind,
         note: "從設定檔導入".into(),
+        profile_id: String::new(),
+        api_keys: Vec::new(),
         last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),
@@ -1379,6 +1419,8 @@ mod real_config_checks {
             models: vec![ModelProfile::new("selftest-model")],
             kind: "responses".into(),
             note: String::new(),
+            profile_id: String::new(),
+            api_keys: Vec::new(),
             last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),

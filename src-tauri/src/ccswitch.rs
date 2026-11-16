@@ -39,6 +39,7 @@ pub struct CcSwitchSource {
     pub db_path: String,
     pub providers: Vec<CcSwitchProviderView>,
     pub error: Option<String>,
+    pub last_refreshed: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -59,7 +60,7 @@ struct RawCcProvider {
     api_key: String,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Snapshot {
     db_path: PathBuf,
     installed: bool,
@@ -67,6 +68,7 @@ pub struct Snapshot {
     stack_ids: BTreeMap<String, BTreeSet<String>>,
     providers: Vec<RawCcProvider>,
     error: Option<String>,
+    refreshed_at: u64,
 }
 
 pub fn tool_app_type(tool: &str) -> Option<&'static str> {
@@ -83,17 +85,35 @@ fn db_path() -> PathBuf {
     crate::adapters::home().join(".cc-switch").join("cc-switch.db")
 }
 
+pub fn database_modified_ms() -> u64 {
+    let modified = |path: PathBuf| {
+        std::fs::metadata(path)
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0)
+    };
+    let db = db_path();
+    let mut latest = modified(db.clone());
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = PathBuf::from(format!("{}{suffix}", db.display()));
+        latest = latest.max(modified(sidecar));
+    }
+    latest
+}
+
 fn live_state_path() -> PathBuf {
     crate::adapters::home().join(".cc-switch").join("live-state.json")
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Clone, Deserialize)]
 struct LiveState {
     #[serde(default)]
     apps: BTreeMap<String, LiveApp>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Clone, Deserialize)]
 struct LiveApp {
     #[serde(default)]
     mode: String,
@@ -104,7 +124,7 @@ struct LiveApp {
     stack: Option<LiveStack>,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Default, Clone, Deserialize)]
 struct LiveStack {
     #[serde(default)]
     members: Vec<String>,
@@ -223,18 +243,47 @@ fn parse_settings(settings_config: &str) -> (String, String, Vec<ModelProfile>, 
     (api_key, model, models, base_url, kind)
 }
 
+fn snapshot_now_ms() -> u64 { crate::store::stamp() as u64 }
+
+static SNAPSHOT_CACHE: std::sync::Mutex<Option<(u64, Snapshot)>> = std::sync::Mutex::new(None);
+const SNAPSHOT_TTL_MS: u64 = 15_000;
+
 pub fn read_snapshot() -> Snapshot {
+    read_snapshot_cached(false)
+}
+
+pub fn refresh_snapshot() -> Snapshot {
+    read_snapshot_cached(true)
+}
+
+fn read_snapshot_cached(force: bool) -> Snapshot {
+    let now = snapshot_now_ms();
+    if !force {
+        if let Some((at, snapshot)) = SNAPSHOT_CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).as_ref() {
+            if now.saturating_sub(*at) < SNAPSHOT_TTL_MS {
+                return snapshot.clone();
+            }
+        }
+    }
+    let snapshot = read_snapshot_uncached();
+    *SNAPSHOT_CACHE.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((now, snapshot.clone()));
+    snapshot
+}
+
+fn read_snapshot_uncached() -> Snapshot {
     let path = db_path();
     if !path.exists() {
         return Snapshot {
             db_path: path,
             installed: false,
+            refreshed_at: snapshot_now_ms(),
             ..Snapshot::default()
         };
     }
     let mut snapshot = Snapshot {
         db_path: path.clone(),
         installed: true,
+        refreshed_at: snapshot_now_ms(),
         ..Snapshot::default()
     };
     let live = read_live_state(&live_state_path());
@@ -304,6 +353,8 @@ pub fn read_snapshot() -> Snapshot {
 }
 
 impl Snapshot {
+    pub fn public_error(&self) -> Option<&str> { self.error.as_deref() }
+
     pub fn view_for(&self, tool: &str, existing: &[Provider]) -> Option<CcSwitchSource> {
         if !self.installed {
             return None;
@@ -350,7 +401,27 @@ impl Snapshot {
             db_path: crate::adapters::display_path(&self.db_path),
             providers,
             error: self.error.clone(),
+            last_refreshed: self.refreshed_at,
         })
+    }
+
+    pub fn route_provider_ids(&self, tool: &str) -> Vec<String> {
+        let Some(app_type) = tool_app_type(tool) else { return Vec::new() };
+        let mut ids = Vec::new();
+        if let Some(stack) = self.apps.get(app_type).and_then(|app| app.stack.as_ref()) {
+            for id in &stack.members {
+                if !ids.contains(id) { ids.push(id.clone()); }
+            }
+            for id in stack.keys.values() {
+                if !ids.contains(id) { ids.push(id.clone()); }
+            }
+        }
+        if ids.is_empty() {
+            for provider in self.providers.iter().filter(|provider| provider.app_type == app_type) {
+                if provider.is_current || provider.in_failover_queue { ids.push(provider.id.clone()); }
+            }
+        }
+        ids
     }
 
     pub fn provider_for_import(&self, tool: &str, provider_id: &str) -> Result<Provider, String> {
@@ -385,6 +456,8 @@ impl Snapshot {
             models: raw.models.clone(),
             kind: raw.kind.clone(),
             note: "從 CC Switch 匯入".into(),
+            profile_id: String::new(),
+            api_keys: Vec::new(),
             last_used: 0,
             model_synced_at: 0,
             previous_model: String::new(),

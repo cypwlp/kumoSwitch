@@ -23,6 +23,10 @@ interface RailProps {
   onProxy: () => void;
   driftActive: boolean;
   onDrift: () => void;
+  profilesActive: boolean;
+  onProfiles: () => void;
+  backupsActive: boolean;
+  onBackups: () => void;
   onSettings: () => void;
 }
 
@@ -51,10 +55,14 @@ export function Rail({
   onProxy,
   driftActive,
   onDrift,
+  profilesActive,
+  onProfiles,
+  backupsActive,
+  onBackups,
   onSettings,
 }: RailProps) {
   const [actionsOpen, setActionsOpen] = useState(false);
-  const activeActionCount = Number(statsActive) + Number(proxyActive) + Number(driftActive);
+  const activeActionCount = Number(statsActive) + Number(proxyActive) + Number(driftActive) + Number(profilesActive) + Number(backupsActive);
   const q = filter.trim().toLowerCase();
   const visible = tools.filter(
     (t) =>
@@ -145,7 +153,13 @@ export function Rail({
               代理
             </button>
             <button className={`ghost small${driftActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onDrift(); }} title="檢查實際設定檔是否偏離 kumoSwitch">
-              漂移
+              守護
+            </button>
+            <button className={`ghost small${profilesActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onProfiles(); }} title="跨 Harness 重用供應商設定">
+              共用 Profile
+            </button>
+            <button className={`ghost small${backupsActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onBackups(); }} title="集中管理備份、版本與遷移">
+              備份中心
             </button>
           </div>
           <div className="rail-action-row rail-data-actions">

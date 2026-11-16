@@ -13,6 +13,8 @@ const repoUrl = `https://github.com/${repo}`;
 const releasesUrl = `${repoUrl}/releases`;
 const latestReleaseUrl = `${releasesUrl}/latest`;
 const latestApi = `https://api.github.com/repos/${repo}/releases/latest`;
+const releasesApi = `https://api.github.com/repos/${repo}/releases?per_page=30`;
+const channel = new URLSearchParams(location.search).get("channel") === "beta" ? "beta" : "stable";
 
 for (const [id, href] of [
   ["repoLink", repoUrl],
@@ -254,9 +256,13 @@ function applyRelease(data) {
   Object.assign(assets, picked);
   const version = data.tag_name || "unknown";
   const date = data.published_at ? data.published_at.slice(0, 10) : "";
-  document.getElementById("versionBadge").textContent = `最新版本 ${version}`;
+  document.getElementById("versionBadge").textContent = `${channel === "beta" ? "Beta 版本" : "最新版本"} ${version}`;
   document.getElementById("trustVersion").textContent = version;
-  document.getElementById("releaseMeta").textContent = `由 GitHub Releases 提供${date ? ` · 發布於 ${date}` : ""} · 下載後可用 SHA-256 核對`;
+  document.getElementById("releaseMeta").textContent = `${channel === "beta" ? "Beta prerelease" : "Stable release"} 由 GitHub Releases 提供${date ? ` · 發布於 ${date}` : ""} · 下載後可用 SHA-256 核對`;
+  for (const id of ["heroDownload", "alternateDownload", "checksumsLink", "securityChecksums", "stepsChecksums"]) {
+    const el = document.getElementById(id);
+    if (el && data.html_url) el.href = data.html_url;
+  }
   renderPlatform(currentPlatform, false);
 }
 
@@ -272,9 +278,15 @@ detectPlatformAccurate().then((platform) => {
 
 (async function loadRelease() {
   try {
-    const response = await fetch(latestApi, { headers: { Accept: "application/vnd.github+json" } });
+    const endpoint = channel === "beta" ? releasesApi : latestApi;
+    const response = await fetch(endpoint, { headers: { Accept: "application/vnd.github+json" } });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    applyRelease(await response.json());
+    const payload = await response.json();
+    const data = channel === "beta"
+      ? payload.find((item) => item.prerelease && /-beta/i.test(item.tag_name || ""))
+      : payload;
+    if (!data) throw new Error("No beta release is currently published");
+    applyRelease(data);
   } catch (error) {
     document.getElementById("versionBadge").textContent = "無法取得版本資訊";
     document.getElementById("releaseMeta").textContent = "GitHub API 暫時不可用；下載按鈕會帶你到 Releases，之後可再重新整理。";

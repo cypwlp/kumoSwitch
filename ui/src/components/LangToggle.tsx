@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { applyLang, readLang, saveLang, type Lang } from "../i18n";
 
 const OPTIONS: { lang: Lang; label: string }[] = [
-  { lang: "zh", label: "中文" },
+  { lang: "zh", label: "繁中" },
+  { lang: "zh-Hans", label: "简中" },
   { lang: "en", label: "EN" },
 ];
 

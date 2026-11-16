@@ -7,6 +7,36 @@ export interface ModelCheck {
   status: number;
 }
 
+export interface ApiKeyView {
+  id: string;
+  label: string;
+  fingerprint: string;
+  created_at: number;
+  expires_at: number;
+  last_tested_at: number;
+  last_ok_at: number;
+  last_status: number;
+  status: "active" | "standby" | "expired" | "retired" | string;
+  note: string;
+  active: boolean;
+  expired: boolean;
+}
+
+export interface ApiKeyInput {
+  provider_id: string;
+  id?: string;
+  label?: string;
+  secret?: string;
+  expires_at?: number;
+  note?: string;
+  activate?: boolean;
+}
+
+export interface KeyTestResult {
+  key: ApiKeyView;
+  result: TestResult;
+}
+
 export interface ModelProfile {
   id: string;
   name: string;
@@ -36,6 +66,8 @@ export interface Provider {
   models?: ModelProfile[];
   kind: string;
   note: string;
+  profile_id?: string;
+  api_keys?: ApiKeyView[];
   /** Unix millis of the last successful apply. */
   last_used?: number;
   model_synced_at?: number;
@@ -79,6 +111,19 @@ export interface CcSwitchSource {
   db_path: string;
   providers: CcSwitchProviderView[];
   error: string | null;
+  last_refreshed: number;
+}
+
+export interface CcSwitchBatchResult {
+  imported: number;
+  skipped: number;
+  providers: Provider[];
+}
+
+export interface CcSwitchRouteResult {
+  imported: number;
+  stack: string[];
+  providers: Provider[];
 }
 
 export interface ToolView {
@@ -149,6 +194,39 @@ export interface BackupInfo {
   id: string;
   created: string;
   files: string[];
+  tool: string;
+  tool_name: string;
+  reason: string;
+  version: string;
+  size_bytes: number;
+  checksum: string;
+}
+
+export interface BackupPolicy {
+  scheduled: boolean;
+  interval_hours: number;
+  keep: number;
+  last_run: number;
+}
+
+export interface BackupStats {
+  snapshots: number;
+  tools: number;
+  files: number;
+  size_bytes: number;
+  newest: string;
+  oldest: string;
+}
+
+export interface BackupCenter {
+  backups: BackupInfo[];
+  stats: BackupStats;
+  policy: BackupPolicy;
+}
+
+export interface PreUpdateBackupResult {
+  snapshots: number;
+  tools: number;
 }
 
 export interface TestResult {
@@ -183,6 +261,13 @@ export interface AppInfo {
   version: string;
   dataDir: string;
   encrypted: boolean;
+  guardian?: GuardianPolicy;
+  backup?: BackupPolicy;
+  updateChannel?: string;
+  preUpdateBackup?: boolean;
+  releaseChannel?: string;
+  buildCommit?: string;
+  signing?: string;
 }
 
 export interface CcSwitchImportResult {
@@ -328,12 +413,43 @@ export interface ProxyTargetPolicy {
   model_map: Record<string, string>;
 }
 
+export interface ProxyAlertRules {
+  enabled: boolean;
+  notify: boolean;
+  min_requests: number;
+  success_rate_below_pct: number;
+  slow_ttfb_ms: number;
+  cooldown_secs: number;
+}
+
 export interface ProxyConfig {
   enabled: boolean;
   port: number;
   stack: string[];
   strategy: RoutingStrategy;
   policies: Record<string, ProxyTargetPolicy>;
+  alerts: ProxyAlertRules;
+}
+
+export interface ProxyAlert {
+  id: number;
+  ts: number;
+  target: string;
+  kind: string;
+  severity: "warning" | "error" | string;
+  message: string;
+  value: string;
+  circuit_open_until: number;
+}
+
+export interface ProxySummary {
+  targets_configured: number;
+  targets_reporting: number;
+  requests: number;
+  success_rate: number;
+  avg_ttfb_ms: number;
+  failovers: number;
+  active_alerts: number;
 }
 
 export interface ProxyLogEntry {
@@ -391,4 +507,145 @@ export interface ProxyMetrics {
   targets: Record<string, TargetMetrics>;
   logs: ProxyLogEntry[];
   traces: ProxyTrace[];
+  alerts: ProxyAlert[];
+  summary: ProxySummary;
+  rules: ProxyAlertRules;
+}
+
+export interface CompatibilityCheck {
+  key: string;
+  label: string;
+  status: "ok" | "info" | "warn" | "fail" | string;
+  detail: string;
+}
+
+export interface ModelCompatibility {
+  tool: string;
+  tool_name: string;
+  provider_id: string;
+  provider_name: string;
+  model_id: string;
+  model_name: string;
+  status: "compatible" | "warning" | "incompatible" | string;
+  score: number;
+  checks: CompatibilityCheck[];
+  issues: string[];
+}
+
+export interface GuardianPolicy {
+  enabled: boolean;
+  auto_repair: boolean;
+  notify: boolean;
+  poll_secs: number;
+  retention: number;
+}
+
+export interface GuardianFile {
+  file: string;
+  path: string;
+  exists: boolean;
+  modified_at: number;
+  fingerprint: string;
+}
+
+export interface GuardianToolStatus {
+  tool: string;
+  tool_name: string;
+  status: "clean" | "drifted" | "unmanaged" | "empty" | "error" | string;
+  active_id: string | null;
+  expected_name: string | null;
+  current_base_url: string;
+  current_model: string;
+  current_key_tail: string;
+  expected_base_url: string;
+  expected_model: string;
+  changed_fields: string[];
+  unmanaged_providers: string[];
+  message: string;
+  actor: string;
+  files: GuardianFile[];
+  drift_signature: string;
+  last_checked: number;
+}
+
+export interface GuardianEvent {
+  id: string;
+  ts: number;
+  tool: string;
+  tool_name: string;
+  kind: string;
+  status: string;
+  severity: string;
+  actor: string;
+  changed_fields: string[];
+  message: string;
+  current_base_url: string;
+  current_model: string;
+  expected_name: string | null;
+  file_modified_at: number;
+}
+
+export interface GuardianSummary {
+  clean: number;
+  drifted: number;
+  unmanaged: number;
+  empty: number;
+  error: number;
+  watched_tools: number;
+}
+
+export interface GuardianOverview {
+  policy: GuardianPolicy;
+  watching: boolean;
+  last_scan: number;
+  last_self_write: number;
+  summary: GuardianSummary;
+  statuses: GuardianToolStatus[];
+  events: GuardianEvent[];
+}
+
+export interface SharedProfileTarget {
+  tool: string;
+  provider_id: string;
+  model: string;
+  kind: string;
+  enabled: boolean;
+  last_synced_at: number;
+}
+
+export interface SharedProfileView {
+  id: string;
+  name: string;
+  base_url: string;
+  kind: string;
+  model: string;
+  models: ModelProfile[];
+  note: string;
+  tags: string[];
+  targets: SharedProfileTarget[];
+  key_count: number;
+  active_key_label: string;
+  api_key_masked: string;
+  has_api_key: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SharedProfileInput extends Omit<SharedProfileView, "key_count" | "active_key_label" | "api_key_masked" | "has_api_key" | "created_at" | "updated_at"> {
+  api_key: string;
+  clear_api_key: boolean;
+}
+
+export interface ProfileSyncItem {
+  tool: string;
+  provider_id: string;
+  provider_name: string;
+  model: string;
+  created: boolean;
+}
+
+export interface ProfileSyncResult {
+  profile_id: string;
+  synced: ProfileSyncItem[];
+  skipped: string[];
 }

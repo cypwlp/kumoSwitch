@@ -6,12 +6,19 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+
+env:
+  KUMOSWITCH_BUILD_COMMIT: ${{ github.sha }}
+  KUMOSWITCH_RELEASE_CHANNEL: ${{ contains(github.ref_name, '-beta') && 'beta' || 'stable' }}
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.release.outputs.release_id }}
+      channel: ${{ steps.release.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - name: Create or reuse draft release
@@ -33,16 +40,24 @@ jobs:
             notes_args=(--generate-notes)
           fi
 
+          prerelease_args=()
+          channel=stable
+          if [[ "$TAG" == *-beta* ]]; then
+            prerelease_args=(--prerelease)
+            channel=beta
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --draft "${notes_args[@]}"
+            gh release edit "$TAG" --draft "${prerelease_args[@]}" "${notes_args[@]}"
           else
             gh release create "$TAG" \
               --draft \
               --title "kumoSwitch $TAG" \
+              "${prerelease_args[@]}" \
               "${notes_args[@]}"
           fi
           release_id=$(gh release view "$TAG" --json databaseId --jq .databaseId)
           echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
 
   windows:
     needs: prepare
@@ -235,13 +250,15 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           release_notes=$(gh release view "$TAG" --json body --jq .body)
-          RELEASE_NOTES="$release_notes" node .github/scripts/build-latest-json.mjs release-assets latest.json "$RELEASE_TAG"
+          if [[ "$RELEASE_TAG" == *-beta* ]]; then manifest=latest-beta.json; else manifest=latest.json; fi
+          RELEASE_NOTES="$release_notes" node .github/scripts/build-latest-json.mjs release-assets "$manifest" "$RELEASE_TAG"
+          echo "manifest=$manifest" >> "$GITHUB_ENV"
 
       - name: Upload updater manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
-        run: gh release upload "$TAG" latest.json --clobber
+        run: gh release upload "$TAG" "$manifest" --clobber
 
   checksums:
     needs: [prepare, updater-json]
@@ -270,8 +287,32 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: gh release upload "$TAG" release-assets/SHA256SUMS.txt --clobber
 
+      - name: Attest release artifact provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release-assets/*
+
+  verify:
+    needs: [prepare, updater-json, checksums]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download published draft assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release download "$TAG" --dir release-assets --pattern '*' --clobber
+      - name: Verify manifests, signatures and checksums
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_CHANNEL: ${{ needs.prepare.outputs.channel }}
+        run: |
+          manifest=latest-beta.json
+          if [[ "$RELEASE_CHANNEL" == "stable" ]]; then manifest=latest.json; fi
+          node .github/scripts/verify-release.mjs release-assets "$manifest" "$RELEASE_TAG"
+
   publish:
-    needs: [prepare, checksums]
+    needs: [prepare, checksums, verify]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

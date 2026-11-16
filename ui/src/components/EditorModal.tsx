@@ -12,6 +12,8 @@ import type {
   ModelDiscovery,
   ToolView,
   LiveTestPolicy,
+  ApiKeyView,
+  ModelCompatibility,
 } from "../types";
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
@@ -29,7 +31,7 @@ interface EditorProps {
   onClone?: () => void;
 }
 
-type Tab = "overview" | "models" | "connection" | "history" | "raw";
+type Tab = "overview" | "models" | "keys" | "connection" | "history" | "raw";
 
 const EMPTY: Provider = {
   id: "",
@@ -205,12 +207,21 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const [rawLoading, setRawLoading] = useState(false);
   const [rawLoaded, setRawLoaded] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
+  const [apiKeys, setApiKeys] = useState<ApiKeyView[]>(provider?.api_keys ?? []);
+  const [newKeyLabel, setNewKeyLabel] = useState("");
+  const [newKeySecret, setNewKeySecret] = useState("");
+  const [newKeyExpiry, setNewKeyExpiry] = useState("");
+  const [newKeyNote, setNewKeyNote] = useState("");
+  const [keyBusy, setKeyBusy] = useState("");
+  const [keyNotice, setKeyNotice] = useState("");
+  const [compat, setCompat] = useState<Record<string, ModelCompatibility>>({});
 
   const dirty = snapshot(form, keyChanged) !== snapshot(initial.current, false);
   const tabs: { id: Tab; label: string }[] = provider
     ? [
         { id: "overview", label: "概覽" },
         { id: "models", label: "模型" },
+        { id: "keys", label: "金鑰生命週期" },
         { id: "connection", label: "連線" },
         { id: "history", label: "紀錄" },
         { id: "raw", label: "原始設定" },
@@ -223,7 +234,12 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   useEffect(() => {
     let alive = true;
     api.providerPresets().then((items) => alive && setPresets(items)).catch(() => {});
-    if (provider) api.backupList(tool.id).then((items) => alive && setBackups(items.slice(0, 8))).catch(() => {});
+    if (provider) {
+      api.backupList(tool.id).then((items) => alive && setBackups(items.slice(0, 8))).catch(() => {});
+      api.modelCompatibility(tool.id, provider.id).then((items) => {
+        if (alive) setCompat(Object.fromEntries(items.map((item) => [item.model_id, item])));
+      }).catch(() => {});
+    }
     api.auditLog(40).then((items) => alive && setAuditEntries(items)).catch(() => {});
     api.liveTestPolicy().then((policy) => alive && setLivePolicy(policy)).catch(() => {});
     return () => {
@@ -643,6 +659,92 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const scheduleInterval = form.model_sync_interval_secs ?? 86_400;
   const scheduleNextAt = Math.max(form.model_sync_retry_at ?? 0, form.model_sync_next_at ?? 0, form.model_synced_at && scheduleInterval ? form.model_synced_at + scheduleInterval * 1000 : 0);
 
+  const refreshKeyRows = async () => {
+    if (!provider) return;
+    const providers = await api.providerList(tool.id);
+    const current = providers.find((item) => item.id === provider.id);
+    if (current) {
+      setApiKeys(current.api_keys ?? []);
+      setForm((previous) => ({
+        ...previous,
+        has_api_key: current.has_api_key,
+        api_key_masked: current.api_key_masked,
+      }));
+    }
+  };
+
+  const addApiKey = async () => {
+    if (!provider || !newKeySecret.trim()) return;
+    setKeyBusy("add");
+    setKeyNotice("");
+    try {
+      const expiresAt = newKeyExpiry ? new Date(`${newKeyExpiry}T23:59:59`).getTime() : 0;
+      await api.apiKeyAdd(tool.id, {
+        provider_id: provider.id,
+        label: newKeyLabel,
+        secret: newKeySecret,
+        expires_at: Number.isFinite(expiresAt) ? expiresAt : 0,
+        note: newKeyNote,
+        activate: true,
+      });
+      setNewKeyLabel("");
+      setNewKeySecret("");
+      setNewKeyExpiry("");
+      setNewKeyNote("");
+      await refreshKeyRows();
+      setKeyNotice("新金鑰已加密保存並切換為使用中。");
+    } catch (error) {
+      setKeyError(errorText(error));
+    } finally {
+      setKeyBusy("");
+    }
+  };
+
+  const activateApiKey = async (key: ApiKeyView) => {
+    if (!provider) return;
+    setKeyBusy(`activate-${key.id}`);
+    setKeyNotice("");
+    try {
+      await api.apiKeyActivate(tool.id, provider.id, key.id);
+      await refreshKeyRows();
+      setKeyNotice(`已切換到「${key.label}」；下次套用會使用這把金鑰。`);
+    } catch (error) {
+      setKeyError(errorText(error));
+    } finally {
+      setKeyBusy("");
+    }
+  };
+
+  const testApiKey = async (key: ApiKeyView) => {
+    if (!provider) return;
+    setKeyBusy(`test-${key.id}`);
+    setKeyNotice("");
+    try {
+      const tested = await api.apiKeyTest(tool.id, provider.id, key.id);
+      setApiKeys((current) => current.map((item) => item.id === key.id ? tested.key : item));
+      setKeyNotice(`${key.label}：${tested.result.status || "連線失敗"} · ${tested.result.ms}ms — ${tested.result.message}`);
+    } catch (error) {
+      setKeyError(errorText(error));
+    } finally {
+      setKeyBusy("");
+    }
+  };
+
+  const removeApiKey = async (key: ApiKeyView) => {
+    if (!provider) return;
+    setKeyBusy(`remove-${key.id}`);
+    setKeyNotice("");
+    try {
+      await api.apiKeyRemove(tool.id, provider.id, key.id);
+      await refreshKeyRows();
+      setKeyNotice(`已刪除「${key.label}」。`);
+    } catch (error) {
+      setKeyError(errorText(error));
+    } finally {
+      setKeyBusy("");
+    }
+  };
+
   return (
     <>
       <Modal
@@ -860,6 +962,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
               {(form.models ?? []).map((model, index) => {
                 const active = form.model === model.id && Boolean(model.id);
                 const stale = Boolean(form.model_synced_at && (!model.last_seen_at || model.last_seen_at < form.model_synced_at));
+                const compatibility = compat[model.id];
                 return (
                   <article className={`model-card${active ? " active" : ""}${model.archived ? " archived" : ""}${stale ? " stale" : ""}`} key={`${index}-${model.id}`} aria-label={`模型 ${model.id || "新模型"}`}>
                     <div className="model-actions">
@@ -929,12 +1032,28 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                       <button type="button" className="small danger model-remove" onClick={() => removeModel(index)}>移除</button>
                     </div>
                     <div className="model-fields">
-                      {(model.favorite || model.archived || stale) ? (
+                      {(model.favorite || model.archived || stale || compatibility) ? (
                         <div className="model-card-status">
                           {model.favorite ? <span className="badge ok">★ 常用</span> : null}
                           {model.archived ? <span className="badge subtle">已封存</span> : null}
                           {stale ? <span className="badge warn">本次未回報</span> : null}
+                          {compatibility ? <span className={`badge compatibility-${compatibility.status}`}>{compatibility.status === "compatible" ? "相容" : compatibility.status === "warning" ? `提醒 · ${compatibility.score}` : `不相容 · ${compatibility.score}`}</span> : null}
                         </div>
+                      ) : null}
+                      {compatibility ? (
+                        <details className={`model-compatibility ${compatibility.status}`}>
+                          <summary>Harness 相容性矩陣 · {compatibility.score}/100</summary>
+                          <div className="model-compatibility-checks">
+                            {compatibility.checks.map((check) => (
+                              <div className={`compat-check ${check.status}`} key={check.key}>
+                                <span>{check.label}</span>
+                                <strong>{check.status === "ok" ? "符合" : check.status === "fail" ? "阻擋" : check.status === "warn" ? "提醒" : "資訊"}</strong>
+                                <p>{check.detail}</p>
+                              </div>
+                            ))}
+                          </div>
+                          {compatibility.status === "incompatible" ? <div className="note error">明確不相容的組合會在套用前被阻擋。若確定要測試，請在 Metadata 加入 <code>"compatibility_override": true</code>。</div> : null}
+                        </details>
                       ) : null}
                       <div className="field-row">
                         <div className="field">
@@ -971,6 +1090,67 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
               {Array.from(new Set(presets.flatMap((preset) => preset.models))).sort((left, right) => left.localeCompare(right)).map((model) => <option key={model} value={model} />)}
             </datalist>
             {modelError ? <div className="note error">{modelError}</div> : null}
+          </div>
+        ) : null}
+
+        {tab === "keys" ? (
+          <div className="detail-panel" id={`panel-keys`} role="tabpanel" aria-labelledby={`tab-keys`}>
+            <div className="detail-section-head">
+              <div>
+                <h4>API Key 生命週期</h4>
+                <p>同一供應商可保存多把輪替金鑰；只有使用中的金鑰會寫入 Harness。其他金鑰保持加密待命，可隨時測試或切回。</p>
+              </div>
+              <span className="badge subtle">{apiKeys.length} 個版本</span>
+            </div>
+            {!provider ? (
+              <div className="note">建立供應商並儲存後，才能管理多把輪替金鑰。</div>
+            ) : (
+              <>
+                <div className="key-lifecycle-list">
+                  {apiKeys.map((key) => (
+                    <article className={`key-lifecycle-card${key.active ? " active" : ""}${key.expired ? " expired" : ""}`} key={key.id}>
+                      <div className="key-lifecycle-main">
+                        <div className="key-lifecycle-head">
+                          <span className={`key-fingerprint ${key.active ? "on" : ""}`}>{key.active ? "使用中" : key.status}</span>
+                          <strong>{key.label}</strong>
+                          <code>••••{key.fingerprint.slice(-4)}</code>
+                          {key.expired ? <span className="badge err">已過期</span> : null}
+                        </div>
+                        <div className="key-lifecycle-meta">
+                          <span>建立 {new Date(key.created_at).toLocaleDateString()}</span>
+                          <span>{key.expires_at ? `到期 ${new Date(key.expires_at).toLocaleDateString()}` : "無到期日"}</span>
+                          <span>{key.last_tested_at ? `上次測試 ${new Date(key.last_tested_at).toLocaleString()} · ${key.last_status || "失敗"}` : "尚未測試"}</span>
+                        </div>
+                        {key.note ? <p>{key.note}</p> : null}
+                      </div>
+                      <div className="key-lifecycle-actions">
+                        <button className="ghost small" disabled={Boolean(keyBusy) || key.expired} onClick={() => void testApiKey(key)}>{keyBusy === `test-${key.id}` ? "測試中…" : "測試"}</button>
+                        {!key.active ? <button className="primary small" disabled={Boolean(keyBusy) || key.expired} onClick={() => void activateApiKey(key)}>{keyBusy === `activate-${key.id}` ? "切換中…" : "切換使用"}</button> : null}
+                        {!key.active ? <button className="danger small" disabled={Boolean(keyBusy)} onClick={() => void removeApiKey(key)}>刪除</button> : null}
+                      </div>
+                    </article>
+                  ))}
+                  {!apiKeys.length ? <div className="empty small">目前沒有可管理的金鑰版本；可在下方新增。</div> : null}
+                </div>
+
+                <div className="key-add-card">
+                  <div className="key-add-head"><strong>新增／輪替金鑰</strong><span>新增後預設切換為使用中；舊金鑰會保留為待命版本。</span></div>
+                  <div className="key-add-grid">
+                    <div className="field"><label>標籤</label><input aria-label="標籤" value={newKeyLabel} onChange={(event) => setNewKeyLabel(event.target.value)} placeholder="例：2026 Q4 輪替" /></div>
+                    <div className="field"><label>到期日（選填）</label><input aria-label="到期日" type="date" value={newKeyExpiry} onChange={(event) => setNewKeyExpiry(event.target.value)} /></div>
+                    <div className="field key-add-secret"><label>新 API Key</label><input aria-label="新 API Key" type="password" autoComplete="off" value={newKeySecret} onChange={(event) => setNewKeySecret(event.target.value)} placeholder="sk-..." /></div>
+                    <div className="field key-add-secret"><label>備註</label><input aria-label="備註" value={newKeyNote} onChange={(event) => setNewKeyNote(event.target.value)} placeholder="輪替原因、負責人或用途" /></div>
+                  </div>
+                  <button className="primary" onClick={() => void addApiKey()} disabled={Boolean(keyBusy) || newKeySecret.trim().length < 4}>{keyBusy === "add" ? "加密保存中…" : "加密保存並切換"}</button>
+                </div>
+                {keyNotice ? <div className="note ok">{keyNotice}</div> : null}
+                {keyError ? <div className="note error">{keyError}</div> : null}
+                <div className="key-isolation-note">
+                  <strong>隔離原則</strong>
+                  <span>不同 Harness 的供應商各自保存金鑰版本；共用 Profile 同步時才會複製金鑰到對應 Harness。所有輪替、切換、測試與刪除都會寫入本機稽核紀錄。</span>
+                </div>
+              </>
+            )}
           </div>
         ) : null}
 

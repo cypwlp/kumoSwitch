@@ -30,7 +30,10 @@ import { Onboarding } from "./components/Onboarding";
 import { StatsView } from "./components/StatsView";
 import { ProxyView } from "./components/ProxyView";
 import { DriftView } from "./components/DriftView";
+import { ProfilesView } from "./components/ProfilesView";
+import { BackupCenterView } from "./components/BackupCenterView";
 import { Toasts, useToasts } from "./components/Toasts";
+import { useUiPreferences } from "./preferences";
 import { SettingsModal } from "./components/SettingsModal";
 import type { TestState } from "./components/ProviderTable";
 
@@ -57,6 +60,7 @@ function hashTokens(): string[] {
 
 export default function App() {
   const { mode, setMode } = useTheme();
+  const { preferences, update: updatePreferences } = useUiPreferences();
   const { items: toasts, push } = useToasts();
 
   const [tools, setTools] = useState<ToolView[]>([]);
@@ -73,6 +77,10 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [showProxy, setShowProxy] = useState(false);
   const [showDrift, setShowDrift] = useState(false);
+  const [showProfiles, setShowProfiles] = useState(false);
+  const [showBackups, setShowBackups] = useState(false);
+  const [updateChannel, setUpdateChannel] = useState("stable");
+  const [preUpdateBackup, setPreUpdateBackup] = useState(true);
   const [modal, setModal] = useState<ModalState>(null);
   const [pendingImport, setPendingImport] = useState<{ text: string; name: string; info?: EncryptedBackupInfo } | null>(null);
   const [palette, setPalette] = useState(false);
@@ -207,6 +215,8 @@ export default function App() {
           setInfo(appInfo);
           setAutoHealth(Boolean(appInfo.autoHealth));
           setAutoModelSync(Boolean(appInfo.autoModelSync));
+          setUpdateChannel(appInfo.updateChannel ?? appInfo.releaseChannel ?? "stable");
+          setPreUpdateBackup(appInfo.preUpdateBackup ?? true);
         }
       } catch {
         /* version banner is optional */
@@ -222,6 +232,9 @@ export default function App() {
       }
 
       const tokens = hashTokens();
+      if (alive && tokens.includes("guardian")) setShowDrift(true);
+      if (alive && tokens.includes("profiles")) setShowProfiles(true);
+      if (alive && (tokens.includes("backups") || tokens.includes("backup-center"))) setShowBackups(true);
       const needsCodex = tokens.some((t) => ["codex", "modal", "diff", "backup"].includes(t));
       if (!needsCodex || !alive) return;
       const codex = list.find((t) => t.id === "codex") ?? list[0];
@@ -328,9 +341,22 @@ export default function App() {
           void refreshTools();
           if (selectedId) void loadProviders(selectedId);
         });
+        const offGuardian = await listen<Array<{ tool: string; event: { message: string; actor: string } }>>("kumoswitch://guardian", (event) => {
+          const first = event.payload[0];
+          if (!first) return;
+          const extra = event.payload.length > 1 ? `，另有 ${event.payload.length - 1} 個變更` : "";
+          push(`${first.tool}：${first.event.message}${extra}`, "err");
+          void refreshTools();
+          if (selectedId) void loadProviders(selectedId);
+        });
+        const offProxyAlert = await listen<{ severity: string; message: string; value: string }>("kumoswitch://proxy-alert", (event) => {
+          push(`代理${event.payload.severity === "error" ? "錯誤" : "警告"}：${event.payload.message}（${event.payload.value}）`, event.payload.severity === "error" ? "err" : "ok");
+        });
         dispose = () => {
           offToast();
           offChanged();
+          offGuardian();
+          offProxyAlert();
         };
       } catch {
         /* not running inside Tauri */
@@ -505,6 +531,70 @@ export default function App() {
       push(errorText(error), "err");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const refreshCcSwitch = async () => {
+    setBusy(true);
+    try {
+      await api.ccSwitchRefresh();
+      await refreshTools();
+      push("CC Switch 供應商目錄已重新整理", "ok");
+    } catch (error) {
+      push(errorText(error), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importCcSwitchBatch = async (providerIds: string[]) => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const result = await api.importCcSwitchBatch(selected.id, providerIds);
+      push(`批次匯入 ${result.imported} 個供應商${result.skipped ? `，略過 ${result.skipped} 個重複項目` : ""}`, "ok");
+      await reload(selected.id);
+    } catch (error) {
+      push(errorText(error), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const mirrorCcSwitchRoute = async () => {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const result = await api.ccSwitchImportRouteStack(selected.id);
+      push(`已鏡像 CC Switch 路由堆疊：${result.stack.length} 個目標，新增 ${result.imported} 個供應商`, "ok");
+      await reload(selected.id);
+    } catch (error) {
+      push(errorText(error), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changeUpdateChannel = async (channel: string) => {
+    try {
+      const saved = await api.setUpdatePreferences(channel, preUpdateBackup);
+      setUpdateChannel(saved.channel);
+      setInfo((current) => current ? { ...current, updateChannel: saved.channel, preUpdateBackup: saved.preUpdateBackup } : current);
+      push(saved.channel === "beta" ? "已切換到 Beta 通道；Beta 安裝檔仍以官方 Release 為準" : "已切換到 Stable 通道", "ok");
+    } catch (error) {
+      push(errorText(error), "err");
+    }
+  };
+
+  const togglePreUpdateBackup = async () => {
+    const next = !preUpdateBackup;
+    try {
+      const saved = await api.setUpdatePreferences(updateChannel, next);
+      setPreUpdateBackup(saved.preUpdateBackup);
+      setInfo((current) => current ? { ...current, preUpdateBackup: saved.preUpdateBackup } : current);
+      push(next ? "更新前會先建立設定快照" : "已關閉更新前備份", "ok");
+    } catch (error) {
+      push(errorText(error), "err");
     }
   };
 
@@ -711,6 +801,10 @@ export default function App() {
     setUpdating(true);
     setProgress(0);
     try {
+      if (preUpdateBackup) {
+        const backup = await api.prepareUpdateBackup();
+        if (backup.snapshots > 0) push(`更新前已建立 ${backup.snapshots} 份設定快照`, "ok");
+      }
       await installUpdate(setProgress);
     } catch (err) {
       push(errorText(err), "err");
@@ -734,17 +828,21 @@ export default function App() {
           theme={mode}
           busy={busy}
           onFilter={setToolFilter}
-          onSelect={(id) => { setShowDrift(false); setShowProxy(false); setShowStats(false); void selectTool(id); }}
+          onSelect={(id) => { setShowDrift(false); setShowProxy(false); setShowStats(false); setShowProfiles(false); setShowBackups(false); void selectTool(id); }}
           onRescan={() => void rescan()}
           onTheme={setMode}
           onExport={() => void exportList()}
           onImport={() => fileRef.current?.click()}
           statsActive={showStats}
-          onStats={() => { setShowDrift(false); setShowProxy(false); setShowStats((v) => !v); }}
+          onStats={() => { setShowDrift(false); setShowProxy(false); setShowProfiles(false); setShowBackups(false); setShowStats((v) => !v); }}
           proxyActive={showProxy}
-          onProxy={() => { setShowDrift(false); setShowStats(false); setShowProxy((v) => !v); }}
+          onProxy={() => { setShowDrift(false); setShowStats(false); setShowProfiles(false); setShowBackups(false); setShowProxy((v) => !v); }}
           driftActive={showDrift}
-          onDrift={() => { setShowProxy(false); setShowStats(false); setShowDrift((v) => !v); }}
+          onDrift={() => { setShowProxy(false); setShowStats(false); setShowProfiles(false); setShowBackups(false); setShowDrift((v) => !v); }}
+          profilesActive={showProfiles}
+          onProfiles={() => { setShowDrift(false); setShowProxy(false); setShowStats(false); setShowBackups(false); setShowProfiles((v) => !v); }}
+          backupsActive={showBackups}
+          onBackups={() => { setShowDrift(false); setShowProxy(false); setShowStats(false); setShowProfiles(false); setShowBackups((v) => !v); }}
           onSettings={() => setSettingsOpen(true)}
         />
 
@@ -760,6 +858,20 @@ export default function App() {
             <ProxyView onError={(m) => push(m, "err")} onToast={(m, k) => push(m, k ?? "ok")} />
           ) : showStats ? (
             <StatsView onError={(m) => push(m, "err")} />
+          ) : showProfiles ? (
+            <ProfilesView
+              onError={(message) => push(message, "err")}
+              onToast={(message, kind) => push(message, kind ?? "ok")}
+              onChanged={() => { void refreshTools(); if (selectedId) void loadProviders(selectedId); }}
+            />
+          ) : showBackups ? (
+            <BackupCenterView
+              onError={(message) => push(message, "err")}
+              onToast={(message, kind) => push(message, kind ?? "ok")}
+              onChanged={() => { void refreshTools(); if (selectedId) void loadProviders(selectedId); }}
+              onExport={exportList}
+              onImport={() => fileRef.current?.click()}
+            />
           ) : (
           <>
           {update.kind === "available" ? (
@@ -806,12 +918,15 @@ export default function App() {
               onAdd={() => openEditor(null)}
               onImportConfig={() => void scanConfig()}
               onImportCcSwitch={(providerId) => void importCcSwitchProvider(providerId)}
+              onRefreshCcSwitch={() => void refreshCcSwitch()}
+              onImportCcSwitchBatch={(ids) => void importCcSwitchBatch(ids)}
+              onMirrorCcSwitchRoute={() => void mirrorCcSwitchRoute()}
               sort={sort}
               onSort={setSort}
               onPalette={() => setPalette(true)}
               onDiagnostics={() => void diagnostics()}
               onCheckUpdate={() => { setSettingsOpen(true); void runUpdateCheck(true); }}
-              onOpenInstall={() => void api.openInstallPage().catch((error) => push(errorText(error), "err"))}
+              onOpenInstall={() => void api.openInstallPage(updateChannel).catch((error) => push(errorText(error), "err"))}
               autoHealth={autoHealth}
               onToggleAutoHealth={() => void toggleAutoHealth()}
               autoModelSync={autoModelSync}
@@ -957,10 +1072,16 @@ export default function App() {
           theme={mode}
           autoHealth={autoHealth}
           autoModelSync={autoModelSync}
+          preferences={preferences}
+          updateChannel={updateChannel}
+          preUpdateBackup={preUpdateBackup}
           onTheme={setMode}
+          onPreferences={updatePreferences}
+          onUpdateChannel={(channel) => void changeUpdateChannel(channel)}
+          onTogglePreUpdateBackup={() => void togglePreUpdateBackup()}
           onCheckUpdate={() => void runUpdateCheck(true)}
           onInstallUpdate={() => void startUpdate()}
-          onOpenInstall={() => void api.openInstallPage().catch((error) => push(errorText(error), "err"))}
+          onOpenInstall={() => void api.openInstallPage(updateChannel).catch((error) => push(errorText(error), "err"))}
           onRevealDataDir={() => {
             if (info) void api.revealPath(info.dataDir).catch((error) => push(errorText(error), "err"));
           }}

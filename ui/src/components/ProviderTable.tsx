@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { HistoryMap, HistorySummary, Provider, TestResult } from "../types";
 
 export type TestState = TestResult | "pending";
@@ -48,6 +48,13 @@ export function ProviderTable({
   activeId,
 }: TableProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [visibleLimit, setVisibleLimit] = useState(24);
+
+  useEffect(() => {
+    setVisibleLimit(24);
+  }, [total, activeId]);
+
+  const visibleRows = rows.slice(0, visibleLimit);
 
   const moveBy = (providerId: string, delta: number) => {
     const ids = rows.map((provider) => provider.id);
@@ -73,7 +80,7 @@ export function ProviderTable({
 
   return (
     <div className="provider-list">
-      {rows.map((provider) => {
+      {visibleRows.map((provider) => {
         const active = activeId === provider.id;
         const test = tests[provider.id];
         const visibleModels = (provider.models ?? []).filter((model) => !model.archived);
@@ -220,6 +227,11 @@ export function ProviderTable({
           </article>
         );
       })}
+      {rows.length > visibleRows.length ? (
+        <button type="button" className="provider-load-more ghost" onClick={() => setVisibleLimit((current) => current + 24)}>
+          載入更多供應商（尚餘 {rows.length - visibleRows.length}）
+        </button>
+      ) : null}
       {rows.length === 0 ? (
         <div className="empty provider-empty">
           {total ? (
