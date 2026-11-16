@@ -108,6 +108,7 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   await page.evaluate(() => {
     localStorage.setItem("kumoswitch.onboarded", "1");
     localStorage.setItem("kumoswitch.lang", "zh");
+    localStorage.setItem("kumoswitch.accessibility", JSON.stringify({ uiMode: "advanced" }));
   });
   await page.reload();
   await expect(page).toHaveTitle(/kumoSwitch/i);
@@ -162,11 +163,12 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   await reasoningDiff.getByRole("button", { name: "取消" }).click();
 
   await page.getByRole("button", { name: /^設定/ }).first().click();
-  await page.getByRole("dialog").last().getByRole("button", { name: /Harness 管理/ }).click();
-  await expect(page.getByRole("heading", { name: "Harness 安裝與管理" })).toBeVisible();
+  await page.getByRole("dialog").last().getByRole("button", { name: /工具管理/ }).click();
+  await expect(page.getByRole("heading", { name: "工具安裝與管理" })).toBeVisible();
+  await page.getByRole("button", { name: /其他工具/ }).click();
   await expect(page.locator(".rail .harness-icon")).toHaveCount(15);
   await expect(page.locator(".harness-manager-card")).toHaveCount(15);
-  await expect(page.getByRole("article", { name: "Harness Codex" })).toContainText("CLI + 桌面版");
+  await expect(page.getByRole("article", { name: "工具 Codex" })).toContainText("CLI + 桌面版");
 
   await page.locator(".rail .tool").filter({ has: page.locator("b", { hasText: "Codex" }) }).first().click();
   await page.getByRole("button", { name: /新增供應商/ }).click();
