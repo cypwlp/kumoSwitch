@@ -316,6 +316,34 @@ const SEEDS: Seed[] = [
       source: "llm-pi-ai.providers.deepseek.baseURL",
     },
   },
+  {
+    id: "pi",
+    name: "Pi",
+    blurb: "Pi coding agent",
+    file: ".pi/agent/models.json",
+    format: "JSON",
+    verified: true,
+    restart: "重新啟動 Pi，或在目前 session 執行 /reload",
+    detected: true,
+    takeover: false,
+    kinds: ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"],
+    importable: 0,
+    current: { base_url: "", model: "", api_key_tail: "", source: "" },
+  },
+  {
+    id: "omp",
+    name: "Oh My Pi",
+    blurb: "Oh My Pi (omp) coding agent",
+    file: ".omp/agent/models.yml",
+    format: "YAML",
+    verified: true,
+    restart: "重新啟動 omp／Oh My Pi session",
+    detected: true,
+    takeover: false,
+    kinds: ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"],
+    importable: 0,
+    current: { base_url: "", model: "", api_key_tail: "", source: "" },
+  },
 ];
 
 const MOCK_PROFILES: SharedProfileView[] = [{
@@ -680,7 +708,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.18.0",
+        version: "0.19.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,

@@ -41,7 +41,7 @@ fn requirements(tool: &str) -> Requirements {
         "gemini" => Requirements { min_context: 32_000, reasoning: true, vision: true, protocols: &[] },
         "grok" => Requirements { min_context: 32_000, reasoning: true, vision: false, protocols: &[] },
         "qoder" | "opencode" => Requirements { min_context: 32_000, reasoning: true, vision: true, protocols: &["openai", "openai-responses", "anthropic", "responses"] },
-        "dsh" => Requirements { min_context: 32_000, reasoning: true, vision: false, protocols: &["openai-completions", "openai-responses", "anthropic-messages"] },
+        "dsh" | "pi" | "omp" => Requirements { min_context: 32_000, reasoning: true, vision: true, protocols: &["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] },
         _ => Requirements { min_context: 8_000, reasoning: false, vision: false, protocols: &[] },
     }
 }

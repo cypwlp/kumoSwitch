@@ -3,6 +3,7 @@ import type { ThemeMode } from "../theme";
 import type { UpdateCheck } from "../updater";
 import type { Density, TextScale, UiPreferences } from "../preferences";
 import { AutoIcon, MoonIcon, SunIcon } from "./Icons";
+import { LangToggle } from "./LangToggle";
 import { Modal } from "./Modal";
 
 interface SettingsModalProps {
@@ -25,6 +26,14 @@ interface SettingsModalProps {
   onInstallUpdate: () => void;
   onOpenInstall: () => void;
   onRevealDataDir: () => void;
+  onOpenStats: () => void;
+  onOpenProxy: () => void;
+  onOpenGuardian: () => void;
+  onOpenProfiles: () => void;
+  onOpenBackups: () => void;
+  onExport: () => void;
+  onImport: () => void;
+  onRescan: () => void;
   onToggleAutoHealth: () => void;
   onToggleAutoModelSync: () => void;
   onClose: () => void;
@@ -64,6 +73,14 @@ export function SettingsModal({
   onInstallUpdate,
   onOpenInstall,
   onRevealDataDir,
+  onOpenStats,
+  onOpenProxy,
+  onOpenGuardian,
+  onOpenProfiles,
+  onOpenBackups,
+  onExport,
+  onImport,
+  onRescan,
   onToggleAutoHealth,
   onToggleAutoModelSync,
   onClose,
@@ -157,6 +174,10 @@ export function SettingsModal({
               </button>
             ))}
           </div>
+          <div className="settings-choice-row settings-language-row">
+            <span>語言</span>
+            <LangToggle />
+          </div>
         </section>
 
         <section className="settings-card settings-accessibility-card">
@@ -197,6 +218,20 @@ export function SettingsModal({
           </div>
         </section>
 
+        <section className="settings-card settings-nav-card">
+          <div className="settings-card-title">
+            <span className="kicker">Workspace</span>
+            <h4>工具與頁面</h4>
+          </div>
+          <div className="settings-nav-grid">
+            <button onClick={onOpenStats}><strong>用量統計</strong><small>Token、成本與掃描診斷</small></button>
+            <button onClick={onOpenProxy}><strong>代理與路由</strong><small>故障轉移、路由與即時觀測</small></button>
+            <button onClick={onOpenGuardian}><strong>設定守護</strong><small>漂移、時間線與自動修復</small></button>
+            <button onClick={onOpenProfiles}><strong>共用 Profile</strong><small>跨 Harness 重用供應商</small></button>
+            <button onClick={onOpenBackups}><strong>備份中心</strong><small>版本、排程與遷移</small></button>
+          </div>
+        </section>
+
         <section className="settings-card">
           <div className="settings-card-title">
             <span className="kicker">Automation</span>
@@ -214,10 +249,16 @@ export function SettingsModal({
 
         <section className="settings-card settings-data-card">
           <div className="settings-card-title">
-            <span className="kicker">Local data</span>
-            <h4>資料位置</h4>
+            <span className="kicker">Data</span>
+            <h4>資料管理</h4>
           </div>
-          <code className="settings-path">{info?.dataDir ?? "—"}</code>
+          <div className="settings-data-actions">
+            <button className="ghost small" onClick={onExport}>匯出加密清單</button>
+            <button className="ghost small" onClick={onImport}>匯入清單／遷移包</button>
+            <button className="ghost small" onClick={onRescan}>重新掃描 Harness</button>
+          </div>
+          <span className="settings-label">本機資料位置</span>
+          <code className="settings-path">{info?.dataDir ?? ""}</code>
           <button className="ghost small" onClick={onRevealDataDir} disabled={!info}>
             開啟資料夾
           </button>

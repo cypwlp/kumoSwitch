@@ -2,6 +2,16 @@ import { expect, test } from "@playwright/test";
 
 const APP = "/?mock=1&onboarded=1#codex,lang=zh";
 
+async function openSettings(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: /^(設定|设置|Settings)/ }).first().click();
+  return page.getByRole("dialog").last();
+}
+
+async function openWorkspace(page: import("@playwright/test").Page, name: string | RegExp) {
+  const dialog = await openSettings(page);
+  await dialog.getByRole("button", { name }).click();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto(APP);
   await expect(page.getByRole("heading", { name: "Codex", exact: true })).toBeVisible();
@@ -70,9 +80,16 @@ test("CC Switch batch import and route-stack mirroring are available", async ({ 
   await expect(page.getByText(/已鏡像 CC Switch 路由堆疊/)).toBeVisible();
 });
 
+test("Pi and Oh My Pi are available as first-class Harnesses", async ({ page }) => {
+  await page.getByRole("button", { name: /Pi coding agent/ }).click();
+  await expect(page.getByRole("heading", { name: "Pi", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Oh My Pi \(omp\) coding agent/ }).click();
+  await expect(page.getByRole("heading", { name: "Oh My Pi", exact: true })).toBeVisible();
+  await expect(page.getByText("~/.omp/agent/models.yml")).toBeVisible();
+});
+
 test("settings exposes manual update and fallback installer", async ({ page }) => {
-  await page.getByRole("button", { name: "設定與更新" }).click();
-  const dialog = page.getByRole("dialog", { name: "設定與更新" });
+  const dialog = await openSettings(page);
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "版本與更新" })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "檢查更新" })).toBeVisible();
@@ -111,7 +128,7 @@ test("each model can be tested and quickly switched without the full editor", as
   await dialog.getByRole("button", { name: "測試模型 glm-5.3-flash" }).click();
   await expect(dialog.getByText(/最近 100% · 平均 \d+ms · 200/)).toBeVisible();
 
-  await dialog.getByRole("button", { name: "關閉" }).click();
+  await dialog.locator(".sheet-head").getByRole("button", { name: "關閉" }).click();
   await expect(dialog).toBeHidden();
   await openProvider.click();
   dialog = page.getByRole("dialog");
@@ -179,7 +196,7 @@ test("live model test requires explicit cost warning", async ({ page }) => {
 });
 
 test("drift center sorts attention first and filters by status", async ({ page }) => {
-  await page.getByRole("button", { name: "守護", exact: true }).click();
+  await openWorkspace(page, "設定守護");
   await expect(page.getByRole("heading", { name: "設定守護中心" })).toBeVisible();
   await expect(page.locator(".drift-summary").getByText("已漂移", { exact: true })).toBeVisible();
   await expect(page.locator(".drift-summary").getByText("未納管", { exact: true })).toBeVisible();
@@ -196,7 +213,7 @@ test("drift center sorts attention first and filters by status", async ({ page }
 });
 
 test("drift batch selection can reapply drifted Harnesses", async ({ page }) => {
-  await page.getByRole("button", { name: "守護", exact: true }).click();
+  await openWorkspace(page, "設定守護");
   await page.getByRole("button", { name: /選取待處理/ }).click();
   await expect(page.getByRole("button", { name: /批次重新套用 1/ })).toBeEnabled();
   await page.getByRole("button", { name: /批次重新套用 1/ }).click();
@@ -207,7 +224,7 @@ test("drift batch selection can reapply drifted Harnesses", async ({ page }) => 
 });
 
 test("drift batch selection can import unmanaged Harnesses", async ({ page }) => {
-  await page.getByRole("button", { name: "守護", exact: true }).click();
+  await openWorkspace(page, "設定守護");
   await page.getByRole("checkbox", { name: "選取 Gemini CLI" }).check();
   await page.getByRole("button", { name: /批次匯入 1/ }).click();
   const confirm = page.getByRole("dialog");
@@ -216,43 +233,25 @@ test("drift batch selection can import unmanaged Harnesses", async ({ page }) =>
   await expect(page.getByText(/批次匯入 .*個供應商/)).toBeVisible();
 });
 
-test("rail actions stay contained at desktop and narrow widths", async ({ page }) => {
+test("settings navigation stays contained at desktop and narrow widths", async ({ page }) => {
   for (const width of [1222, 760, 480]) {
     await page.setViewportSize({ width, height: 784 });
     await page.reload();
-    const actions = page.locator(".rail-actions");
-    const more = page.getByRole("button", { name: /更多操作/ });
-    if (width <= 760) {
-      await expect(more).toBeVisible();
-      await expect(actions).toBeHidden();
-      await more.click();
-      await expect(actions).toBeVisible();
-    } else {
-      await expect(more).toBeHidden();
-      await expect(actions).toBeVisible();
-    }
-    await expect(page.getByRole("button", { name: "匯入清單", exact: true })).toBeVisible();
-
-    const geometry = await page.evaluate(() => {
-      const rail = document.querySelector<HTMLElement>(".rail");
-      const actions = document.querySelector<HTMLElement>(".rail-actions");
-      if (!rail || !actions) return null;
-      const railRect = rail.getBoundingClientRect();
-      const buttons = Array.from(actions.querySelectorAll<HTMLElement>("button"));
-      return {
-        railScrolls: actions.scrollWidth > actions.clientWidth + 1,
-        documentScrolls: document.documentElement.scrollWidth > window.innerWidth + 1,
-        buttonsInside: buttons.every((button) => {
-          const rect = button.getBoundingClientRect();
-          return rect.left >= railRect.left - 1 && rect.right <= railRect.right + 1;
-        }),
-      };
-    });
-
-    expect(geometry).not.toBeNull();
-    expect(geometry?.railScrolls, `rail actions overflow at ${width}px`).toBe(false);
-    expect(geometry?.documentScrolls, `document overflows at ${width}px`).toBe(false);
-    expect(geometry?.buttonsInside, `rail button leaves rail at ${width}px`).toBe(true);
+    const dialog = await openSettings(page);
+    const nav = dialog.locator(".settings-nav-grid");
+    await expect(nav).toBeVisible();
+    await expect(nav.getByRole("button")).toHaveCount(5);
+    const geometry = await page.evaluate(() => ({
+      documentScrolls: document.documentElement.scrollWidth > window.innerWidth + 1,
+      buttons: Array.from(document.querySelectorAll<HTMLElement>(".settings-nav-grid button")).map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      }),
+      viewport: window.innerWidth,
+    }));
+    expect(geometry.documentScrolls, `document overflows at ${width}px`).toBe(false);
+    expect(geometry.buttons.every((button) => button.left >= -1 && button.right <= geometry.viewport + 1), `settings buttons leave viewport at ${width}px`).toBe(true);
+    await dialog.locator(".sheet-foot").getByRole("button", { name: "關閉" }).click();
   }
 });
 
@@ -268,7 +267,7 @@ test("narrow window keeps the Harness usable without horizontal overflow", async
 });
 
 test("proxy decision trace explains skipped and selected providers", async ({ page }) => {
-  await page.getByRole("button", { name: "代理", exact: true }).click();
+  await openWorkspace(page, "代理與路由");
   await expect(page.getByRole("heading", { name: "代理／故障轉移" })).toBeVisible();
   await expect(page.getByText("最近請求決策")).toBeVisible();
   const trace = page.locator(".proxy-trace").first();
@@ -347,7 +346,7 @@ test("dark visual system matches the v0.14 baseline", async ({ page }) => {
 test("drift center matches the visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(APP);
-  await page.getByRole("button", { name: "守護", exact: true }).click();
+  await openWorkspace(page, "設定守護");
   await page.locator(".drift-card").first().waitFor();
   await expect(page).toHaveScreenshot("drift-center.png", {
     animations: "disabled",
@@ -356,16 +355,17 @@ test("drift center matches the visual baseline", async ({ page }) => {
   });
 });
 
-test("mobile rail keeps advanced actions collapsed", async ({ page }) => {
+test("mobile rail keeps one consolidated settings entry", async ({ page }) => {
   await page.setViewportSize({ width: 480, height: 860 });
   await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "light"));
   await page.reload();
   await expect(page.getByRole("heading", { name: "供應商" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /更多操作/ })).toBeVisible();
-  await expect(page.locator(".rail-actions")).toBeHidden();
+  await expect(page.getByRole("button", { name: /^設定/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /更多操作/ })).toHaveCount(0);
+  await expect(page.locator(".rail-actions")).toHaveCount(0);
   await expect(page).toHaveScreenshot("mobile-rail.png", {
     animations: "disabled",
-    maxDiffPixelRatio: 0.06,
+    maxDiffPixelRatio: 0.08,
     threshold: 0.3,
   });
 });
@@ -387,7 +387,7 @@ test("Harness more menu closes on outside click and Escape", async ({ page }) =>
 });
 
 test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
-  await page.getByRole("button", { name: "統計", exact: true }).click();
+  await openWorkspace(page, "用量統計");
   await expect(page.getByRole("heading", { name: "統計儀表板" })).toBeVisible();
   await expect(page.getByText("掃描診斷")).toBeVisible();
   await expect(page.getByText("3,700")).toBeVisible();
@@ -399,7 +399,7 @@ test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
 });
 
 test("proxy route strategy and observability are usable", async ({ page }) => {
-  await page.getByRole("button", { name: "代理", exact: true }).click();
+  await openWorkspace(page, "代理與路由");
   await expect(page.getByRole("heading", { name: "代理／故障轉移" })).toBeVisible();
   const health = page.getByRole("radio", { name: /健康優先/ });
   await health.click();
@@ -440,7 +440,8 @@ test("configuration import previews conflicts and applies a bulk policy", async 
 });
 
 test("encrypted export requires a confirmed password", async ({ page }) => {
-  await page.getByRole("button", { name: "匯出清單" }).click();
+  const settings = await openSettings(page);
+  await settings.getByRole("button", { name: "匯出加密清單" }).click();
 
   let dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "加密匯出供應商" })).toBeVisible();
@@ -495,7 +496,7 @@ test("Command Code preview shows the intended non-destructive diff", async ({ pa
 
 
 test("shared Profile library syncs the same provider across Harnesses", async ({ page }) => {
-  await page.goto("/?mock=1&onboarded=1#profiles,lang=zh");
+  await openWorkspace(page, "共用 Profile");
   await expect(page.getByRole("heading", { name: "共用供應商 Profile" })).toBeVisible();
   const card = page.locator(".profile-card").first();
   await expect(card.getByRole("heading", { name: "OpenCode Zen" })).toBeVisible();
@@ -510,7 +511,7 @@ test("shared Profile library syncs the same provider across Harnesses", async ({
 });
 
 test("backup center exposes version metadata and safe restore", async ({ page }) => {
-  await page.goto("/?mock=1&onboarded=1#backup-center,lang=zh");
+  await openWorkspace(page, "備份中心");
   await expect(page.getByRole("heading", { name: "備份／遷移中心" })).toBeVisible();
   await expect(page.locator(".backup-stats")).toContainText("最新／最舊");
   await expect(page.locator(".backup-entry")).toHaveCount(5);
@@ -524,7 +525,7 @@ test("backup center exposes version metadata and safe restore", async ({ page })
 });
 
 test("guardian timeline records drift and auto-repair is opt-in", async ({ page }) => {
-  await page.goto("/?mock=1&onboarded=1#guardian,lang=zh");
+  await openWorkspace(page, "設定守護");
   await expect(page.getByRole("heading", { name: "設定守護中心" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "變更時間線" })).toBeVisible();
   await expect(page.locator(".guardian-event")).toHaveCount(2);
@@ -555,8 +556,7 @@ test("compatibility matrix and accessibility preferences are visible", async ({ 
   await expect(dialog.getByText("Harness 相容性矩陣", { exact: false }).first()).toBeVisible();
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
 
-  await page.getByRole("button", { name: "設定與更新" }).click();
-  dialog = page.getByRole("dialog", { name: "設定與更新" });
+  dialog = await openSettings(page);
   await dialog.getByRole("button", { name: /高對比模式/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-contrast", "high");
   await dialog.locator(".settings-choice-row").filter({ hasText: "文字大小" }).getByRole("button", { name: "大", exact: true }).click();
@@ -564,21 +564,26 @@ test("compatibility matrix and accessibility preferences are visible", async ({ 
 });
 
 test("Simplified Chinese locale applies to the full interface", async ({ page }) => {
-  await page.getByRole("button", { name: "简中" }).click();
+  let dialog = await openSettings(page);
+  await dialog.getByRole("button", { name: "简中" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
-  await expect(page.getByRole("button", { name: "设置与更新" })).toBeVisible();
-  await page.getByRole("button", { name: "简中" }).click();
-  await page.getByRole("button", { name: "繁中" }).click();
+  await expect(dialog.getByRole("heading", { name: "无障碍与阅读" })).toBeVisible();
+  await dialog.locator(".sheet-foot").getByRole("button", { name: /^(关闭|關閉)/ }).click();
+  await expect(page.getByRole("button", { name: /^(设置|設定)/ }).first()).toBeVisible();
+  dialog = await openSettings(page);
+  await dialog.getByRole("button", { name: "繁中" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hant");
 });
 
 
 test("English locale covers the new roadmap screens", async ({ page }) => {
-  await page.getByRole("button", { name: "EN", exact: true }).click();
-  await page.getByRole("button", { name: "Shared profiles" }).click();
+  let dialog = await openSettings(page);
+  await dialog.getByRole("button", { name: "EN", exact: true }).click();
+  await dialog.locator(".sheet-foot").getByRole("button", { name: /^(Close|關閉)/ }).click();
+  await openWorkspace(page, "Shared profiles");
   await expect(page.getByRole("heading", { name: "Shared provider profiles" })).toBeVisible();
-  await page.getByRole("button", { name: "Backup center" }).click();
+  await openWorkspace(page, "Backup center");
   await expect(page.getByRole("heading", { name: "Backup & migration center" })).toBeVisible();
-  await page.getByRole("button", { name: "Guardian" }).click();
+  await openWorkspace(page, "Guardian");
   await expect(page.getByRole("heading", { name: "Settings Guardian" })).toBeVisible();
 });

@@ -290,6 +290,7 @@ const QODER_PROTOCOLS: &[&str] = &["openai", "openai-responses"];
 const CODEX_WIRE: &[&str] = &["responses", "chat"];
 const DSH_API: &[&str] = &["openai-completions", "openai-responses", "anthropic-messages"];
 const OPENCODE_API: &[&str] = &["openai", "anthropic", "responses"];
+const PI_API: &[&str] = &["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
 const EMPTY: &[&str] = &[];
 
 pub static TOOLS: &[ToolSpec] = &[
@@ -592,6 +593,62 @@ pub static TOOLS: &[ToolSpec] = &[
         ],
         kind_choices: DSH_API,
     },
+    ToolSpec {
+        id: "pi",
+        name: "Pi",
+        blurb: "Pi coding agent",
+        dir: ".pi/agent",
+        default_file: "models.json",
+        alt_files: &[],
+        env_override: Some("PI_CODING_AGENT_DIR"),
+        verified: true,
+        restart: "重新啟動 Pi，或在目前 session 執行 /reload",
+        steps: &[
+            Step { file: "models.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
+            Step { file: "models.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "baseUrl"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "models.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "models.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "api"], val: s("{{kind}}"), when: When::Always },
+            Step { file: "models.json", fmt: Fmt::Json, path: &["providers", "{{config_id}}", "authHeader"], val: Val::Bool(true), when: When::IfMissing },
+            Step {
+                file: "models.json",
+                fmt: Fmt::Json,
+                path: &["providers", "{{config_id}}", "models"],
+                val: Val::Json(r#"[{"id":"{{model}}","name":"{{model}}","reasoning":true,"input":["text","image"],"contextWindow":128000,"maxTokens":16384}]"#),
+                when: When::IfMissing,
+            },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["defaultProvider"], val: s("{{config_id}}"), when: When::Always },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["defaultModel"], val: s("{{model}}"), when: When::HasModel },
+        ],
+        kind_choices: PI_API,
+    },
+    ToolSpec {
+        id: "omp",
+        name: "Oh My Pi",
+        blurb: "Oh My Pi (omp) coding agent",
+        dir: ".omp/agent",
+        default_file: "models.yml",
+        alt_files: &["models.yaml", "config.yaml"],
+        env_override: None,
+        verified: true,
+        restart: "重新啟動 omp／Oh My Pi session",
+        steps: &[
+            Step { file: "models.yml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
+            Step { file: "models.yml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "baseUrl"], val: s("{{base_url}}"), when: When::Always },
+            Step { file: "models.yml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "apiKey"], val: s("{{api_key}}"), when: When::Always },
+            Step { file: "models.yml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "api"], val: s("{{kind}}"), when: When::Always },
+            Step { file: "models.yml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "authHeader"], val: Val::Bool(true), when: When::IfMissing },
+            Step { file: "models.yml", fmt: Fmt::Yaml, path: &["providers", "{{config_id}}", "auth"], val: s("apiKey"), when: When::IfMissing },
+            Step {
+                file: "models.yml",
+                fmt: Fmt::Yaml,
+                path: &["providers", "{{config_id}}", "models"],
+                val: Val::Yaml(r#"[{"id":"{{model}}","name":"{{model}}","reasoning":true,"input":["text","image"],"contextWindow":128000,"maxTokens":16384}]"#),
+                when: When::IfMissing,
+            },
+            Step { file: "config.yml", fmt: Fmt::Yaml, path: &["modelRoles", "default"], val: s("{{config_id}}/{{model}}"), when: When::HasModel },
+        ],
+        kind_choices: PI_API,
+    },
 ];
 
 pub fn find(id: &str) -> Option<&'static ToolSpec> {
@@ -630,18 +687,19 @@ pub fn resolve_file(spec: &ToolSpec, file: &str) -> PathBuf {
     resolve_file_in(spec, file, &tool_dir(spec))
 }
 
+fn base_stem(name: &str) -> &str {
+    name.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(name)
+}
+
 pub fn resolve_file_in(spec: &ToolSpec, file: &str, base: &Path) -> PathBuf {
     let base = base.to_path_buf();
     let primary = base.join(file);
     if primary.exists() {
         return primary;
     }
-    if file == spec.default_file {
-        for alt in spec.alt_files {
-            let candidate = base.join(alt);
-            if candidate.exists() {
-                return candidate;
-            }
+    for alt in spec.alt_files {
+        if (file == spec.default_file || base_stem(file) == base_stem(alt)) && base.join(alt).exists() {
+            return base.join(alt);
         }
     }
     primary
@@ -823,6 +881,15 @@ fn mask_tail(raw: &str) -> String {
     format!("••••{tail}")
 }
 
+fn strip_thinking_suffix(model: &str) -> &str {
+    for suffix in [":off", ":minimal", ":low", ":medium", ":high", ":xhigh", ":max", ":auto", ":inherit"] {
+        if let Some(stripped) = model.strip_suffix(suffix) {
+            return stripped;
+        }
+    }
+    model
+}
+
 /// Read what the tool is *actually* configured to use right now.
 pub fn read_current(spec: &ToolSpec) -> CurrentState {
     let mut st = CurrentState::default();
@@ -853,6 +920,31 @@ pub fn read_current(spec: &ToolSpec) -> CurrentState {
                     st.model = model.to_string();
                     st.source = format!("provider.{id}.options.baseURL");
                 }
+            }
+        }
+        "pi" => {
+            st.model = rd("settings.json", Fmt::Json, &["defaultModel"]).unwrap_or_default();
+            if let Some(provider) = rd("settings.json", Fmt::Json, &["defaultProvider"]) {
+                if !provider.is_empty() {
+                    st.base_url = rd("models.json", Fmt::Json, &["providers", &provider, "baseUrl"]).unwrap_or_default();
+                    st.api_key_tail = mask_tail(
+                        &rd("models.json", Fmt::Json, &["providers", &provider, "apiKey"]).unwrap_or_default(),
+                    );
+                    st.source = format!("providers.{provider}.baseUrl");
+                }
+            }
+        }
+        "omp" => {
+            let selector = rd("config.yml", Fmt::Yaml, &["modelRoles", "default"]).unwrap_or_default();
+            let first = selector.split(',').next().unwrap_or("").trim();
+            if let Some((provider, model)) = first.split_once('/') {
+                let model = strip_thinking_suffix(model);
+                st.model = model.to_string();
+                st.base_url = rd("models.yml", Fmt::Yaml, &["providers", provider, "baseUrl"]).unwrap_or_default();
+                st.api_key_tail = mask_tail(
+                    &rd("models.yml", Fmt::Yaml, &["providers", provider, "apiKey"]).unwrap_or_default(),
+                );
+                st.source = format!("providers.{provider}.baseUrl");
             }
         }
         "dsh" => {
@@ -1049,12 +1141,17 @@ pub(crate) fn model_profile_from_value(id: String, value: &Value) -> ModelProfil
             "/maxOutput",
             "/max_output_tokens",
             "/max_tokens",
+            "/maxTokens",
             "/output_token_limit",
             "/outputTokenLimit",
             "/limit/output",
         ]),
         reasoning: boolean(&["/reasoning", "/capabilities/reasoning", "/supports_reasoning"]),
-        vision: boolean(&["/vision", "/capabilities/vision", "/attachment"]),
+        vision: boolean(&["/vision", "/capabilities/vision", "/attachment"]).or_else(|| {
+            value.get("input").and_then(Value::as_array).map(|inputs| {
+                inputs.iter().any(|input| input.as_str() == Some("image"))
+            })
+        }),
         tools: boolean(&["/tools", "/tool_call", "/capabilities/tools"]),
         metadata: value.clone(),
         checks: Vec::new(),
@@ -1248,6 +1345,55 @@ pub fn discover(spec: &ToolSpec) -> Vec<Provider> {
                         ));
                     }
                 }
+            }
+        }
+        "pi" => {
+            let active_provider = rd("settings.json", Fmt::Json, &["defaultProvider"]);
+            let active_model = rd("settings.json", Fmt::Json, &["defaultModel"]);
+            for id in map_keys(spec, "models.json", Fmt::Json, &["providers"]) {
+                let base = rd("models.json", Fmt::Json, &["providers", &id, "baseUrl"]);
+                if base.is_empty() {
+                    continue;
+                }
+                let mut provider = imported(
+                    &id,
+                    rd("models.json", Fmt::Json, &["providers", &id, "name"]),
+                    base,
+                    rd("models.json", Fmt::Json, &["providers", &id, "apiKey"]),
+                    if active_provider == id { active_model.clone() } else { String::new() },
+                    rd("models.json", Fmt::Json, &["providers", &id, "api"]),
+                );
+                provider = with_models(
+                    provider,
+                    json_model_profiles(spec, "models.json", &["providers", &id, "models"]),
+                );
+                out.push(provider);
+            }
+        }
+        "omp" => {
+            let selector = rd("config.yml", Fmt::Yaml, &["modelRoles", "default"]);
+            let selector = selector.split(',').next().unwrap_or("").trim().to_string();
+            let active = selector
+                .split_once('/')
+                .map(|(provider, model)| (provider.to_string(), strip_thinking_suffix(model).to_string()));
+            for id in map_keys(spec, "models.yml", Fmt::Yaml, &["providers"]) {
+                let base = rd("models.yml", Fmt::Yaml, &["providers", &id, "baseUrl"]);
+                if base.is_empty() {
+                    continue;
+                }
+                let model = active
+                    .as_ref()
+                    .filter(|(provider, _)| provider == &id)
+                    .map(|(_, model)| model.clone())
+                    .unwrap_or_default();
+                out.push(imported(
+                    &id,
+                    rd("models.yml", Fmt::Yaml, &["providers", &id, "name"]),
+                    base,
+                    rd("models.yml", Fmt::Yaml, &["providers", &id, "apiKey"]),
+                    model,
+                    rd("models.yml", Fmt::Yaml, &["providers", &id, "api"]),
+                ));
             }
         }
         "dsh" => {

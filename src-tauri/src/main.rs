@@ -408,6 +408,10 @@ fn spec(tool: &str) -> Result<&'static ToolSpec, String> {
     adapters::find(tool).ok_or_else(|| format!("未知的工具：{tool}"))
 }
 
+fn uses_anthropic_wire(tool: &str, kind: &str) -> bool {
+    tool == "claude" || kind.to_ascii_lowercase().contains("anthropic")
+}
+
 fn configured_kind(spec: &ToolSpec, provider: &mut Provider) {
     if provider.kind.trim().is_empty() {
         provider.kind = spec.kind_choices.first().copied().unwrap_or("").to_string();
@@ -707,7 +711,7 @@ fn discover_provider_models(
     let discovered = net::discover_models_styled(
         &provider.base_url,
         &provider.api_key,
-        tool == "claude",
+        uses_anthropic_wire(&tool, &provider.kind),
         &tool,
         &provider.kind,
     );
@@ -775,7 +779,7 @@ fn test_model(tool: String, provider_id: String, model_id: String) -> Result<Mod
     let result = net::probe_model(
         &provider.base_url,
         &provider.api_key,
-        tool == "claude",
+        uses_anthropic_wire(&tool, &provider.kind),
         &model_id,
     );
     let recorded = store::record_model_check(
@@ -829,7 +833,7 @@ fn live_test_model(tool: String, provider_id: String, model_id: String) -> Resul
         &provider.base_url,
         &provider.api_key,
         &model_id,
-        tool == "claude",
+        uses_anthropic_wire(&tool, &provider.kind),
         &tool,
         &provider.kind,
         policy.max_output_tokens,
@@ -1281,7 +1285,7 @@ fn import_from_config(tool: String, app: tauri::AppHandle) -> Result<ImportResul
 #[tauri::command]
 fn test_provider(tool: String, provider_id: String) -> Result<net::TestResult, String> {
     let (_, mut provider) = load_provider(&tool, &provider_id)?;
-    let result = net::probe(&provider.base_url, &provider.api_key, tool == "claude");
+    let result = net::probe(&provider.base_url, &provider.api_key, uses_anthropic_wire(&tool, &provider.kind));
     provider.api_key.zeroize();
     let _ = history::record(&tool, &provider_id, result.ok, result.ms as u64, result.status);
     Ok(result)
@@ -1687,7 +1691,7 @@ fn auto_sync_models_once() -> usize {
             match net::discover_models_styled(
                 &provider.base_url,
                 &provider.api_key,
-                tool == "claude",
+                uses_anthropic_wire(tool, &provider.kind),
                 tool,
                 &provider.kind,
             ) {
@@ -1797,7 +1801,7 @@ fn spawn_health_loop(app: tauri::AppHandle) {
                 if !summaries.get(&provider.id).map(|s| s.total > 0).unwrap_or(false) {
                     continue;
                 }
-                let result = net::probe(&provider.base_url, &provider.api_key, tool == "claude");
+                let result = net::probe(&provider.base_url, &provider.api_key, uses_anthropic_wire(tool, &provider.kind));
                 let _ = history::record(tool, &provider.id, result.ok, result.ms as u64, result.status);
                 any = true;
             }

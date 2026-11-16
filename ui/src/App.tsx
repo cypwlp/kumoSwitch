@@ -206,6 +206,13 @@ export default function App() {
 
   /* --------------------------------------------------------------- boot */
 
+  const pushRef = useRef(push);
+  const openDiffRef = useRef(openDiff);
+  const openBackupsRef = useRef(openBackups);
+  pushRef.current = push;
+  openDiffRef.current = openDiff;
+  openBackupsRef.current = openBackups;
+
   useEffect(() => {
     let alive = true;
     void (async () => {
@@ -227,7 +234,7 @@ export default function App() {
         if (!alive) return;
         setTools(list);
       } catch (err) {
-        push(errorText(err), "err");
+        pushRef.current(errorText(err), "err");
         return;
       }
 
@@ -250,14 +257,14 @@ export default function App() {
       if (tokens.includes("modal")) setModal({ kind: "editor", provider: null });
       if (tokens.includes("diff")) {
         const target = seeded.find((p) => p.id !== codex.active_id) ?? seeded[0];
-        if (target) await openDiff(codex.id, target);
+        if (target) await openDiffRef.current(codex.id, target);
       }
-      if (tokens.includes("backup")) await openBackups(codex.id);
+      if (tokens.includes("backup")) await openBackupsRef.current(codex.id);
     })();
     return () => {
       alive = false;
     };
-  }, [push, openDiff, openBackups]);
+  }, []);
 
   /* ---------------------------------------------------------- shortcuts */
 
@@ -817,6 +824,15 @@ export default function App() {
   const showOnboarding =
     !onboarded && tools.length > 0 && tools.every((t) => t.provider_count === 0);
 
+  const showView = (view: "stats" | "proxy" | "guardian" | "profiles" | "backups") => {
+    setSettingsOpen(false);
+    setShowStats(view === "stats");
+    setShowProxy(view === "proxy");
+    setShowDrift(view === "guardian");
+    setShowProfiles(view === "profiles");
+    setShowBackups(view === "backups");
+  };
+
   return (
     <>
       <div className="app">
@@ -825,24 +841,15 @@ export default function App() {
           selectedId={selectedId}
           filter={toolFilter}
           info={info}
-          theme={mode}
-          busy={busy}
           onFilter={setToolFilter}
-          onSelect={(id) => { setShowDrift(false); setShowProxy(false); setShowStats(false); setShowProfiles(false); setShowBackups(false); void selectTool(id); }}
-          onRescan={() => void rescan()}
-          onTheme={setMode}
-          onExport={() => void exportList()}
-          onImport={() => fileRef.current?.click()}
-          statsActive={showStats}
-          onStats={() => { setShowDrift(false); setShowProxy(false); setShowProfiles(false); setShowBackups(false); setShowStats((v) => !v); }}
-          proxyActive={showProxy}
-          onProxy={() => { setShowDrift(false); setShowStats(false); setShowProfiles(false); setShowBackups(false); setShowProxy((v) => !v); }}
-          driftActive={showDrift}
-          onDrift={() => { setShowProxy(false); setShowStats(false); setShowProfiles(false); setShowBackups(false); setShowDrift((v) => !v); }}
-          profilesActive={showProfiles}
-          onProfiles={() => { setShowDrift(false); setShowProxy(false); setShowStats(false); setShowBackups(false); setShowProfiles((v) => !v); }}
-          backupsActive={showBackups}
-          onBackups={() => { setShowDrift(false); setShowProxy(false); setShowStats(false); setShowProfiles(false); setShowBackups((v) => !v); }}
+          onSelect={(id) => {
+            setShowDrift(false);
+            setShowProxy(false);
+            setShowStats(false);
+            setShowProfiles(false);
+            setShowBackups(false);
+            void selectTool(id);
+          }}
           onSettings={() => setSettingsOpen(true)}
         />
 
@@ -1085,6 +1092,14 @@ export default function App() {
           onRevealDataDir={() => {
             if (info) void api.revealPath(info.dataDir).catch((error) => push(errorText(error), "err"));
           }}
+          onOpenStats={() => showView("stats")}
+          onOpenProxy={() => showView("proxy")}
+          onOpenGuardian={() => showView("guardian")}
+          onOpenProfiles={() => showView("profiles")}
+          onOpenBackups={() => showView("backups")}
+          onExport={() => { setSettingsOpen(false); void exportList(); }}
+          onImport={() => { setSettingsOpen(false); fileRef.current?.click(); }}
+          onRescan={() => { setSettingsOpen(false); void rescan(); }}
           onToggleAutoHealth={() => void toggleAutoHealth()}
           onToggleAutoModelSync={() => void toggleAutoModelSync()}
           onClose={() => setSettingsOpen(false)}

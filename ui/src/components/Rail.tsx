@@ -1,75 +1,24 @@
-import { useState, type ReactNode } from "react";
 import type { AppInfo, ToolView } from "../types";
-import type { ThemeMode } from "../theme";
-import { LangToggle } from "./LangToggle";
-import { AutoIcon, Logo, MoonIcon, SettingsIcon, SunIcon } from "./Icons";
+import { Logo, SettingsIcon } from "./Icons";
 
 interface RailProps {
   tools: ToolView[];
   selectedId: string | null;
   filter: string;
   info: AppInfo | null;
-  theme: ThemeMode;
-  busy: boolean;
   onFilter: (value: string) => void;
   onSelect: (id: string) => void;
-  onRescan: () => void;
-  onTheme: (mode: ThemeMode) => void;
-  onExport: () => void;
-  onImport: () => void;
-  statsActive: boolean;
-  onStats: () => void;
-  proxyActive: boolean;
-  onProxy: () => void;
-  driftActive: boolean;
-  onDrift: () => void;
-  profilesActive: boolean;
-  onProfiles: () => void;
-  backupsActive: boolean;
-  onBackups: () => void;
   onSettings: () => void;
 }
 
-const THEMES: { mode: ThemeMode; label: string; icon: ReactNode }[] = [
-  { mode: "dark", label: "暗色", icon: <MoonIcon /> },
-  { mode: "light", label: "亮色", icon: <SunIcon /> },
-  { mode: "system", label: "系統", icon: <AutoIcon /> },
-];
-
-export function Rail({
-  tools,
-  selectedId,
-  filter,
-  info,
-  theme,
-  busy,
-  onFilter,
-  onSelect,
-  onRescan,
-  onTheme,
-  onExport,
-  onImport,
-  statsActive,
-  onStats,
-  proxyActive,
-  onProxy,
-  driftActive,
-  onDrift,
-  profilesActive,
-  onProfiles,
-  backupsActive,
-  onBackups,
-  onSettings,
-}: RailProps) {
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const activeActionCount = Number(statsActive) + Number(proxyActive) + Number(driftActive) + Number(profilesActive) + Number(backupsActive);
+export function Rail({ tools, selectedId, filter, info, onFilter, onSelect, onSettings }: RailProps) {
   const q = filter.trim().toLowerCase();
   const visible = tools.filter(
-    (t) =>
+    (tool) =>
       !q ||
-      t.name.toLowerCase().includes(q) ||
-      t.blurb.toLowerCase().includes(q) ||
-      t.id.includes(q),
+      tool.name.toLowerCase().includes(q) ||
+      tool.blurb.toLowerCase().includes(q) ||
+      tool.id.includes(q),
   );
 
   return (
@@ -93,90 +42,35 @@ export function Rail({
       />
 
       <nav className="tools" aria-label="Harness 清單">
-        {visible.map((t) => (
+        {visible.map((tool) => (
           <button
-            key={t.id}
-            className={`tool${selectedId === t.id ? " active" : ""}`}
-            onClick={() => onSelect(t.id)}
-            aria-current={selectedId === t.id}
+            key={tool.id}
+            className={`tool${selectedId === tool.id ? " active" : ""}`}
+            onClick={() => onSelect(tool.id)}
+            aria-current={selectedId === tool.id}
           >
             <span
-              className={`dot${t.detected ? " on" : ""}`}
-              title={t.detected ? "已偵測到設定目錄" : "尚未安裝或沒有設定目錄"}
+              className={`dot${tool.detected ? " on" : ""}`}
+              title={tool.detected ? "已偵測到設定目錄" : "尚未安裝或沒有設定目錄"}
             />
             <span className="label">
-              <b>{t.name}</b>
-              <span>{t.blurb}</span>
+              <b>{tool.name}</b>
+              <span>{tool.blurb}</span>
             </span>
-            {t.provider_count ? <span className="n">{t.provider_count}</span> : null}
+            {tool.provider_count ? <span className="n">{tool.provider_count}</span> : null}
           </button>
         ))}
-        {visible.length === 0 ? (
-          <div className="empty small">沒有符合的工具</div>
-        ) : null}
+        {visible.length === 0 ? <div className="empty small">沒有符合的工具</div> : null}
       </nav>
 
-      <div className="rail-foot">
-        <LangToggle />
-        <div className="segmented" role="group" aria-label="主題">
-          {THEMES.map((t) => (
-            <button
-              key={t.mode}
-              className={theme === t.mode ? "on" : ""}
-              onClick={() => onTheme(t.mode)}
-              aria-pressed={theme === t.mode}
-              title={`主題：${t.label}`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          className={`rail-more-toggle${activeActionCount ? " active" : ""}`}
-          aria-expanded={actionsOpen}
-          aria-controls="rail-advanced-actions"
-          onClick={() => setActionsOpen((open) => !open)}
-        >
-          <span>更多操作</span>
-          {activeActionCount ? <span className="rail-more-count">{activeActionCount}</span> : null}
-          <span className="rail-more-chevron" aria-hidden="true">{actionsOpen ? "−" : "+"}</span>
-        </button>
-        <div id="rail-advanced-actions" className={`rail-actions${actionsOpen ? " open" : ""}`}>
-          <div className="rail-action-row rail-view-actions">
-            <button className={`ghost small${statsActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onStats(); }} title="用量與成本統計">
-              統計
-            </button>
-            <button className={`ghost small${proxyActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onProxy(); }} title="本地代理與故障轉移">
-              代理
-            </button>
-            <button className={`ghost small${driftActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onDrift(); }} title="檢查實際設定檔是否偏離 kumoSwitch">
-              守護
-            </button>
-            <button className={`ghost small${profilesActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onProfiles(); }} title="跨 Harness 重用供應商設定">
-              共用 Profile
-            </button>
-            <button className={`ghost small${backupsActive ? " on" : ""}`} onClick={() => { setActionsOpen(false); onBackups(); }} title="集中管理備份、版本與遷移">
-              備份中心
-            </button>
-          </div>
-          <div className="rail-action-row rail-data-actions">
-            <button className="ghost small" onClick={() => { setActionsOpen(false); onExport(); }} title="把所有供應商加密匯出成 .kumoswitch">
-              匯出清單
-            </button>
-            <button className="ghost small" onClick={() => { setActionsOpen(false); onImport(); }} title="從 .kumoswitch 加密備份或舊 JSON 匯入供應商">
-              匯入清單
-            </button>
-          </div>
-        </div>
-
-        <button className="ghost small rail-settings" onClick={onSettings} title="設定、版本與更新">
+      <div className="rail-foot rail-foot-simple">
+        <button className="rail-settings-primary" onClick={onSettings} title="語言、主題、導覽、資料與更新">
           <SettingsIcon />
-          設定與更新
+          <span>
+            <strong>設定</strong>
+            <small>語言、外觀、工具與資料</small>
+          </span>
         </button>
-
         <div className="rail-meta">
           <span className="ver muted" title={info?.dataDir ?? ""}>
             <span>{info ? `v${info.version}` : ""}</span>
@@ -186,9 +80,6 @@ export function Rail({
               </span>
             ) : null}
           </span>
-          <button className="ghost small" onClick={onRescan} disabled={busy} title="重新掃描設定檔">
-            重新掃描
-          </button>
         </div>
       </div>
     </aside>

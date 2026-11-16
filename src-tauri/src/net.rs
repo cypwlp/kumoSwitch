@@ -442,13 +442,14 @@ pub fn discover_models_styled(
     api_key: &str,
     anthropic_style: bool,
     tool: &str,
-    _kind: &str,
+    kind: &str,
 ) -> Result<ModelDiscovery, String> {
     let base = base_url.trim_end_matches('/');
     if base.is_empty() {
         return Err("Base URL 是空的".into());
     }
-    let auth = if anthropic_style || tool == "claude" {
+    let anthropic = anthropic_style || tool == "claude" || kind.to_ascii_lowercase().contains("anthropic");
+    let auth = if anthropic {
         DiscoveryAuth::Anthropic
     } else if tool == "gemini" && !base.ends_with("/openai") {
         DiscoveryAuth::GoogleApiKey
@@ -517,7 +518,7 @@ fn live_test_request(tool: &str, kind: &str, model: &str, max_output_tokens: u32
             .to_string(),
         );
     }
-    if tool == "gemini" {
+    if tool == "gemini" || kind.contains("google") {
         return (
             format!("/models/{model}:generateContent"),
             serde_json::json!({
@@ -527,7 +528,7 @@ fn live_test_request(tool: &str, kind: &str, model: &str, max_output_tokens: u32
             .to_string(),
         );
     }
-    if kind == "responses" {
+    if kind == "responses" || kind.contains("responses") {
         return (
             "/responses".into(),
             serde_json::json!({
@@ -584,10 +585,10 @@ pub fn probe_live_model(
     config.push_str(&format!("url = \"{url}\"\n"));
     config.push_str(&format!("data = \"{escaped_body}\"\n"));
     if !api_key.is_empty() {
-        if anthropic_style || tool == "claude" {
+        if anthropic_style || tool == "claude" || kind.to_ascii_lowercase().contains("anthropic") {
             config.push_str(&format!("header = \"x-api-key: {api_key}\"\n"));
             config.push_str("header = \"anthropic-version: 2023-06-01\"\n");
-        } else if tool == "gemini" {
+        } else if tool == "gemini" || kind.contains("google") {
             config.push_str(&format!("header = \"x-goog-api-key: {api_key}\"\n"));
         } else {
             config.push_str(&format!("header = \"Authorization: Bearer {api_key}\"\n"));

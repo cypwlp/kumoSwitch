@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.19.0 — 2026-11-16
+- 新增 **Pi** Harness：管理 `~/.pi/agent/models.json` 供應商與 `settings.json` 預設 provider／model，支援 OpenCode、OpenAI Responses、Anthropic Messages 與 Google Generative AI。
+- 新增 **Oh My Pi (omp)** Harness：管理 `~/.omp/agent/models.yml`／`models.yaml` 與 `config.yml`／`config.yaml` 的 `modelRoles.default`，保留 Pi fork 的自訂 provider schema。
+- Pi／Oh My Pi 都支援設定檔掃描匯入、模型探索、連線／模型實測、能力矩陣與共用 Profile。
+- 左下角原本分散的語言、主題、統計、代理、守護、Profile、備份、匯入匯出與重新掃描，統一收斂到單一「設定」入口。
+- 設定面板新增「工具與頁面」與「資料管理」區塊，窄視窗會自動改成單欄，減少側欄資訊密度。
+- 修正啟動 effect 因依賴不穩定而反覆把選取 Harness 重設回 Codex 的問題；現在可正常切換 Pi、Oh My Pi 或其他 Harness。
+- 更新為 15 個 Harness 的網站文案、fixture 測試與視覺基準。
+
 ## 0.18.0 — 2026-11-16
 - **設定守護中心 2.0**：背景指紋監看所有 Harness、狀態分類、來源歸因（kumoSwitch／外部工具／來源不明）、持久化變更時間線，以及「連續兩次漂移後自動修復」的可選策略。
 - **跨 Harness 共用 Profile**：可從現有供應商建立一份加密的 endpoint／金鑰／模型組合，指定 Codex、Claude、Gemini 等目標並保留各自的 protocol 與模型映射。
@@ -11,6 +20,7 @@
 - **效能與無障礙**：供應商清單延遲渲染與 `content-visibility`、高對比模式、三級文字大小、舒適／緊湊密度、降低動態效果，以及更完整的鍵盤與 ARIA 標記。
 - **國際化**：新增簡體中文介面，改善語言切換時的文字還原與動態 DOM 翻譯。
 - **發布品質**：Stable／Beta 更新通道與對應 updater manifest、Build provenance attestation、release asset／簽章／checksum 驗證 job，以及更新前本機設定快照。
+
 ## 0.17.0 — 2026-11-14
 - 新增常駐「設定與更新」面板：目前版本、手動檢查更新、下載並安裝更新，以及開啟安裝／更新向導的備援入口。
 - 設定面板集中顯示主題、自動健康檢查、自動模型同步與本機資料位置，不必再從各頁尋找零散選項。
@@ -43,16 +53,19 @@
 - 新增 CC Switch 供應商資訊：名稱、Base URL、模型、目前路由／候選狀態、金鑰是否存在與資料庫來源。
 - 支援一鍵把 CC Switch 供應商匯入 kumoSwitch，API Key 會走 kumoSwitch 原本的加密儲存流程；重複供應商會自動辨識。
 - 新增真實 `cc-switch.db` schema 讀取測試與 UI E2E。
+
 ## 0.14.2 — 2026-11-13
 - 修正統計儀表板長時間停在「掃描 session log 中」：改為逐行串流讀取，不再把每個 JSONL 整檔載入記憶體。
 - session log 掃描移到 Tauri 背景執行，掃描期間 UI 不再被同步命令阻塞；並依檔案修改時間跳過時間範圍外的檔案。
 - 統計頁新增掃描診斷：顯示 Claude Code／Codex 實際檢查路徑、找到與讀取的檔案數、跳過數、耗時及讀取錯誤。
 - 找不到 log 或 log 不含 usage 時，改成可操作的空狀態與「重新掃描」按鈕，不再只有無限等待文字。
+
 ## 0.14.1 — 2026-11-13
 - 供應商頁改為明確的 `Harness → 供應商 → 模型` 三層導覽；供應商卡片加入獨立識別、Base URL／協議／健康度，模型改為供應商底下的子區塊。
 - 供應商頁的標題、說明與操作文案統一改成「供應商」，降低把模型誤認為供應商的情況。
 - 重新設計高對比 kumoSwitch App 圖示，並同步更新 Windows ICO、macOS ICNS、Linux PNG、網站 favicon 與執行時視窗圖示。
 - App 的「更多」選單新增「開啟安裝／更新向導」，直接開啟帶版本參數的官方安裝頁，避免瀏覽器快取舊頁面。
+
 ## 0.14.0 — 2026-11-13
 - 漂移中心新增狀態篩選、待處理優先排序、可選取卡片與批次重新套用／批次匯入；批次套用前保留確認與逐 Harness 備份。
 - 窄視窗把統計、代理、漂移、匯出與匯入收進「更多操作」，預設不再佔用頂部空間；新增手機版視覺基線。
@@ -114,6 +127,7 @@
 - 舊資料會優先從 `%APPDATA%\SwitchTower`／`~/.config/SwitchTower` 遷移，找不到時再回溯 `SwitchYard`；主題、語言與引導狀態也會繼承 `switchtower.*`／`switchyard.*` local storage。
 - macOS Keychain／Linux Secret Service 的主金鑰會在改名後自動從舊 service 複製到 `io.github.cypwlp.kumoswitch`，不影響既有 API Key。
 - 官網移除直接點名競品的比較表，改為描述自身的非破壞性寫入、diff、備份與還原設計。
+
 ## 0.7.0 — 2026-11-11
 - 品牌更名：SwitchYard → SwitchTower；GitHub repo、安裝包、bundle identifier、資料目錄與 updater 全部遷移。
 - 舊資料會自動從 `%APPDATA%\SwitchYard`／`~/.config/SwitchYard` 遷移到 `SwitchTower`；主題、語言與引導狀態也會從舊 localStorage key 繼承。

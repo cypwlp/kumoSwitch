@@ -393,3 +393,96 @@ fn commandcode_uses_singular_provider_key() {
     assert!(json.get("providers").is_none(), "不該寫出複數 providers");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+
+const PI_MODELS_SAMPLE: &str = r#"{
+  "providers": {
+    "keep": {
+      "name": "Keep",
+      "baseUrl": "https://keep.invalid/v1",
+      "apiKey": "sk-keep",
+      "api": "openai-completions",
+      "models": [{ "id": "keep-model", "name": "Keep Model", "contextWindow": 64000 }]
+    }
+  }
+}
+"#;
+
+const PI_SETTINGS_SAMPLE: &str = r#"{
+  "defaultProvider": "keep",
+  "defaultModel": "keep-model",
+  "theme": "system"
+}
+"#;
+
+#[test]
+fn pi_writes_provider_and_default_without_clobbering_existing_models() {
+    let dir = sandbox("pi");
+    seed(&dir, "models.json", PI_MODELS_SAMPLE);
+    seed(&dir, "settings.json", PI_SETTINGS_SAMPLE);
+    apply(&dir, "pi", "pi-gateway");
+
+    let models = std::fs::read_to_string(dir.join("models.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&models).unwrap();
+    assert_eq!(json["providers"]["keep"]["apiKey"], "sk-keep");
+    assert_eq!(json["providers"]["pi-gateway"]["baseUrl"], "https://e2e.invalid/v1");
+    assert_eq!(json["providers"]["pi-gateway"]["api"], "openai-completions");
+    assert_eq!(json["providers"]["pi-gateway"]["models"][0]["id"], "e2e-model");
+    assert_eq!(json["providers"]["pi-gateway"]["models"][0]["contextWindow"], 128000);
+
+    let settings = std::fs::read_to_string(dir.join("settings.json")).unwrap();
+    let settings: serde_json::Value = serde_json::from_str(&settings).unwrap();
+    assert_eq!(settings["defaultProvider"], "pi-gateway");
+    assert_eq!(settings["defaultModel"], "e2e-model");
+    assert_eq!(settings["theme"], "system");
+
+    let before = models;
+    apply(&dir, "pi", "pi-gateway");
+    assert_eq!(std::fs::read_to_string(dir.join("models.json")).unwrap(), before);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+const OMP_MODELS_SAMPLE: &str = r#"providers:
+  keep:
+    name: Keep
+    baseUrl: https://keep.invalid/v1
+    apiKey: sk-keep
+    api: openai-completions
+    models:
+      - id: keep-model
+        name: Keep Model
+        contextWindow: 64000
+"#;
+
+const OMP_CONFIG_SAMPLE: &str = r#"modelRoles:
+  default: keep/keep-model
+theme: system
+"#;
+
+#[test]
+fn oh_my_pi_writes_models_and_default_role_without_clobbering_other_providers() {
+    let dir = sandbox("omp");
+    seed(&dir, "models.yml", OMP_MODELS_SAMPLE);
+    seed(&dir, "config.yml", OMP_CONFIG_SAMPLE);
+    apply(&dir, "omp", "omp-gateway");
+
+    let models = std::fs::read_to_string(dir.join("models.yml")).unwrap();
+    assert!(models.contains("keep:\n"), "existing provider was lost: {models}");
+    assert!(models.contains("omp-gateway:"), "new provider missing: {models}");
+    assert!(models.contains("baseUrl: https://e2e.invalid/v1"), "endpoint missing: {models}");
+    assert!(models.contains("apiKey: sk-e2e"), "key missing: {models}");
+    assert!(models.contains("api: openai-completions"), "api missing: {models}");
+    assert!(models.contains("- id: e2e-model"), "model list missing: {models}");
+    assert!(models.contains("contextWindow: 128000"), "model metadata missing: {models}");
+
+    let config = std::fs::read_to_string(dir.join("config.yml")).unwrap();
+    assert!(config.contains("default: omp-gateway/e2e-model"), "default role missing: {config}");
+    assert!(config.contains("theme: system"), "unrelated setting was lost: {config}");
+
+    let before_models = models;
+    let before_config = config;
+    apply(&dir, "omp", "omp-gateway");
+    assert_eq!(std::fs::read_to_string(dir.join("models.yml")).unwrap(), before_models);
+    assert_eq!(std::fs::read_to_string(dir.join("config.yml")).unwrap(), before_config);
+    std::fs::remove_dir_all(&dir).ok();
+}

@@ -7,7 +7,7 @@
 
 > **2026-11-12 起更名：SwitchTower → kumoSwitch。** 更早版本名為 SwitchYard；舊資料、主題與語言設定會自動遷移，GitHub 舊網址由 GitHub 自動重新導向。
 
-一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code、Crush、Qwen Code、Kilo Code 共 13 種工具的供應商設定集中管理。
+一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code、Crush、Qwen Code、Kilo Code、Pi、Oh My Pi 共 15 種工具的供應商設定集中管理。
 
 ![主介面](site/assets/screenshot-panel.png)
 
@@ -44,7 +44,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **加密清單備份** —— 換機時用 Argon2id＋AES-256-GCM 加密的 `.kumoswitch` 檔搬移供應商與金鑰；仍可匯入舊版明文 JSON。
 - **石墨綠視覺系統** —— 亮色為暖象牙／翡翠／琥珀，暗色為石墨綠與柔光翡翠；支援亮色、暗色、跟隨系統、diff 語法高亮與窄視窗。手機版把進階操作收進「更多」面板，避免壓縮主要內容。
 - **系統托盤常駐** —— 托盤右鍵可直接切換任一工具的任何供應商；關窗不退出，單一實例。
-- **Ctrl+K 命令面板** —— 跨 10 個工具搜尋供應商，Enter 直接看 diff。
+- **Ctrl+K 命令面板** —— 跨 15 個工具搜尋供應商，Enter 直接看 diff。
 - **首次啟動引導** —— 自動偵測既有設定並一鍵導入，不必從零輸入。
 - **診斷匯出** —— 一鍵產生環境與設定摘要（金鑰只留末四碼）。
 - **自動健康檢查** —— 可開啟每 10 分鐘重測已有歷史的供應商，健康度欄不用手動按。
@@ -72,11 +72,11 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 | Qwen Code | `~/.qwen/settings.json` + `.env` | `modelProviders.*`、`OPENAI_*` | 對官方文件驗證 |
 | Kilo Code | `~/.config/kilo/kilo.jsonc` | `provider.*.options` | 對官方範例驗證 |
 
-13 個工具的寫入邏輯都有夹具測試：直接拿官方／社群的範例設定檔跑一遍，驗證目標鍵寫對、且使用者自訂的模型 metadata 不被覆蓋。
+15 個工具的寫入邏輯都有夹具測試：直接拿官方／社群的範例設定檔跑一遍，驗證目標鍵寫對、且使用者自訂的模型 metadata 不被覆蓋。
 
 ## 下載
 
-使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.18.0) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
+使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.19.0) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
 
 - Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `kumoSwitch-portable.exe`
 - macOS Apple Silicon／Intel：`.dmg`
@@ -134,7 +134,7 @@ cd src-tauri
 cargo test
 ```
 
-Windows 101、macOS／Linux 另含平台金鑰與檔案權限測試；另有 37 個 Playwright Chromium UI E2E，以及可在 Windows 建置產物上執行的真實 Tauri WebView E2E。主要涵蓋：
+Windows 103、macOS／Linux 另含平台金鑰與檔案權限測試；另有 38 個 Playwright Chromium UI E2E，以及可在 Windows 建置產物上執行的真實 Tauri WebView E2E。主要涵蓋：
 
 1. **編輯器單元測試** —— 註解、縮排、跳脫字元、任意縮排寬度是否保留。
 2. **真實設定檔唯讀檢查** —— 直接讀本機現有的 Codex／Claude／Qoder／DSH 設定，驗證 `[desktop]`、`[plugins.*]`、`[mcp_servers.*]`、既有 provider 全部零改動。

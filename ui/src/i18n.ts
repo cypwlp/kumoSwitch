@@ -468,6 +468,16 @@ const DICT: Record<string, string> = {
   "更新通道": "Update channel",
   "更新前備份": "Pre-update backup",
   "立即建立設定快照": "Create a config snapshot now",
+  "語言": "Language",
+  "工具與頁面": "Tools & pages",
+  "用量統計": "Usage stats",
+  "代理與路由": "Proxy & routing",
+  "設定守護": "Settings Guardian",
+  "資料管理": "Data management",
+  "匯出加密清單": "Export encrypted list",
+  "匯入清單／遷移包": "Import list / migration pack",
+  "重新掃描 Harness": "Rescan Harnesses",
+  "語言、外觀、工具與資料": "Language, appearance, tools and data",
 };
 
 interface Rule {
@@ -535,7 +545,7 @@ const RULES: Rule[] = [
 const ATTRS = ["placeholder", "title", "aria-label", "alt"];
 
 const HANS_PHRASES: [string, string][] = [
-  ["設定與更新", "设置与更新"], ["供應商", "供应商"], ["設定", "设置"], ["連線", "连接"],
+  ["無障礙與閱讀", "无障碍与阅读"], ["設定與更新", "设置与更新"], ["供應商", "供应商"], ["設定", "设置"], ["連線", "连接"],
   ["檢查", "检查"], ["測試", "测试"], ["備份", "备份"], ["還原", "还原"], ["紀錄", "记录"],
   ["變更", "变更"], ["金鑰", "密钥"], ["帳號", "账号"], ["套用", "应用"], ["預覽", "预览"],
   ["匯入", "导入"], ["匯出", "导出"], ["進階", "高级"], ["開關", "开关"], ["啟用", "启用"],
@@ -603,10 +613,6 @@ function simplify(input: string): string {
 }
 
 export function readLang(): Lang {
-  const hash = window.location.hash.toLowerCase();
-  if (hash.includes("lang=en") || hash.split(",").includes("en")) return "en";
-  if (hash.includes("lang=zh-hans") || hash.includes("lang=zh-cn") || hash.split(",").includes("zh-hans")) return "zh-Hans";
-  if (hash.includes("lang=zh") || hash.split(",").includes("zh")) return "zh";
   try {
     let stored = window.localStorage.getItem(KEY);
     if (stored === null) {
@@ -623,6 +629,10 @@ export function readLang(): Lang {
   } catch {
     /* ignore */
   }
+  const hash = window.location.hash.toLowerCase();
+  if (hash.includes("lang=en") || hash.split(",").includes("en")) return "en";
+  if (hash.includes("lang=zh-hans") || hash.includes("lang=zh-cn") || hash.split(",").includes("zh-hans")) return "zh-Hans";
+  if (hash.includes("lang=zh") || hash.split(",").includes("zh")) return "zh";
   const language = navigator.language.toLowerCase();
   if (!language.startsWith("zh")) return "en";
   return language.includes("cn") || language.includes("hans") || language.includes("sg") ? "zh-Hans" : "zh";

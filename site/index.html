@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>kumoSwitch — 切換 AI CLI 供應商，不動其他一行設定</title>
-<meta name="description" content="Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH 等 13 種 AI CLI 的供應商切換器。只改寫該改的鍵，套用前先看 diff，每次寫入自動備份。" />
+<meta name="description" content="Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH 等 15 種 AI CLI 的供應商切換器。只改寫該改的鍵，套用前先看 diff，每次寫入自動備份。" />
 <meta property="og:title" content="kumoSwitch — AI CLI 供應商切換器" />
 <meta property="og:description" content="非破壞性寫入。套用前逐行 diff，寫入前自動備份，隨時一鍵還原。" />
 <meta property="og:image" content="assets/screenshot-panel.png" />
@@ -29,7 +29,7 @@
       <a href="#tools">支援工具</a>
       <a href="#principles">設計</a>
       <a href="#dl">下載</a>
-      <a href="install.html?v=0.18.0">安裝向導</a>
+      <a href="install.html?v=0.19.0">安裝向導</a>
       <a class="gh" id="repoLink" href="#" target="_blank" rel="noopener">GitHub ↗</a>
     </nav>
   </div>
@@ -41,14 +41,14 @@
       <span class="pill"><i></i> Windows · macOS · Linux · 未簽章 Beta</span>
       <h1>切換 AI CLI 供應商<br/><em>不動其他一行設定</em></h1>
       <p>
-        Codex、Claude Code、Gemini CLI、OpenCode、Qoder、Crush⋯⋯13 種工具的供應商設定，
+        Codex、Claude Code、Gemini CLI、OpenCode、Qoder、Crush⋯⋯15 種工具的供應商設定，
         集中一個視窗管理。kumoSwitch 只定點改寫供應商相關的那幾個鍵，
         你的註解、外掛、MCP、主題全部原樣保留。
       </p>
       <div class="cta">
         <a class="btn primary" id="dlSetup" href="#">下載 Windows 安裝檔</a>
         <a class="btn ghost" id="dlPortable" href="#">Windows 可攜版</a>
-        <a class="btn ghost" href="install.html?v=0.18.0">開啟安裝向導</a>
+        <a class="btn ghost" href="install.html?v=0.19.0">開啟安裝向導</a>
       </div>
       <p class="fineprint" id="releaseNote">正在取得最新版本…</p>
       <p class="fineprint">v0.8.0 起由 SwitchTower 更名為 kumoSwitch；更早版本名為 SwitchYard。</p>
@@ -107,7 +107,7 @@
         <div class="ico">⌘</div>
         <h3>Ctrl+K 直接跳到</h3>
         <p>
-          一個搜尋框橫跨 13 個工具的全部供應商。輸入名稱、模型或工具名，
+          一個搜尋框橫跨 15 個工具的全部供應商。輸入名稱、模型或工具名，
           Enter 就看 diff，確認後套用。
         </p>
       </article>
@@ -163,7 +163,7 @@
   </section>
 
   <section class="section wrap" id="tools">
-    <h2 class="section-title">支援的 13 種工具</h2>
+    <h2 class="section-title">支援的 15 種工具</h2>
     <p class="section-sub">自動偵測安裝位置，開啟即知道哪些工具已就緒。格式未實測的會標記提醒先看 diff。</p>
     <div class="tools-grid">
       <div class="tool"><b>Codex</b><span>~/.codex/config.toml</span><em class="ok">已驗證</em></div>
@@ -179,6 +179,8 @@
       <div class="tool"><b>Crush</b><span>~/.config/crush/crush.json</span><em class="ok">已驗證</em></div>
       <div class="tool"><b>Qwen Code</b><span>~/.qwen/settings.json</span><em class="ok">已驗證</em></div>
       <div class="tool"><b>Kilo Code</b><span>~/.config/kilo/kilo.jsonc</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>Pi</b><span>~/.pi/agent/models.json</span><em class="ok">已驗證</em></div>
+      <div class="tool"><b>Oh My Pi</b><span>~/.omp/agent/models.yml</span><em class="ok">已驗證</em></div>
     </div>
     <div class="shot-row">
       <img src="assets/screenshot-diff.png" alt="套用前的逐行 diff 預覽" />
@@ -232,7 +234,7 @@
           <a class="btn ghost big" id="dlMacIntel" href="#">macOS Intel</a>
           <a class="btn ghost big" id="dlLinuxAppImage" href="#">Linux AppImage</a>
           <a class="btn ghost big" id="dlLinuxDeb" href="#">Linux deb</a>
-          <a class="btn ghost big" href="install.html?v=0.18.0">完整安裝向導</a>
+          <a class="btn ghost big" href="install.html?v=0.19.0">完整安裝向導</a>
           <a class="btn ghost big" id="allReleases" href="#" target="_blank" rel="noopener">所有版本</a>
         </div>
         <p class="notice"><b>未簽章 Beta：</b>Windows 可能顯示 SmartScreen「未知發行者」，macOS 可能顯示 Gatekeeper 警告；請確認下載來源，並用 SHA-256 核對檔案。</p>
