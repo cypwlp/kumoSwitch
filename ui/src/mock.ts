@@ -1201,6 +1201,18 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       const id = String(args.id ?? "");
       const found = (BACKUPS[tool] ?? []).find((b) => b.id === id);
       if (!found) throw new Error("找不到這份備份");
+      const previous = PREVIOUS[tool];
+      if (previous) {
+        ACTIVE[tool] = previous;
+        const restored = findProvider(tool, previous);
+        const seed = seedOf(tool);
+        seed.current = {
+          base_url: restored.base_url,
+          model: restored.model || seed.current.model,
+          api_key_tail: tail(restored.api_key),
+          source: seed.current.source || `${restored.config_id}.base_url`,
+        };
+      }
       return [...found.files];
     }
 

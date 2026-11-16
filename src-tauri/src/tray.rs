@@ -53,6 +53,26 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     menu.append(&MenuItem::with_id(app, "show", "開啟 kumoSwitch", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
 
+    let mut recents: Vec<(&adapters::ToolSpec, adapters::Provider)> = Vec::new();
+    for spec in adapters::TOOLS {
+        for provider in data.providers.get(spec.id).into_iter().flatten() {
+            if provider.last_used > 0 {
+                recents.push((spec, provider.clone()));
+            }
+        }
+    }
+    recents.sort_by(|a, b| b.1.last_used.cmp(&a.1.last_used));
+    if !recents.is_empty() {
+        let submenu = Submenu::new(app, "最近使用", true)?;
+        for (spec, provider) in recents.iter().take(5) {
+            let apply_id = format!("{APPLY_PREFIX}{}|{}", spec.id, provider.id);
+            let label = format!("{} · {}", spec.name, provider.name);
+            submenu.append(&MenuItem::with_id(app, apply_id, label, true, None::<&str>)?)?;
+        }
+        menu.append(&submenu)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
+
     let mut any = false;
     for spec in adapters::TOOLS {
         let providers = data.providers.get(spec.id).cloned().unwrap_or_default();

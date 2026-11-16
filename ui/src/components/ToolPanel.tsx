@@ -43,6 +43,8 @@ interface PanelProps {
   onSort: (value: "manual" | "name" | "recent") => void;
   simple: boolean;
   onSimple: (simple: boolean) => void;
+  pinned: string[];
+  onTogglePin: (provider: Provider) => void;
 }
 
 export function ToolPanel({
@@ -83,6 +85,8 @@ export function ToolPanel({
   onSort,
   simple,
   onSimple,
+  pinned,
+  onTogglePin,
 }: PanelProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [ccSelected, setCcSelected] = useState<Set<string>>(new Set());
@@ -288,6 +292,8 @@ export function ToolPanel({
         history={history}
         activeId={tool.active_id}
         simple={simple}
+        pinned={pinned}
+        onTogglePin={onTogglePin}
         onAttemptReorder={(ids) => onReorder(ids)}
         onSwitchModel={onSwitchModel}
         onApply={onApply}

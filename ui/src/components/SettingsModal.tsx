@@ -252,6 +252,10 @@ export function SettingsModal({
             <span className="kicker">Automation</span>
             <h4>自動化</h4>
           </div>
+          <button className={`settings-toggle${preferences.quickApply ? " on" : ""}`} onClick={() => onPreferences({ quickApply: !preferences.quickApply })} aria-pressed={preferences.quickApply}>
+            <span><strong>快速切換</strong><small>簡單模式略過變更預覽，直接備份並套用；可從通知復原</small></span>
+            <i aria-hidden="true" />
+          </button>
           <button className={`settings-toggle${autoHealth ? " on" : ""}`} onClick={onToggleAutoHealth} aria-pressed={autoHealth}>
             <span><strong>自動健康檢查</strong><small>每 10 分鐘檢查供應商可用性</small></span>
             <i aria-hidden="true" />

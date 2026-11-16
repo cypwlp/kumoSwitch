@@ -18,6 +18,8 @@ import type {
 } from "./types";
 import { Rail } from "./components/Rail";
 import { ToolPanel } from "./components/ToolPanel";
+import { QuickAddModal } from "./components/QuickAddModal";
+import { HarnessIcon } from "./components/Marks";
 import { EditorModal } from "./components/EditorModal";
 import { DiffModal } from "./components/DiffModal";
 import { BackupModal } from "./components/BackupModal";
@@ -45,6 +47,7 @@ type ModalState =
   | { kind: "export"; result: ExportResult; variant: "encrypted" | "diagnostics" }
   | { kind: "encrypted"; mode: "export" | "import"; fileName?: string }
   | { kind: "import-preview"; candidates: ImportCandidate[] }
+  | { kind: "quick-add" }
   | null;
 
 interface ConfirmState {
@@ -55,6 +58,51 @@ interface ConfirmState {
   run: () => Promise<void>;
 }
 
+interface RecentSwitch {
+  tool: string;
+  provider: string;
+  name: string;
+  model: string;
+  ts: number;
+}
+
+type PinMap = Record<string, string[]>;
+
+const RECENT_KEY = "kumoswitch.recent";
+const PINS_KEY = "kumoswitch.pins";
+
+function readRecent(): RecentSwitch[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    const parsed = raw ? (JSON.parse(raw) as RecentSwitch[]) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item && item.tool && item.provider).slice(0, 8)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function readPins(): PinMap {
+  try {
+    const raw = window.localStorage.getItem(PINS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as PinMap) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberRecent(entry: RecentSwitch): RecentSwitch[] {
+  const next = [entry, ...readRecent().filter((item) => !(item.tool === entry.tool && item.provider === entry.provider))].slice(0, 8);
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    /* storage may be disabled */
+  }
+  return next;
+}
+
 function hashTokens(): string[] {
   return window.location.hash.replace(/^#/, "").split(",").filter(Boolean);
 }
@@ -62,7 +110,9 @@ function hashTokens(): string[] {
 export default function App() {
   const { mode, setMode } = useTheme();
   const { preferences, update: updatePreferences } = useUiPreferences();
-  const { items: toasts, push } = useToasts();
+  const { items: toasts, push, dismiss: dismissToast } = useToasts();
+  const [recent, setRecent] = useState<RecentSwitch[]>(readRecent);
+  const [pins, setPins] = useState<PinMap>(readPins);
 
   const [tools, setTools] = useState<ToolView[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -133,8 +183,12 @@ export default function App() {
       : providers.slice();
     if (sort === "name") list.sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
     if (sort === "recent") list.sort((a, b) => (b.last_used ?? 0) - (a.last_used ?? 0));
+    const pinned = selectedId ? pins[selectedId] ?? [] : [];
+    if (pinned.length) {
+      list.sort((a, b) => Number(pinned.includes(b.id)) - Number(pinned.includes(a.id)));
+    }
     return list;
-  }, [providers, filter, sort]);
+  }, [providers, filter, sort, pins, selectedId]);
 
   /* ------------------------------------------------------------ loading */
 
@@ -194,6 +248,99 @@ export default function App() {
     },
     [push, tools],
   );
+
+  const recordRecent = useCallback((tool: ToolView, provider: Provider) => {
+    setRecent(rememberRecent({
+      tool: tool.id,
+      provider: provider.id,
+      name: provider.name,
+      model: provider.model,
+      ts: Date.now(),
+    }));
+  }, []);
+
+  const applyNow = async (tool: ToolView, provider: Provider) => {
+    const quick = preferences.quickApply && preferences.uiMode !== "advanced";
+    setBusy(true);
+    try {
+      const preview = await api.preview(tool.id, provider.id);
+      if (preview.files.length === 0) {
+        push("設定已是最新，沒有變更", "ok");
+        return;
+      }
+      const localEndpoint = /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(provider.base_url);
+      const needsPreview =
+        tool.takeover ||
+        (!localEndpoint && preview.warnings.some((warning) => /未填 API Key|接管|覆蓋|401|無法|失敗|衝突/.test(warning)));
+      if (!quick || needsPreview) {
+        setModal({ kind: "diff", tool, provider, preview });
+        return;
+      }
+      const result = await api.applyProvider(tool.id, provider.id);
+      await reload(tool.id);
+      recordRecent(tool, provider);
+      if (!result.changed) {
+        push(result.message, "ok");
+        return;
+      }
+      const backupId = result.backup_id;
+      push(`已切換到「${provider.name}」${tool.verified ? "" : "（格式未實測，已備份）"}`, "ok", backupId ? {
+        label: "復原",
+        run: async () => {
+          try {
+            await api.backupRestore(tool.id, backupId);
+            await reload(tool.id);
+            push("已復原切換前的設定", "ok");
+          } catch (error) {
+            push(errorText(error), "err");
+          }
+        },
+      } : undefined);
+    } catch (error) {
+      push(errorText(error), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const quickSaveProvider = async (
+    payload: Provider,
+    options: { fetchModels: boolean; switchNow: boolean },
+  ) => {
+    if (!selected) return;
+    const tool = selected;
+    setBusy(true);
+    try {
+      let saved = await api.providerSave(tool.id, payload);
+      if (options.fetchModels) {
+        try {
+          const discovery = await api.discoverModels(tool.id, saved.id);
+          if (discovery.models.length) {
+            const models = [...(saved.models ?? [])];
+            for (const model of discovery.models) {
+              if (!models.some((item) => item.id === model.id)) models.push(model);
+            }
+            const model = saved.model || models[0]?.id || "";
+            saved = await api.providerSave(tool.id, { ...saved, models, model });
+          }
+        } catch (error) {
+          push(`已新增「${saved.name}」，但自動抓取模型失敗：${errorText(error)}`, "err");
+        }
+      }
+      await reload(tool.id);
+      setModal(null);
+      if (options.switchNow) {
+        await applyNow(tool, saved);
+      } else {
+        push(`已新增「${saved.name}」`, "ok");
+      }
+    } catch (error) {
+      push(errorText(error), "err");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const openBackups = useCallback(
     async (toolId: string) => {
@@ -275,6 +422,60 @@ export default function App() {
     setModal({ kind: "editor", provider });
   }, []);
 
+  const addProvider = useCallback(() => {
+    if (preferences.uiMode === "advanced") openEditor(null);
+    else setModal({ kind: "quick-add" });
+  }, [openEditor, preferences.uiMode]);
+
+  const togglePin = (provider: Provider) => {
+    if (!selectedId) return;
+    setPins((current) => {
+      const list = current[selectedId] ?? [];
+      const next = {
+        ...current,
+        [selectedId]: list.includes(provider.id)
+          ? list.filter((id) => id !== provider.id)
+          : [provider.id, ...list],
+      };
+      try {
+        window.localStorage.setItem(PINS_KEY, JSON.stringify(next));
+      } catch {
+        /* storage may be disabled */
+      }
+      return next;
+    });
+  };
+
+  const openRecent = async (entry: RecentSwitch) => {
+    const tool = tools.find((item) => item.id === entry.tool);
+    if (!tool) {
+      push("找不到這個工具", "err");
+      return;
+    }
+    setSelectedId(tool.id);
+    setFilter("");
+    try {
+      const list = await loadProviders(tool.id);
+      const provider = list.find((item) => item.id === entry.provider);
+      if (!provider) {
+        setRecent((current) => {
+          const next = current.filter((item) => !(item.tool === entry.tool && item.provider === entry.provider));
+          try {
+            window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+          } catch {
+            /* ignore */
+          }
+          return next;
+        });
+        push("這個供應商已被刪除", "err");
+        return;
+      }
+      await applyNow(tool, provider);
+    } catch (error) {
+      push(errorText(error), "err");
+    }
+  };
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && (event.key === "k" || event.key === "K")) {
@@ -286,7 +487,7 @@ export default function App() {
       if ((event.ctrlKey || event.metaKey) && (event.key === "n" || event.key === "N")) {
         if (!selectedId) return;
         event.preventDefault();
-        openEditor(null);
+        addProvider();
         return;
       }
       if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -305,7 +506,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, openEditor]);
+  }, [selectedId, addProvider]);
 
   useEffect(() => {
     if (MOCK && hashTokens().includes("palette")) setPalette(true);
@@ -470,6 +671,8 @@ export default function App() {
     setBusy(true);
     try {
       const result = await api.applyProvider(toolId, modal.provider.id);
+      const tool = tools.find((item) => item.id === toolId);
+      if (tool) recordRecent(tool, modal.provider);
       setModal(null);
       push(result.message, "ok");
       await reload(toolId);
@@ -920,6 +1123,29 @@ export default function App() {
           ) : null}
 
           {selected ? (
+            <>
+            {recent.length ? (
+              <div className="recent-strip" aria-label="最近切換">
+                <span className="recent-label">最近</span>
+                {recent.slice(0, 5).map((entry) => {
+                  const tool = tools.find((item) => item.id === entry.tool);
+                  if (!tool) return null;
+                  return (
+                    <button
+                      key={`${entry.tool}-${entry.provider}`}
+                      type="button"
+                      className="recent-chip"
+                      title={`${tool.name} · ${entry.name}`}
+                      onClick={() => void openRecent(entry)}
+                    >
+                      <HarnessIcon id={tool.id} name={tool.name} size={16} />
+                      <span>{entry.name}</span>
+                      <small>{tool.name}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             <ToolPanel
               key={selected.id}
               tool={selected}
@@ -935,7 +1161,7 @@ export default function App() {
               onFilter={setFilter}
               onReveal={() => void reveal(selected.id)}
               onBackups={() => void openBackups(selected.id)}
-              onAdd={() => openEditor(null)}
+              onAdd={addProvider}
               onImportConfig={() => void scanConfig()}
               onImportCcSwitch={(providerId) => void importCcSwitchProvider(providerId)}
               onRefreshCcSwitch={() => void refreshCcSwitch()}
@@ -953,13 +1179,16 @@ export default function App() {
               onToggleAutoHealth={() => void toggleAutoHealth()}
               autoModelSync={autoModelSync}
               onToggleAutoModelSync={() => void toggleAutoModelSync()}
-              onApply={(p) => void openDiff(selected.id, p)}
+              onApply={(p) => void applyNow(selected, p)}
               onReorder={(ids) => void reorderProviders(ids)}
               onSwitchModel={(provider, modelId) => void switchModelFromCard(provider, modelId)}
               onEdit={(p) => openEditor(p)}
               onDelete={askDelete}
               onTest={(p) => void runTest(p)}
+              pinned={pins[selected.id] ?? []}
+              onTogglePin={togglePin}
             />
+            </>
           ) : showOnboarding ? (
             <Onboarding
               tools={tools}
@@ -1015,6 +1244,16 @@ export default function App() {
             if (model && model.id !== provider.model) void switchModelFromCard(provider, model.id);
             else void openDiff(tool.id, provider);
           }}
+        />
+      ) : null}
+
+      {modal?.kind === "quick-add" && selected ? (
+        <QuickAddModal
+          tool={selected}
+          busy={busy}
+          onCancel={() => setModal(null)}
+          onAdvanced={() => setModal({ kind: "editor", provider: null })}
+          onSave={quickSaveProvider}
         />
       ) : null}
 
@@ -1134,7 +1373,7 @@ export default function App() {
         />
       ) : null}
 
-      <Toasts items={toasts} />
+      <Toasts items={toasts} onDismiss={dismissToast} />
     </>
   );
 }

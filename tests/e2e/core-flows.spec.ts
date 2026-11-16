@@ -108,6 +108,7 @@ test("Harness rail shows distinct icons and desktop configuration scope", async 
 });
 
 test("provider chooser searches categories and keeps account login explicit", async ({ page }) => {
+  await page.getByRole("button", { name: "進階", exact: true }).click();
   await page.getByRole("button", { name: /新增供應商/ }).click();
   const editor = page.getByRole("dialog").last();
   await editor.getByRole("button", { name: /瀏覽供應商目錄/ }).click();
@@ -185,6 +186,7 @@ test("Harness manager installs a fixed package and explains desktop support", as
 test("narrow provider chooser and Harness manager remain contained", async ({ page }) => {
   await page.setViewportSize({ width: 480, height: 820 });
   await page.reload();
+  await page.getByRole("button", { name: "進階", exact: true }).click();
   await page.getByRole("button", { name: /新增供應商/ }).click();
   await page.getByRole("button", { name: /瀏覽供應商目錄/ }).click();
   await expect(page.locator(".provider-chooser")).toBeVisible();
@@ -596,15 +598,35 @@ test("proxy route strategy and observability are usable", async ({ page }) => {
   await expect(page.getByText("upstream rate limited (429); cooling down")).toBeVisible();
 });
 
-test("one-click rollback offers the previous provider", async ({ page }) => {
+test("quick switch applies immediately and can be undone", async ({ page }) => {
   const provider = page.getByRole("article", { name: "供應商 Command Code" });
   await provider.getByRole("button", { name: "套用", exact: true }).click();
-  const diff = page.getByRole("dialog");
-  await diff.getByRole("button", { name: "確認套用" }).click();
-  await expect(diff).toBeHidden();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".toast").filter({ hasText: "已切換到「Command Code」" })).toBeVisible();
+  await expect(page.locator(".recent-chip").filter({ hasText: "Command Code" })).toBeVisible();
   await expect(page.getByRole("button", { name: "切回上一個供應商" })).toBeVisible();
-  await page.getByRole("button", { name: "切回上一個供應商" }).click();
-  await expect(page.getByRole("heading", { name: "套用「OpenCode Go」到 Codex" })).toBeVisible();
+  await page.locator(".toast-action").click();
+  await expect(page.locator(".toast").filter({ hasText: "已復原切換前的設定" })).toBeVisible();
+  await expect(page.locator(".current-provider")).toContainText("OpenCode Go");
+});
+
+test("quick add saves and switches a new provider", async ({ page }) => {
+  await page.getByRole("button", { name: /新增供應商/ }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: /快速新增 · Codex/ })).toBeVisible();
+  await dialog.getByLabel("Base URL").fill("https://api.quick.test/v1");
+  await dialog.getByLabel("API Key").fill("sk-quick-1234");
+  await dialog.getByRole("button", { name: /儲存並切換/ }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".toast").filter({ hasText: "已切換到" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "供應商 api.quick.test" })).toBeVisible();
+});
+
+test("providers can be pinned to the top", async ({ page }) => {
+  const command = page.getByRole("article", { name: "供應商 Command Code" });
+  await command.getByRole("button", { name: "☆ 釘選" }).click();
+  await expect(command.getByRole("button", { name: "★ 釘選" })).toBeVisible();
+  await expect(page.locator(".provider-card").first()).toContainText("Command Code");
 });
 
 test("configuration import previews conflicts and applies a bulk policy", async ({ page }) => {
@@ -657,6 +679,7 @@ test("encrypted backup import opens the password flow", async ({ page }) => {
 });
 
 test("Command Code preview shows the intended non-destructive diff", async ({ page }) => {
+  await page.getByRole("button", { name: "進階", exact: true }).click();
   const provider = page.getByRole("article", { name: "供應商 Command Code" });
   await provider.getByRole("button", { name: "套用", exact: true }).click();
 

@@ -11,6 +11,8 @@ export interface UiPreferences {
   reduceMotion: boolean;
   /** Simple mode keeps the main screen focused on switching providers. */
   uiMode: UiMode;
+  /** In simple mode, apply immediately with a backup + undo toast instead of a diff sheet. */
+  quickApply: boolean;
 }
 
 const KEY = "kumoswitch.accessibility";
@@ -21,6 +23,7 @@ const DEFAULT: UiPreferences = {
   density: "comfortable",
   reduceMotion: false,
   uiMode: "simple",
+  quickApply: true,
 };
 
 function read(): UiPreferences {
@@ -34,6 +37,7 @@ function read(): UiPreferences {
       density: parsed.density === "compact" ? "compact" : "comfortable",
       reduceMotion: Boolean(parsed.reduceMotion),
       uiMode: parsed.uiMode === "advanced" ? "advanced" : "simple",
+      quickApply: parsed.quickApply === undefined ? true : Boolean(parsed.quickApply),
     };
   } catch {
     return DEFAULT;

@@ -33,6 +33,8 @@ interface TableProps {
   history: HistoryMap;
   activeId: string | null;
   simple: boolean;
+  pinned: string[];
+  onTogglePin: (provider: Provider) => void;
 }
 
 export function ProviderTable({
@@ -48,6 +50,8 @@ export function ProviderTable({
   history,
   activeId,
   simple,
+  pinned,
+  onTogglePin,
 }: TableProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [visibleLimit, setVisibleLimit] = useState(24);
@@ -240,6 +244,15 @@ export function ProviderTable({
                   刪除
                 </button>
               )}
+              <button
+                type="button"
+                className={`small ghost provider-pin${pinned.includes(provider.id) ? " on" : ""}`}
+                onClick={() => onTogglePin(provider)}
+                title={pinned.includes(provider.id) ? "取消釘選" : "釘選到最前面"}
+                aria-pressed={pinned.includes(provider.id)}
+              >
+                {pinned.includes(provider.id) ? "★ 釘選" : "☆ 釘選"}
+              </button>
             </div>
           </article>
         );
