@@ -824,6 +824,7 @@ function buildPreview(tool: string, providerId: string): Preview {
 /* ----------------------------------------------------------------- invoke */
 
 let counter = 100;
+let CC_BRIDGE_ENABLED = false;
 let liveTestDailyLimit = 20;
 let liveTestMaxOutputTokens = 8;
 let liveTestUsed24h = 3;
@@ -888,18 +889,25 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         autoModelSync: false,
         updateChannel: "stable",
         preUpdateBackup: true,
+        ccSwitchBridge: CC_BRIDGE_ENABLED,
         releaseChannel: "stable",
         buildCommit: "mock-build",
         signing: "optional",
       } satisfies AppInfo;
 
     case "tool_list": {
-      const views = toolViews();
+      const views = toolViews().map((t) => (
+        CC_BRIDGE_ENABLED ? t : { ...t, cc_switch: null, takeover: false }
+      ));
       if (window.location.hash.includes("onboard")) {
         return views.map((t) => ({ ...t, provider_count: 0, active_id: null }));
       }
       return views;
     }
+
+    case "set_cc_switch_bridge":
+      CC_BRIDGE_ENABLED = Boolean(args.enabled);
+      return CC_BRIDGE_ENABLED;
 
     case "drift_overview": {
       const views = toolViews();

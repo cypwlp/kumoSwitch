@@ -401,7 +401,10 @@ struct ImportDecision {
     action: String,
 }
 
-fn takeover_state(tool: &str) -> bool {
+fn takeover_state(tool: &str, bridge_enabled: bool) -> bool {
+    if !bridge_enabled {
+        return false;
+    }
     let key = match tool {
         "grok" => "grokbuild",
         other => other,
@@ -441,7 +444,11 @@ fn same_endpoint(a: &str, b: &str) -> bool {
 #[tauri::command]
 fn tool_list() -> Vec<ToolView> {
     let data = store::load();
-    let cc_switch = ccswitch::read_snapshot();
+    let cc_switch = if data.cc_switch_bridge {
+        ccswitch::read_snapshot()
+    } else {
+        ccswitch::Snapshot::default()
+    };
     TOOLS
         .iter()
         .map(|spec| {
@@ -480,7 +487,7 @@ fn tool_list() -> Vec<ToolView> {
                 reasoning_target: adapters::reasoning_target_for_tool(spec.id),
                 restart: spec.restart,
                 detected: adapters::tool_dir(spec).exists(),
-                takeover: takeover_state(spec.id),
+                takeover: takeover_state(spec.id, data.cc_switch_bridge),
                 provider_count: providers.len(),
                 active_id,
                 previous_id,
@@ -676,6 +683,9 @@ fn import_cc_switch_provider(
     provider_id: String,
     app: tauri::AppHandle,
 ) -> Result<CcSwitchImportResult, String> {
+    if !store::load().cc_switch_bridge {
+        return Err("相容匯入尚未啟用，請先到設定開啟".into());
+    }
     let snapshot = ccswitch::read_snapshot();
     let candidate = snapshot.provider_for_import(&tool, &provider_id)?;
     let existing = store::list(&tool);
@@ -1160,7 +1170,7 @@ fn build_warnings(spec: &ToolSpec, provider: &Provider) -> Vec<String> {
             spec.name
         ));
     }
-    if takeover_state(spec.id) {
+    if takeover_state(spec.id, store::load().cc_switch_bridge) {
         warnings.push("cc-switch 正以代理模式接管此工具，套用後可能被它覆蓋。".into());
     }
     warnings.extend(compat::preview_messages(spec.id, provider));
@@ -1617,7 +1627,7 @@ fn export_diagnostics(destination: Option<String>) -> Result<ExportResult, Strin
             adapters::tool_dir(spec).exists(),
             spec.verified,
             providers.len(),
-            takeover_state(spec.id),
+            takeover_state(spec.id, data.cc_switch_bridge),
             if current.source.is_empty() { "-" } else { &current.source },
         ));
         report.push_str(&format!("{:<14} 路徑={}
@@ -2055,8 +2065,22 @@ fn profile_sync(profile_id: String, tools: Vec<String>, app: tauri::AppHandle) -
 
 #[tauri::command]
 fn cc_switch_refresh() -> bool {
+    if !store::load().cc_switch_bridge {
+        return false;
+    }
     let snapshot = ccswitch::refresh_snapshot();
     snapshot.public_error().is_none()
+}
+
+#[tauri::command]
+fn set_cc_switch_bridge(enabled: bool) -> Result<bool, String> {
+    let mut data = store::load();
+    data.cc_switch_bridge = enabled;
+    store::save(&data)?;
+    if !enabled {
+        ccswitch::clear_cache();
+    }
+    Ok(enabled)
 }
 
 fn cc_import_candidate(
@@ -2083,6 +2107,9 @@ fn import_cc_switch_batch(
     provider_ids: Vec<String>,
     app: tauri::AppHandle,
 ) -> Result<CcSwitchBatchResult, String> {
+    if !store::load().cc_switch_bridge {
+        return Err("相容匯入尚未啟用，請先到設定開啟".into());
+    }
     let snapshot = ccswitch::refresh_snapshot();
     let mut imported = 0usize;
     let mut skipped = 0usize;
@@ -2109,10 +2136,13 @@ fn import_cc_switch_batch(
 
 #[tauri::command]
 fn cc_switch_import_route_stack(tool: String, app: tauri::AppHandle) -> Result<CcSwitchRouteResult, String> {
+    if !store::load().cc_switch_bridge {
+        return Err("相容匯入尚未啟用，請先到設定開啟".into());
+    }
     let snapshot = ccswitch::refresh_snapshot();
     let route_ids = snapshot.route_provider_ids(&tool);
     if route_ids.is_empty() {
-        return Err("CC Switch 沒有可匯入的路由供應商".into());
+        return Err("相容資料庫沒有可匯入的路由供應商".into());
     }
     let mut imported = 0usize;
     let mut providers = Vec::new();
@@ -2284,9 +2314,17 @@ fn spawn_guardian_loop(app: tauri::AppHandle) {
 
 fn spawn_cc_switch_refresh_loop(app: tauri::AppHandle) {
     std::thread::spawn(move || {
-        let mut last_modified = ccswitch::database_modified_ms();
+        let mut last_modified = if store::load().cc_switch_bridge {
+            ccswitch::database_modified_ms()
+        } else {
+            0
+        };
         loop {
             std::thread::sleep(std::time::Duration::from_secs(20));
+            if !store::load().cc_switch_bridge {
+                last_modified = 0;
+                continue;
+            }
             let modified = ccswitch::database_modified_ms();
             if modified == 0 || modified == last_modified { continue; }
             last_modified = modified;
@@ -2425,6 +2463,7 @@ fn app_info() -> serde_json::Value {
         "backup": data.backup,
         "updateChannel": data.update_channel,
         "preUpdateBackup": data.pre_update_backup,
+        "ccSwitchBridge": data.cc_switch_bridge,
         "releaseChannel": option_env!("KUMOSWITCH_RELEASE_CHANNEL").unwrap_or("stable"),
         "buildCommit": option_env!("KUMOSWITCH_BUILD_COMMIT").unwrap_or(""),
         "signing": if cfg!(windows) { option_env!("KUMOSWITCH_SIGNED").unwrap_or("optional") } else { "optional" },
@@ -2538,6 +2577,7 @@ fn main() {
             profile_sync,
             prepare_update_backup,
             set_update_preferences,
+            set_cc_switch_bridge,
             reveal_config,
             reveal_path,
             audit_log,

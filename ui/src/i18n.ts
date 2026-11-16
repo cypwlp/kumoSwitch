@@ -64,9 +64,9 @@ const DICT: Record<string, string> = {
   "移除模型": "Remove model",
   "kumoSwitch 只改寫供應商相關的那幾個鍵，": "kumoSwitch rewrites only the provider keys,",
   "你的註解、外掛、MCP 與其他設定原樣保留。": "your comments, plugins, MCP and other settings stay untouched.",
-  "cc-switch 正在接管這個工具": "cc-switch is managing this tool",
-  "偵測到代理模式啟用中，套用後可能被 cc-switch 覆蓋。建議先切回直連模式。":
-    "Proxy mode is active, so cc-switch may overwrite what you apply. Switch it back to direct mode first.",
+  "其他切換工具正在接管這個工具": "Another switching tool is managing this tool",
+  "偵測到代理模式啟用中，套用後可能被接管工具覆蓋。建議先切回直連模式。":
+    "Proxy mode is active, so the managing tool may overwrite what you apply. Switch it back to direct mode first.",
   "· 預覽模式（假資料）": "· preview mode (fake data)",
   "主題": "Theme",
   "亮色": "Light",
@@ -402,19 +402,19 @@ const DICT: Record<string, string> = {
   "儲存政策": "Save policy",
   "選取": "Select",
   "離線快取": "Offline cache",
-  "CC Switch 管理的供應商": "Providers managed by CC Switch",
-  "來自 cc-switch.db，不是 Codex 實際 config.toml": "From cc-switch.db, not Codex config.toml",
+  "其他切換工具管理的供應商": "Providers managed by another switching tool",
+  "來自本機相容資料庫，不是 Codex 實際 config.toml": "From a local compatibility database, not the real Codex config.toml",
   "代理／路由模式": "Proxy / route mode",
-  "CC Switch 資料庫": "CC Switch database",
+  "相容資料庫": "Compatibility database",
   "路由中": "Routing",
   "候選": "Candidate",
   "匯入 kumoSwitch": "Import to kumoSwitch",
   "已匯入": "Imported",
   "金鑰已保存": "Key stored",
   "沒有金鑰": "No key",
-  "Codex 目前只把 CC Switch 的本地代理位址寫進 config.toml，所以 kumoSwitch 會看到 custom／127.0.0.1，而不是底層供應商。下面列出的才是 CC Switch 資料庫裡實際被路由的供應商。": "Codex currently writes only the CC Switch local proxy address into config.toml, so kumoSwitch sees custom / 127.0.0.1 instead of the upstream providers. The entries below are the providers actually routed by CC Switch.",
-  "下面是 CC Switch 自己資料庫中的供應商，和 Codex 實際 config.toml 是兩份不同資料。": "These providers come from the CC Switch database and are separate from the real Codex config.toml.",
-  "CC Switch 資料庫中目前沒有這個 App 的供應商。": "CC Switch has no providers for this app yet.",
+  "這個工具目前只把相容工具的本地代理位址寫進 config.toml，所以 kumoSwitch 會看到 custom／127.0.0.1，而不是底層供應商。下面列出的是相容資料庫裡實際被路由的供應商。": "This tool currently writes only the compatibility tool's local proxy address into config.toml, so kumoSwitch sees custom / 127.0.0.1 instead of the upstream providers. The entries below are the providers actually routed by the compatibility database.",
+  "下面是相容資料庫中的供應商，和工具實際 config.toml 是兩份不同資料。": "These providers come from the compatibility database and are separate from the real tool config.toml.",
+  "相容資料庫中目前沒有這個 App 的供應商。": "The compatibility database has no providers for this app yet.",
   "共用供應商 Profile": "Shared provider profiles",
   "共用 Profile": "Shared profiles",
   "備份中心": "Backup center",
@@ -553,6 +553,14 @@ const DICT: Record<string, string> = {
   "★ 釘選": "★ Pinned",
   "取消釘選": "Unpin",
   "釘選到最前面": "Pin to top",
+  "相容匯入": "Compatibility import",
+  "讀取其他切換工具的本機資料": "Read another switcher's local data",
+  "預設關閉；只讀取本機 cc-switch.db，不上傳、不修改": "Off by default; reads the local cc-switch.db only, with no upload or modification",
+  "開啟後才會顯示相容資料庫中的供應商。匯入前請自行確認第三方工具的使用條款；kumoSwitch 與任何第三方工具都沒有官方合作或背書關係。": "Providers from the compatibility database appear only after this is enabled. Check the third-party tool's terms before importing; kumoSwitch has no partnership with or endorsement from any third-party tool.",
+  "重新讀取資料庫": "Reload database",
+  "逐項選取後可批次匯入或鏡像路由順序": "Select individual providers to bulk import or mirror the route order",
+  "鏡像路由堆疊": "Mirror route stack",
+  "相容供應商目錄已重新讀取": "Compatibility provider catalogue reloaded",
 };
 
 interface Rule {
@@ -581,6 +589,10 @@ const RULES: Rule[] = [
   { re: /^已套用「(.+)」$/, out: (m) => `Applied “${m[1]}”` },
   { re: /^已切換到「(.+)」$/, out: (m) => `Switched to “${m[1]}”` },
   { re: /^已新增「(.+)」$/, out: (m) => `Added “${m[1]}”` },
+  { re: /^已從相容資料庫匯入「(.+)」$/, out: (m) => `Imported “${m[1]}” from the compatibility database` },
+  { re: /^相容資料庫另有 (\d+) 個供應商$/, out: (m) => `The compatibility database has ${m[1]} more providers` },
+  { re: /^已鏡像路由堆疊：(.+)$/, out: (m) => `Mirrored route stack: ${m[1]}` },
+
   { re: /^快速新增 · (.+)$/, out: (m) => `Quick add · ${m[1]}` },
 
   { re: /^套用「(.+)」到 (.+)$/, out: (m) => `Apply “${m[1]}” to ${m[2]}` },
@@ -617,8 +629,8 @@ const RULES: Rule[] = [
     out: (m) => `No model set for this provider, so the current “${m[1]}” is kept. Add a model name to switch it too.` },
   { re: /^(.+) 的設定格式尚未在真實安裝上驗證，請仔細核對下方變更預覽再套用。$/,
     out: (m) => `${m[1]} has not been verified against a real install. Check the change preview below before applying.` },
-  { re: /^cc-switch 正以代理模式接管此工具，套用後可能被它覆蓋。$/,
-    out: () => "cc-switch is proxying this tool; it may overwrite what you apply." },
+  { re: /^其他切換工具正以代理模式接管此工具，套用後可能被它覆蓋。$/,
+    out: () => "Another switching tool is proxying this tool; it may overwrite what you apply." },
 ];
 
 const ATTRS = ["placeholder", "title", "aria-label", "alt"];

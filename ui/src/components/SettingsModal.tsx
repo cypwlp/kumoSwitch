@@ -18,6 +18,8 @@ interface SettingsModalProps {
   preferences: UiPreferences;
   updateChannel: string;
   preUpdateBackup: boolean;
+  ccSwitchBridge: boolean;
+  onToggleCcSwitchBridge: (enabled: boolean) => void;
   onTheme: (mode: ThemeMode) => void;
   onPreferences: (patch: Partial<UiPreferences>) => void;
   onUpdateChannel: (channel: string) => void;
@@ -66,6 +68,8 @@ export function SettingsModal({
   preferences,
   updateChannel,
   preUpdateBackup,
+  ccSwitchBridge,
+  onToggleCcSwitchBridge,
   onTheme,
   onPreferences,
   onUpdateChannel,
@@ -264,6 +268,20 @@ export function SettingsModal({
             <span><strong>自動模型同步</strong><small>依供應商排程更新模型目錄</small></span>
             <i aria-hidden="true" />
           </button>
+        </section>
+
+        <section className="settings-card">
+          <div className="settings-card-title">
+            <span className="kicker">Compatibility</span>
+            <h4>相容匯入</h4>
+          </div>
+          <button className={`settings-toggle${ccSwitchBridge ? " on" : ""}`} onClick={() => onToggleCcSwitchBridge(!ccSwitchBridge)} aria-pressed={ccSwitchBridge}>
+            <span><strong>讀取其他切換工具的本機資料</strong><small>預設關閉；只讀取本機 cc-switch.db，不上傳、不修改</small></span>
+            <i aria-hidden="true" />
+          </button>
+          <p className="settings-help">
+            開啟後才會顯示相容資料庫中的供應商。匯入前請自行確認第三方工具的使用條款；kumoSwitch 與任何第三方工具都沒有官方合作或背書關係。
+          </p>
         </section>
 
         <section className="settings-card settings-data-card">

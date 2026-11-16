@@ -258,6 +258,13 @@ pub fn refresh_snapshot() -> Snapshot {
     read_snapshot_cached(true)
 }
 
+/// Drop any cached copy when the user turns the compatibility bridge off.
+pub fn clear_cache() {
+    *SNAPSHOT_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
 fn read_snapshot_cached(force: bool) -> Snapshot {
     let now = snapshot_now_ms();
     if !force {

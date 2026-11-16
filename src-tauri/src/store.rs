@@ -95,6 +95,10 @@ pub struct Store {
     /// Capture local config snapshots immediately before installing an update.
     #[serde(default = "default_true")]
     pub pre_update_backup: bool,
+    /// Opt-in read of CC Switch's local database for the compatibility importer.
+    /// Off by default; no part of the app reads that database until enabled.
+    #[serde(default)]
+    pub cc_switch_bridge: bool,
 }
 
 fn default_channel() -> String { "stable".into() }
@@ -126,6 +130,7 @@ impl Default for Store {
             backup: crate::backup::BackupPolicy::default(),
             update_channel: default_channel(),
             pre_update_backup: true,
+            cc_switch_bridge: false,
         }
     }
 }

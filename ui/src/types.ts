@@ -270,6 +270,7 @@ export interface AppInfo {
   backup?: BackupPolicy;
   updateChannel?: string;
   preUpdateBackup?: boolean;
+  ccSwitchBridge?: boolean;
   releaseChannel?: string;
   buildCommit?: string;
   signing?: string;

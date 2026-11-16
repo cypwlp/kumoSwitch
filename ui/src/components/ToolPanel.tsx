@@ -148,9 +148,9 @@ export function ToolPanel({
       {tool.takeover ? (
         <div className="banner warn">
           <strong>
-            <WarnIcon /> cc-switch 正在接管這個工具
+            <WarnIcon /> 其他切換工具正在接管這個工具
           </strong>
-          <span>偵測到代理模式啟用中，套用後可能被 cc-switch 覆蓋。建議先切回直連模式。</span>
+          <span>偵測到代理模式啟用中，套用後可能被接管工具覆蓋。建議先切回直連模式。</span>
         </div>
       ) : null}
 
@@ -176,8 +176,8 @@ export function ToolPanel({
 
       {tool.cc_switch?.available && tool.cc_switch.providers.length ? (
         <p className="ccswitch-inline">
-          <span className="ccswitch-mark">CC</span>
-          CC Switch 另管 {tool.cc_switch.providers.length} 個供應商
+          <span className="ccswitch-mark">⇄</span>
+          相容資料庫另有 {tool.cc_switch.providers.length} 個供應商
           <button
             type="button"
             className="linklike"
@@ -306,36 +306,35 @@ export function ToolPanel({
         <details className="ccswitch-source" id="ccswitch-managed" open={simple ? undefined : true}>
           <summary>
             <div className="ccswitch-source-title">
-              <span className="ccswitch-mark">CC</span>
+              <span className="ccswitch-mark">⇄</span>
               <span>
-                <strong>CC Switch 管理的供應商</strong>
-                <em>來自 cc-switch.db，不是 Codex 實際 config.toml</em>
+                <strong>其他切換工具管理的供應商</strong>
+                <em>來自本機相容資料庫，不是 Codex 實際 config.toml</em>
               </span>
             </div>
             <div className="ccswitch-source-badges">
-              <span className={`badge ${tool.cc_switch.attached ? "warn" : "subtle"}`}>{tool.cc_switch.mode === "proxy" ? "代理／路由模式" : "CC Switch 資料庫"}</span>
+              <span className={`badge ${tool.cc_switch.attached ? "warn" : "subtle"}`}>{tool.cc_switch.mode === "proxy" ? "代理／路由模式" : "相容資料庫"}</span>
               <span className="badge subtle">{tool.cc_switch.providers.length} 個</span>
               <span className="badge subtle">快取 {tool.cc_switch.last_refreshed ? new Date(tool.cc_switch.last_refreshed).toLocaleTimeString() : "—"}</span>
             </div>
           </summary>
           <div className="ccswitch-batch-bar">
-            <button type="button" className="ghost small" onClick={onRefreshCcSwitch}>重新整理資料庫</button>
-            <span className="muted small">{ccSelected.size ? `已選 ${ccSelected.size} 個` : "可批次匯入或鏡像路由順序"}</span>
+            <button type="button" className="ghost small" onClick={onRefreshCcSwitch}>重新讀取資料庫</button>
+            <span className="muted small">{ccSelected.size ? `已選 ${ccSelected.size} 個` : "逐項選取後可批次匯入或鏡像路由順序"}</span>
             <span className="spacer" />
-            <button type="button" className="ghost small" onClick={() => setCcSelected(new Set(tool.cc_switch!.providers.filter((provider) => !provider.already_imported).map((provider) => provider.id)))}>全選未匯入</button>
             <button type="button" className="ghost small" disabled={!ccSelected.size} onClick={() => onImportCcSwitchBatch([...ccSelected])}>批次匯入</button>
-            <button type="button" className="primary small" onClick={onMirrorCcSwitchRoute}>鏡像 CC Switch 路由堆疊</button>
+            <button type="button" className="primary small" onClick={onMirrorCcSwitchRoute}>鏡像路由堆疊</button>
           </div>
           <div className="ccswitch-explainer">
             <p>
               {tool.cc_switch.attached && tool.cc_switch.mode === "proxy"
-                ? "Codex 目前只把 CC Switch 的本地代理位址寫進 config.toml，所以 kumoSwitch 會看到 custom／127.0.0.1，而不是底層供應商。下面列出的才是 CC Switch 資料庫裡實際被路由的供應商。"
-                : "下面是 CC Switch 自己資料庫中的供應商，和 Codex 實際 config.toml 是兩份不同資料。"}
+                ? "這個工具目前只把相容工具的本地代理位址寫進 config.toml，所以 kumoSwitch 會看到 custom／127.0.0.1，而不是底層供應商。下面列出的是相容資料庫裡實際被路由的供應商。"
+                : "下面是相容資料庫中的供應商，和工具實際 config.toml 是兩份不同資料。"}
             </p>
             <code>{tool.cc_switch.db_path}</code>
           </div>
           {tool.cc_switch.error ? <div className="note error">{tool.cc_switch.error}</div> : null}
-          {!tool.cc_switch.providers.length && !tool.cc_switch.error ? <div className="note">CC Switch 資料庫中目前沒有這個 App 的供應商。</div> : null}
+          {!tool.cc_switch.providers.length && !tool.cc_switch.error ? <div className="note">相容資料庫中目前沒有這個 App 的供應商。</div> : null}
           <div className="ccswitch-provider-grid">
             {tool.cc_switch.providers.map((provider) => (
               <article className="ccswitch-provider" key={provider.id}>

@@ -12,6 +12,12 @@ async function openWorkspace(page: import("@playwright/test").Page, name: string
   await dialog.getByRole("button", { name }).click();
 }
 
+async function enableCompatibilityBridge(page: import("@playwright/test").Page) {
+  const dialog = await openSettings(page);
+  await dialog.getByRole("button", { name: /讀取其他切換工具的本機資料/ }).click();
+  await dialog.locator(".sheet-foot").getByRole("button", { name: "關閉" }).click();
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto(APP);
   await expect(page.getByRole("heading", { name: "Codex", exact: true })).toBeVisible();
@@ -59,27 +65,37 @@ test("API Key can be explicitly cleared without rewriting other fields", async (
   await expect(dialog.getByRole("button", { name: "清除金鑰", exact: true })).toHaveCount(0);
 });
 
-test("CC Switch managed providers are shown separately and can be imported", async ({ page }) => {
-  await expect(page.getByText("CC Switch 管理的供應商", { exact: true })).toBeVisible();
-  await expect(page.getByText(/來自 cc-switch\.db/)).toBeVisible();
-  await page.getByText("CC Switch 管理的供應商", { exact: true }).click();
+test("compatibility bridge is opt-in and off by default", async ({ page }) => {
+  await expect(page.getByText("其他切換工具管理的供應商", { exact: true })).toHaveCount(0);
+  const dialog = await openSettings(page);
+  await expect(dialog.getByText("相容匯入", { exact: true })).toBeVisible();
+  const toggle = dialog.getByRole("button", { name: /讀取其他切換工具的本機資料/ });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+});
+
+test("compatibility bridge providers are shown separately and can be imported", async ({ page }) => {
+  await enableCompatibilityBridge(page);
+  await expect(page.getByText("其他切換工具管理的供應商", { exact: true })).toBeVisible();
+  await expect(page.getByText(/來自本機相容資料庫/)).toBeVisible();
+  await page.getByText("其他切換工具管理的供應商", { exact: true }).click();
   const externalProviders = page.locator(".ccswitch-provider");
   await expect(externalProviders).toHaveCount(3);
   const openRouter = externalProviders.filter({ hasText: "OpenRouter" });
   await expect(openRouter).toBeVisible();
   await openRouter.getByRole("button", { name: "匯入 kumoSwitch" }).click();
-  await expect(page.getByText("已從 CC Switch 匯入「OpenRouter」")).toBeVisible();
+  await expect(page.getByText("已從相容資料庫匯入「OpenRouter」")).toBeVisible();
   await expect(page.getByRole("heading", { name: "OpenRouter", exact: true })).toBeVisible();
 });
 
-test("CC Switch batch import and route-stack mirroring are available", async ({ page }) => {
-  await page.getByText("CC Switch 管理的供應商", { exact: true }).click();
+test("compatibility batch import and route-stack mirroring are available", async ({ page }) => {
+  await enableCompatibilityBridge(page);
+  await page.getByText("其他切換工具管理的供應商", { exact: true }).click();
   const openRouter = page.locator(".ccswitch-provider").filter({ hasText: "OpenRouter" });
   await openRouter.getByRole("checkbox", { name: /選取 OpenRouter/ }).check();
   await page.getByRole("button", { name: "批次匯入", exact: true }).click();
   await expect(page.getByText(/批次匯入 1 個供應商/)).toBeVisible();
-  await page.getByRole("button", { name: "鏡像 CC Switch 路由堆疊" }).click();
-  await expect(page.getByText(/已鏡像 CC Switch 路由堆疊/)).toBeVisible();
+  await page.getByRole("button", { name: "鏡像路由堆疊" }).click();
+  await expect(page.getByText(/已鏡像路由堆疊/)).toBeVisible();
 });
 
 test("Pi and Oh My Pi are available as first-class Harnesses", async ({ page }) => {

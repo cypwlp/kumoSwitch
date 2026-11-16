@@ -95,6 +95,7 @@ export const api = {
   backupSetPolicy: (policy: BackupPolicy) => call<BackupPolicy>("backup_set_policy", { policy }),
   prepareUpdateBackup: () => call<PreUpdateBackupResult>("prepare_update_backup"),
   setUpdatePreferences: (channel: string, preUpdateBackup: boolean) => call<{ channel: string; preUpdateBackup: boolean }>("set_update_preferences", { channel, preUpdateBackup }),
+  setCcSwitchBridge: (enabled: boolean) => call<boolean>("set_cc_switch_bridge", { enabled }),
   revealConfig: (tool: string) => call<void>("reveal_config", { tool }),
   importFromConfig: (tool: string) => call<ImportResult>("import_from_config", { tool }),
   importScan: () => call<ImportCandidate[]>("import_scan"),

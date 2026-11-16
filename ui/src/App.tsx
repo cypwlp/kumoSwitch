@@ -133,6 +133,7 @@ export default function App() {
   const [showHarnesses, setShowHarnesses] = useState(false);
   const [updateChannel, setUpdateChannel] = useState("stable");
   const [preUpdateBackup, setPreUpdateBackup] = useState(true);
+  const [ccSwitchBridge, setCcSwitchBridge] = useState(false);
   const [modal, setModal] = useState<ModalState>(null);
   const [pendingImport, setPendingImport] = useState<{ text: string; name: string; info?: EncryptedBackupInfo } | null>(null);
   const [palette, setPalette] = useState(false);
@@ -374,6 +375,7 @@ export default function App() {
           setAutoModelSync(Boolean(appInfo.autoModelSync));
           setUpdateChannel(appInfo.updateChannel ?? appInfo.releaseChannel ?? "stable");
           setPreUpdateBackup(appInfo.preUpdateBackup ?? true);
+          setCcSwitchBridge(Boolean(appInfo.ccSwitchBridge));
         }
       } catch {
         /* version banner is optional */
@@ -738,7 +740,7 @@ export default function App() {
     setBusy(true);
     try {
       const result = await api.importCcSwitchProvider(toolId, providerId);
-      push(result.already_imported ? `「${result.provider.name}」已經在 kumoSwitch 中` : `已從 CC Switch 匯入「${result.provider.name}」`, "ok");
+      push(result.already_imported ? `「${result.provider.name}」已經在 kumoSwitch 中` : `已從相容資料庫匯入「${result.provider.name}」`, "ok");
       await reload(toolId);
     } catch (error) {
       push(errorText(error), "err");
@@ -752,7 +754,7 @@ export default function App() {
     try {
       await api.ccSwitchRefresh();
       await refreshTools();
-      push("CC Switch 供應商目錄已重新整理", "ok");
+      push("相容供應商目錄已重新讀取", "ok");
     } catch (error) {
       push(errorText(error), "err");
     } finally {
@@ -779,7 +781,7 @@ export default function App() {
     setBusy(true);
     try {
       const result = await api.ccSwitchImportRouteStack(selected.id);
-      push(`已鏡像 CC Switch 路由堆疊：${result.stack.length} 個目標，新增 ${result.imported} 個供應商`, "ok");
+      push(`已鏡像路由堆疊：${result.stack.length} 個目標，新增 ${result.imported} 個供應商`, "ok");
       await reload(selected.id);
     } catch (error) {
       push(errorText(error), "err");
@@ -993,6 +995,18 @@ export default function App() {
       await api.setAutoHealth(next);
       setAutoHealth(next);
       push(next ? "已開啟自動健康檢查（每 10 分鐘）" : "已關閉自動健康檢查", "ok");
+    } catch (err) {
+      push(errorText(err), "err");
+    }
+  };
+
+  const toggleCcSwitchBridge = async (enabled: boolean) => {
+    try {
+      const saved = await api.setCcSwitchBridge(enabled);
+      setCcSwitchBridge(saved);
+      await refreshTools();
+      if (selectedId) await loadProviders(selectedId);
+      push(enabled ? "已開啟相容匯入；只會讀取本機資料庫" : "已關閉相容匯入並清除相容資料快取", "ok");
     } catch (err) {
       push(errorText(err), "err");
     }
@@ -1336,6 +1350,8 @@ export default function App() {
           preferences={preferences}
           updateChannel={updateChannel}
           preUpdateBackup={preUpdateBackup}
+          ccSwitchBridge={ccSwitchBridge}
+          onToggleCcSwitchBridge={(enabled) => void toggleCcSwitchBridge(enabled)}
           onTheme={setMode}
           onPreferences={updatePreferences}
           onUpdateChannel={(channel) => void changeUpdateChannel(channel)}
