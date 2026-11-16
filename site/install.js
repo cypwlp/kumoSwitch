@@ -118,7 +118,7 @@ const PLATFORMS = {
     steps: [
       ["開啟 DMG", "下載 <code>kumoSwitch_*_aarch64.dmg</code> 後雙擊掛載。"],
       ["拖進 Applications", "把 kumoSwitch 拖到「應用程式」資料夾。若 Gatekeeper 阻擋，對 App 按右鍵 →「打開」。"],
-      ["啟動並匯入", "第一次啟動會掃描已安裝的 AI CLI，可先匯入既有供應商。"],
+      ["啟動並匯入", "第一次啟動會掃描已安裝的 AI Harness，可先匯入既有供應商。"],
       ["檢查後套用", "先查看設定 diff，再按確認。變更前會自動建立時間戳備份。"],
     ],
     requirements: ["macOS 12 Monterey 或更新版本", "Apple Silicon（arm64）", "至少 100 MB 可用空間", "不需要另外安裝 Node.js 或 Rust"],
@@ -139,7 +139,7 @@ const PLATFORMS = {
     steps: [
       ["開啟 DMG", "下載 <code>kumoSwitch_*_x64.dmg</code> 後雙擊掛載。"],
       ["拖進 Applications", "把 kumoSwitch 拖到「應用程式」資料夾。若 Gatekeeper 阻擋，對 App 按右鍵 →「打開」。"],
-      ["啟動並匯入", "第一次啟動會掃描已安裝的 AI CLI，可先匯入既有供應商。"],
+      ["啟動並匯入", "第一次啟動會掃描已安裝的 AI Harness，可先匯入既有供應商。"],
       ["檢查後套用", "先查看設定 diff，再按確認。變更前會自動建立時間戳備份。"],
     ],
     requirements: ["macOS 12 Monterey 或更新版本", "Intel x86_64 Mac", "至少 100 MB 可用空間", "不需要另外安裝 Node.js 或 Rust"],

@@ -31,6 +31,7 @@ interface SettingsModalProps {
   onOpenGuardian: () => void;
   onOpenProfiles: () => void;
   onOpenBackups: () => void;
+  onOpenHarnesses: () => void;
   onExport: () => void;
   onImport: () => void;
   onRescan: () => void;
@@ -78,6 +79,7 @@ export function SettingsModal({
   onOpenGuardian,
   onOpenProfiles,
   onOpenBackups,
+  onOpenHarnesses,
   onExport,
   onImport,
   onRescan,
@@ -224,6 +226,7 @@ export function SettingsModal({
             <h4>工具與頁面</h4>
           </div>
           <div className="settings-nav-grid">
+            <button onClick={onOpenHarnesses}><strong>Harness 管理</strong><small>安裝、桌面版與設定位置</small></button>
             <button onClick={onOpenStats}><strong>用量統計</strong><small>Token、成本與掃描診斷</small></button>
             <button onClick={onOpenProxy}><strong>代理與路由</strong><small>故障轉移、路由與即時觀測</small></button>
             <button onClick={onOpenGuardian}><strong>設定守護</strong><small>漂移、時間線與自動修復</small></button>

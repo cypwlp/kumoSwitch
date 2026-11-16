@@ -152,4 +152,12 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   await providerButton.click();
   await expect(page.getByRole("heading", { name: "供應商詳情 · Codex" })).toBeVisible();
   await expect(page.getByRole("tab", { name: /^模型/ })).toBeVisible();
+  await page.getByRole("dialog").locator(".sheet-head").getByRole("button", { name: "關閉" }).click();
+
+  await page.getByRole("button", { name: /^設定/ }).first().click();
+  await page.getByRole("dialog").last().getByRole("button", { name: /Harness 管理/ }).click();
+  await expect(page.getByRole("heading", { name: "Harness 安裝與管理" })).toBeVisible();
+  await expect(page.locator(".rail .harness-icon")).toHaveCount(15);
+  await expect(page.locator(".harness-manager-card")).toHaveCount(15);
+  await expect(page.getByRole("article", { name: "Harness Codex" })).toContainText("CLI + 桌面版");
 });

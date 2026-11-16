@@ -1,5 +1,6 @@
 import type { AppInfo, ToolView } from "../types";
 import { Logo, SettingsIcon } from "./Icons";
+import { HarnessIcon } from "./Marks";
 
 interface RailProps {
   tools: ToolView[];
@@ -27,7 +28,7 @@ export function Rail({ tools, selectedId, filter, info, onFilter, onSelect, onSe
         <Logo />
         <div>
           <h1>kumoSwitch</h1>
-          <p>AI CLI 供應商切換</p>
+          <p>AI Harness 供應商切換</p>
         </div>
       </div>
 
@@ -49,12 +50,18 @@ export function Rail({ tools, selectedId, filter, info, onFilter, onSelect, onSe
             onClick={() => onSelect(tool.id)}
             aria-current={selectedId === tool.id}
           >
-            <span
-              className={`dot${tool.detected ? " on" : ""}`}
-              title={tool.detected ? "已偵測到設定目錄" : "尚未安裝或沒有設定目錄"}
-            />
+            <span className="tool-icon-wrap">
+              <HarnessIcon id={tool.id} name={tool.name} size={30} />
+              <span
+                className={`dot tool-status${tool.detected ? " on" : ""}`}
+                title={tool.detected ? "已偵測到設定目錄" : "尚未安裝或沒有設定目錄"}
+              />
+            </span>
             <span className="label">
-              <b>{tool.name}</b>
+              <b>
+                {tool.name}
+                {tool.surface !== "cli" ? <span className="surface-mini" title="支援桌面版">▣</span> : null}
+              </b>
               <span>{tool.blurb}</span>
             </span>
             {tool.provider_count ? <span className="n">{tool.provider_count}</span> : null}

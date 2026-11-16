@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import type { HistoryMap, Provider, ToolView } from "../types";
 import { ProviderTable, type TestState } from "./ProviderTable";
 import { WarnIcon } from "./Icons";
+import { HarnessIcon } from "./Marks";
 
 interface PanelProps {
   tool: ToolView;
@@ -116,8 +117,10 @@ export function ToolPanel({
     <section className="panel" key={tool.id}>
       <header className="panel-head">
         <div className="title-row">
+          <HarnessIcon id={tool.id} name={tool.name} size={34} />
           <h2>{tool.name}</h2>
           <span className="badge subtle">Harness</span>
+          <span className={`badge surface-badge ${tool.surface}`}>{tool.surface === "both" ? "CLI + 桌面版" : tool.surface === "desktop" ? "桌面版" : "CLI"}</span>
           <span className="muted">{tool.blurb}</span>
           {tool.verified ? (
             <span className="badge ok">格式已驗證</span>

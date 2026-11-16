@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "../api";
 import { useFocusLayer } from "../focus";
 import type { ModelProfile, Provider, ToolView } from "../types";
+import { HarnessIcon } from "./Marks";
 
 interface Props {
   tools: ToolView[];
@@ -134,7 +135,7 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
                 onMouseEnter={() => setCursor(index)}
                 onClick={() => commit(row)}
               >
-                <span className="palette-tool">{row.tool.name}</span>
+                <span className="palette-tool"><HarnessIcon id={row.tool.id} name={row.tool.name} size={20} />{row.tool.name}</span>
                 <span className="palette-name">{row.provider.name}</span>
                 {row.model ? (
                   <span className="palette-model mono">{row.model.favorite ? "★ " : ""}{row.model.name || row.model.id}</span>

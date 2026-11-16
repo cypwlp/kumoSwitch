@@ -3,11 +3,11 @@
 [![Release](https://img.shields.io/github/v/release/cypwlp/kumoSwitch)](https://github.com/cypwlp/kumoSwitch/releases)
 [![License](https://img.shields.io/github/license/cypwlp/kumoSwitch)](LICENSE)
 
-> 切換 AI CLI 供應商，不動其他一行設定。
+> 管理 AI Harness 供應商，CLI 與桌面版都不動其他一行設定。
 
 > **2026-11-12 起更名：SwitchTower → kumoSwitch。** 更早版本名為 SwitchYard；舊資料、主題與語言設定會自動遷移，GitHub 舊網址由 GitHub 自動重新導向。
 
-一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code、Crush、Qwen Code、Kilo Code、Pi、Oh My Pi 共 15 種工具的供應商設定集中管理。
+一個 Tauri 桌面工具，把 Codex、Claude Code、Gemini CLI、Grok Build、OpenCode、Qoder、DSH、ZCode、Hermes、Command Code、Crush、Qwen Code、Kilo Code、Pi、Oh My Pi 共 15 種 Harness 的供應商設定集中管理。介面同時標示 CLI、桌面版或兩者共用，並提供安全安裝與官方下載入口。
 
 ![主介面](site/assets/screenshot-panel.png)
 
@@ -42,41 +42,44 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。套
 - **一鍵導入與衝突預覽** —— 掃描所有 Harness 後先顯示新增／衝突項目，可保留本機、用設定檔覆蓋、合併模型或建立副本。
 - **連線測試與模型實測** —— `/models` 檢查不會產生推論費用；真實實測需明確確認，支援多模型批次、近 24 小時配額、硬性輸出 token 上限與 provider pricing metadata 費用粗估。
 - **加密清單備份** —— 換機時用 Argon2id＋AES-256-GCM 加密的 `.kumoswitch` 檔搬移供應商與金鑰；仍可匯入舊版明文 JSON。
-- **石墨綠視覺系統** —— 亮色為暖象牙／翡翠／琥珀，暗色為石墨綠與柔光翡翠；支援亮色、暗色、跟隨系統、diff 語法高亮與窄視窗。手機版把進階操作收進「更多」面板，避免壓縮主要內容。
+- **Harness 圖標與介面範圍** —— 左側 15 個 Harness 都有原創 SVG／色系圖標；每個 adapter 明確標示 CLI、桌面版或兩者共用，避免把「有桌面產品」誤說成「桌面設定已支援」。
 - **系統托盤常駐** —— 托盤右鍵可直接切換任一工具的任何供應商；關窗不退出，單一實例。
 - **Ctrl+K 命令面板** —— 跨 15 個工具搜尋供應商，Enter 直接看 diff。
 - **首次啟動引導** —— 自動偵測既有設定並一鍵導入，不必從零輸入。
 - **診斷匯出** —— 一鍵產生環境與設定摘要（金鑰只留末四碼）。
 - **自動健康檢查** —— 可開啟每 10 分鐘重測已有歷史的供應商，健康度欄不用手動按。
 - **統計儀表板** —— 串流讀取 Claude Code／Codex 本機 session log，計算 token 用量、每日趨勢與成本估算；掃描在背景執行，並顯示實際檢查路徑、讀取檔案數、跳過數與錯誤診斷。
-- **預設供應商目錄** —— 16 個已知端點一鍵帶入，不用手打 base URL。
+- **CC Switch 式供應商目錄** —— 28 個供應商 endpoint 與模型起點，支援名稱／網址／模型搜尋、帳號登入／模型廠商／第三方／雲服務／本機／跨應用分類、雙欄卡片與自訂配置。
+- **Harness 安裝與管理** —— 設定頁可查看是否偵測到 CLI／設定目錄、執行白名單內的固定 npm 安裝命令，或前往桌面版官方下載頁。安裝前會顯示完整命令，不經 shell、不執行任意下載腳本。
 - **智慧代理／故障轉移** —— 本地反向代理支援固定順序、優先級、加權與健康優先路由；每個供應商可設定 timeout、429 退避、熔斷、最大併發、允許模型與模型映射，並提供成功率、TTFB、換手、脫敏失敗原因與每請求決策軌跡（候選順序、跳過原因、逾時與熔斷狀態）。共用連線池、32 MiB body 上限與真正即時 flush 的 SSE 串流。
 - **跨平台** —— Windows／Linux／macOS 皆由 CI 建置，main 每次推送跑三平台測試。
 - **跨平台自動更新** —— Windows 安裝版、macOS Apple Silicon／Intel 與 Linux AppImage 共用一份簽章驗證的 `latest.json`；可攜版與 Linux deb 仍建議手動替換。
 
 ## 支援的工具
 
-| 工具 | 設定檔 | 寫入的鍵 | 驗證狀態 |
-| --- | --- | --- | --- |
-| Codex | `~/.codex/config.toml` | `model_provider`、`model`、`[model_providers.*]` | 已對真實設定檔驗證 |
-| Claude Code | `~/.claude/settings.json` | `env.ANTHROPIC_BASE_URL` / `_AUTH_TOKEN` / `_MODEL` | 已對真實設定檔驗證 |
-| Gemini CLI | `~/.gemini/settings.json` + `.env` | `selectedAuthType`、`model.name`、`GOOGLE_GEMINI_BASE_URL`、`GEMINI_API_KEY` | 依官方文件 |
-| Grok Build | `~/.grok/config.toml` | `[model.*]`、`[models].default` | 依官方文件 |
-| OpenCode | `~/.config/opencode/opencode.json` | `provider.*.options`、頂層 `model` | 依官方文件 |
-| Qoder | `~/.qoder/settings.json` | `providers.<qoder-custom-*>` | 已對真實設定檔驗證 |
-| DSH | `~/.dsh/settings.yaml` | `llm-pi-ai.providers.*`、`agent-default-model` | 已對真實設定檔驗證 |
-| ZCode | `~/.zcode/v2/provider_config.json` | `providerRules[]`、`defaultModelSelection` | 對社群範例驗證 |
-| Hermes | `~/.hermes/config.yaml` | `providers.*.api/key`、`model.provider` | 對社群範例驗證 |
-| Command Code | `~/.commandcode/providers.json` | `provider.*`（單數） | 對社群範例驗證 |
-| Crush | `~/.config/crush/crush.json` | `providers.*` | 依官方文件 |
-| Qwen Code | `~/.qwen/settings.json` + `.env` | `modelProviders.*`、`OPENAI_*` | 對官方文件驗證 |
-| Kilo Code | `~/.config/kilo/kilo.jsonc` | `provider.*.options` | 對官方範例驗證 |
+| 工具 | 設定介面 | 設定檔 | 寫入的鍵 | 驗證狀態 |
+| --- | --- | --- | --- | --- |
+| Codex | CLI + 桌面版 | `~/.codex/config.toml` | `model_provider`、`model`、`[model_providers.*]` | 已對真實設定檔驗證 |
+| Claude Code | CLI + 桌面版 | `~/.claude/settings.json` | `env.ANTHROPIC_BASE_URL` / `_AUTH_TOKEN` / `_MODEL` | 已對真實設定檔驗證 |
+| Gemini CLI | CLI | `~/.gemini/settings.json` + `.env` | `selectedAuthType`、`model.name`、`GOOGLE_GEMINI_BASE_URL`、`GEMINI_API_KEY` | 依官方文件 |
+| Grok Build | CLI | `~/.grok/config.toml` | `[model.*]`、`[models].default` | 依官方文件 |
+| OpenCode | CLI + 桌面版 | `~/.config/opencode/opencode.json` | `provider.*.options`、頂層 `model` | 依官方文件 |
+| Qoder | CLI + 桌面版 | `~/.qoder/settings.json` | `providers.<qoder-custom-*>` | 已對真實設定檔驗證 |
+| DSH | CLI + 桌面版 | `~/.dsh/settings.yaml` | `llm-pi-ai.providers.*`、`agent-default-model` | 已對真實設定檔驗證 |
+| ZCode | CLI + 桌面版 | `~/.zcode/v2/provider_config.json` | `providerRules[]`、`defaultModelSelection` | 對社群範例驗證 |
+| Hermes | CLI + 桌面版 | `~/.hermes/config.yaml` | `providers.*.api/key`、`model.provider` | 對社群範例驗證 |
+| Command Code | CLI（桌面版另有官方入口） | `~/.commandcode/providers.json` | `provider.*`（單數） | 對社群範例驗證 |
+| Crush | CLI | `~/.config/crush/crush.json` | `providers.*` | 依官方文件 |
+| Qwen Code | CLI + 桌面版 | `~/.qwen/settings.json` + `.env` | `modelProviders.*`、`OPENAI_*` | 對官方文件驗證 |
+| Kilo Code | CLI | `~/.config/kilo/kilo.jsonc` | `provider.*.options` | 對官方範例驗證 |
+| Pi | CLI | `~/.pi/agent/models.json` + `settings.json` | `providers.*`、`defaultProvider`、`defaultModel` | 依官方 schema 驗證 |
+| Oh My Pi (omp) | CLI | `~/.omp/agent/models.yml` + `config.yml` | `providers.*`、`modelRoles.default` | 依官方 schema 驗證 |
 
-15 個工具的寫入邏輯都有夹具測試：直接拿官方／社群的範例設定檔跑一遍，驗證目標鍵寫對、且使用者自訂的模型 metadata 不被覆蓋。
+15 個工具的寫入邏輯都有 fixture 測試：直接拿官方／社群的範例設定檔跑一遍，驗證目標鍵寫對、且使用者自訂的模型 metadata 不被覆蓋。
 
 ## 下載
 
-使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.19.0) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
+使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.20.0) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
 
 - Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `kumoSwitch-portable.exe`
 - macOS Apple Silicon／Intel：`.dmg`
@@ -113,6 +116,7 @@ src-tauri/src/
   keys.rs        API Key 輪替、到期與稽核
   profiles.rs    跨 Harness 共用供應商 Profile
   guardian.rs    背景設定守護、來源歸因、時間線與自動修復
+  harness_manager.rs  CLI／桌面介面中繼資料、白名單安裝命令與官方入口
   proxy.rs       本機反向代理、智慧路由、熔斷、告警與觀測
   export_crypto.rs  Argon2id / AES-256-GCM 加密備份
   audit.rs       敏感操作稽核紀錄

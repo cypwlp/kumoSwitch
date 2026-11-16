@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.20.0 — 2026-11-16
+- **Harness 圖標**：左側清單、Harness 標題與快速切換都改用各自的原創 SVG／色系標記，未知 Harness 也有安全 fallback。
+- **CC Switch 式供應商目錄**：新增供應商改成可搜尋名稱／網址／模型的分類選擇器，包含自訂配置、帳號登入、模型廠商、第三方、雲服務、本機與跨應用分類，以及雙欄供應商卡片。
+- **28 個供應商預設**：補齊 OpenAI、Anthropic、Gemini、xAI、DeepSeek、Kimi、智譜 GLM、Qwen、MiniMax、OpenRouter、Groq、SiliconFlow、Ollama、LM Studio、OpenCode Zen、Command Code 等 endpoint 與模型起點。
+- **Harness 安裝與管理**：設定頁新增管理中心，可查看 CLI／桌面版支援、設定路徑、CLI 偵測狀態、固定 npm 安裝命令與官方下載入口。
+- **CLI 與桌面版分流**：以 `cli`／`desktop`／`both` 標示 adapter 真正涵蓋的介面；Codex、Claude、OpenCode、Qoder、DSH、ZCode、Hermes 與 Qwen 的共用設定可在兩邊生效，Command Code 桌面版另提供官方入口但不冒充已驗證 adapter。
+- **安全安裝邊界**：只能從 Harness id 解析白名單內的 npm 套件命令；UI 會先顯示完整命令，不經 shell、不串接使用者輸入，也不任意執行網路下載的安裝腳本。
+- **介面整合**：設定導覽加入 Harness 管理；切換頁面與 Harness 時會重設主內容捲動位置；窄視窗的分類列、篩選器與卡片改為單欄／橫向配置。
+- **品牌與文件**：應用文案由「AI CLI」擴充為 AI Harness，README 補上各工具實際 CLI／桌面設定範圍、Pi／Oh My Pi 與安裝管理器說明。
 ## 0.19.0 — 2026-11-16
 - 新增 **Pi** Harness：管理 `~/.pi/agent/models.json` 供應商與 `settings.json` 預設 provider／model，支援 OpenCode、OpenAI Responses、Anthropic Messages 與 Google Generative AI。
 - 新增 **Oh My Pi (omp)** Harness：管理 `~/.omp/agent/models.yml`／`models.yaml` 與 `config.yml`／`config.yaml` 的 `modelRoles.default`，保留 Pi fork 的自訂 provider schema。

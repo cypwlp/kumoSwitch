@@ -32,6 +32,7 @@ import { ProxyView } from "./components/ProxyView";
 import { DriftView } from "./components/DriftView";
 import { ProfilesView } from "./components/ProfilesView";
 import { BackupCenterView } from "./components/BackupCenterView";
+import { HarnessManagerView } from "./components/HarnessManagerView";
 import { Toasts, useToasts } from "./components/Toasts";
 import { useUiPreferences } from "./preferences";
 import { SettingsModal } from "./components/SettingsModal";
@@ -79,6 +80,7 @@ export default function App() {
   const [showDrift, setShowDrift] = useState(false);
   const [showProfiles, setShowProfiles] = useState(false);
   const [showBackups, setShowBackups] = useState(false);
+  const [showHarnesses, setShowHarnesses] = useState(false);
   const [updateChannel, setUpdateChannel] = useState("stable");
   const [preUpdateBackup, setPreUpdateBackup] = useState(true);
   const [modal, setModal] = useState<ModalState>(null);
@@ -115,6 +117,7 @@ export default function App() {
 
   const searchRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
 
   const selected = useMemo(
     () => tools.find((t) => t.id === selectedId) ?? null,
@@ -824,13 +827,15 @@ export default function App() {
   const showOnboarding =
     !onboarded && tools.length > 0 && tools.every((t) => t.provider_count === 0);
 
-  const showView = (view: "stats" | "proxy" | "guardian" | "profiles" | "backups") => {
+  const showView = (view: "stats" | "proxy" | "guardian" | "profiles" | "backups" | "harnesses") => {
     setSettingsOpen(false);
     setShowStats(view === "stats");
     setShowProxy(view === "proxy");
     setShowDrift(view === "guardian");
     setShowProfiles(view === "profiles");
     setShowBackups(view === "backups");
+    setShowHarnesses(view === "harnesses");
+    window.requestAnimationFrame(() => mainRef.current?.scrollTo({ top: 0 }));
   };
 
   return (
@@ -848,12 +853,14 @@ export default function App() {
             setShowStats(false);
             setShowProfiles(false);
             setShowBackups(false);
+            setShowHarnesses(false);
+            window.requestAnimationFrame(() => mainRef.current?.scrollTo({ top: 0 }));
             void selectTool(id);
           }}
           onSettings={() => setSettingsOpen(true)}
         />
 
-        <main className="main">
+        <main className="main" ref={mainRef}>
           {showDrift ? (
             <DriftView
               onError={(message) => push(message, "err")}
@@ -878,6 +885,12 @@ export default function App() {
               onChanged={() => { void refreshTools(); if (selectedId) void loadProviders(selectedId); }}
               onExport={exportList}
               onImport={() => fileRef.current?.click()}
+            />
+          ) : showHarnesses ? (
+            <HarnessManagerView
+              onError={(message) => push(message, "err")}
+              onToast={(message) => push(message, "ok")}
+              onChanged={() => { void refreshTools(); if (selectedId) void loadProviders(selectedId); }}
             />
           ) : (
           <>
@@ -1097,6 +1110,7 @@ export default function App() {
           onOpenGuardian={() => showView("guardian")}
           onOpenProfiles={() => showView("profiles")}
           onOpenBackups={() => showView("backups")}
+          onOpenHarnesses={() => showView("harnesses")}
           onExport={() => { setSettingsOpen(false); void exportList(); }}
           onImport={() => { setSettingsOpen(false); fileRef.current?.click(); }}
           onRescan={() => { setSettingsOpen(false); void rescan(); }}

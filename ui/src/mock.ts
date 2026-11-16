@@ -13,6 +13,8 @@ import type {
   Provider,
   TestResult,
   ToolView,
+  Preset,
+  HarnessManagerEntry,
   ProxyConfig,
   ModelTestResult,
   ModelDiscovery,
@@ -32,6 +34,76 @@ import type {
  */
 
 const HOME = "C:\\Users\\dev";
+
+const HARNESS_SURFACES: Record<string, "cli" | "desktop" | "both"> = {
+  codex: "both",
+  claude: "both",
+  gemini: "cli",
+  grok: "cli",
+  opencode: "both",
+  qoder: "both",
+  dsh: "both",
+  zcode: "both",
+  hermes: "both",
+  commandcode: "cli",
+  crush: "cli",
+  qwen: "both",
+  kilo: "cli",
+  pi: "cli",
+  omp: "cli",
+};
+
+const INSTALLED_HARNESSES = new Set<string>();
+
+const INSTALL_PACKAGES: Record<string, string> = {
+  codex: "@openai/codex",
+  claude: "@anthropic-ai/claude-code",
+  gemini: "@google/gemini-cli",
+  opencode: "@opencode/cli",
+  qoder: "@qoder-ai/qodercli",
+  dsh: "@deepseek-ai/dsh",
+  commandcode: "command-code",
+  crush: "@charmland/crush",
+  qwen: "@qwen-code/qwen-code",
+  kilo: "@kilocode/cli",
+  pi: "@earendil-works/pi-coding-agent",
+  omp: "@oh-my-pi/pi-coding-agent",
+};
+
+function surfaceLabel(surface: "cli" | "desktop" | "both") {
+  if (surface === "both") return "CLI + 桌面版";
+  if (surface === "desktop") return "桌面版";
+  return "CLI";
+}
+
+function mockPreset(
+  id: string,
+  name: string,
+  base_url: string,
+  kind: string,
+  models: string[],
+  category: Preset["category"],
+  note: string,
+  extra: Partial<Preset> = {},
+): Preset {
+  return {
+    id,
+    name,
+    base_url,
+    kind,
+    models,
+    docs: "https://example.com/docs",
+    note,
+    category,
+    auth_type: "api_key",
+    icon: id,
+    icon_color: "#38bdf8",
+    website_url: "https://example.com/",
+    requires_routing: false,
+    login_hint: "",
+    ...extra,
+  };
+}
 
 function p(
   id: string,
@@ -298,6 +370,48 @@ const SEEDS: Seed[] = [
     current: { base_url: "", model: "", api_key_tail: "", source: "" },
   },
   {
+    id: "crush",
+    name: "Crush",
+    blurb: "Charmbracelet Crush",
+    file: ".config/crush/crush.json",
+    format: "JSON",
+    verified: true,
+    restart: "需要重開終端",
+    detected: false,
+    takeover: false,
+    kinds: ["openai"],
+    importable: 0,
+    current: { base_url: "", model: "", api_key_tail: "", source: "" },
+  },
+  {
+    id: "qwen",
+    name: "Qwen Code",
+    blurb: "QwenLM qwen-code",
+    file: ".qwen/settings.json",
+    format: "JSON",
+    verified: true,
+    restart: "需要重開終端",
+    detected: false,
+    takeover: false,
+    kinds: ["openai"],
+    importable: 0,
+    current: { base_url: "", model: "", api_key_tail: "", source: "" },
+  },
+  {
+    id: "kilo",
+    name: "Kilo Code",
+    blurb: "Kilo-Org kilocode CLI",
+    file: ".config/kilo/kilo.jsonc",
+    format: "JSON",
+    verified: false,
+    restart: "需要重開終端",
+    detected: false,
+    takeover: false,
+    kinds: ["openai", "anthropic"],
+    importable: 0,
+    current: { base_url: "", model: "", api_key_tail: "", source: "" },
+  },
+  {
     id: "dsh",
     name: "DSH",
     blurb: "DeepSeek Harness",
@@ -422,6 +536,7 @@ function toolViews(): ToolView[] {
     path: displayPath(s.file),
     format: s.format,
     verified: s.verified,
+    surface: HARNESS_SURFACES[s.id] ?? "cli",
     restart: s.restart,
     detected: s.detected,
     takeover: s.takeover,
@@ -445,6 +560,36 @@ function toolViews(): ToolView[] {
       ],
     } : null,
   }));
+}
+
+function mockHarnessEntries(): HarnessManagerEntry[] {
+  return SEEDS.map((seed) => {
+    const surface = HARNESS_SURFACES[seed.id] ?? "cli";
+    const pkg = INSTALL_PACKAGES[seed.id];
+    const installed = seed.detected || INSTALLED_HARNESSES.has(seed.id);
+    const configDir = seed.file.includes("/") ? seed.file.slice(0, seed.file.lastIndexOf("/")) : seed.file;
+    return {
+      id: seed.id,
+      name: seed.name,
+      blurb: seed.blurb,
+      surface,
+      surface_label: surfaceLabel(surface),
+      config_path: displayPath(seed.file),
+      config_dir: displayPath(configDir),
+      detected: seed.detected,
+      cli_path: installed ? `${HOME}\\AppData\\Roaming\\npm\\${seed.id}.cmd` : null,
+      installed,
+      website_url: `https://example.com/${seed.id}`,
+      docs_url: `https://example.com/${seed.id}/docs`,
+      desktop_url: surface === "cli" ? null : `https://example.com/${seed.id}/download`,
+      desktop_available: surface !== "cli",
+      desktop_note: surface === "cli" ? "這個 Harness 目前只管理 CLI 設定。" : "CLI 與桌面版共用同一份使用者設定；套用後重新啟動即可。",
+      install_manager: pkg ? "npm" : null,
+      install_package: pkg ?? null,
+      install_command: pkg ? `npm install -g --no-fund --no-audit ${pkg}` : null,
+      installable: Boolean(pkg),
+    } satisfies HarnessManagerEntry;
+  });
 }
 
 function seedOf(tool: string): Seed {
@@ -705,10 +850,11 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
   switch (cmd) {
     case "open_install_page":
+    case "open_external_url":
       return undefined;
     case "app_info":
       return {
-        version: "0.19.0",
+        version: "0.20.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
@@ -1142,12 +1288,75 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return { imported, skipped: decisions.length - imported } satisfies JsonImportResult;
     }
 
+    case "harness_manager_list":
+      return mockHarnessEntries();
+
+    case "harness_install": {
+      const id = typeof args.id === "string" ? args.id : "";
+      const pkg = INSTALL_PACKAGES[id];
+      if (!pkg) throw new Error("這個 Harness 沒有內建安裝命令");
+      INSTALLED_HARNESSES.add(id);
+      return {
+        ok: true,
+        command: `npm install -g --no-fund --no-audit ${pkg}`,
+        output: `added ${pkg} (mock install)`,
+        exit_code: 0,
+      };
+    }
+
     case "provider_presets":
       return [
-        { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com/v1", kind: "openai", models: ["deepseek-chat", "deepseek-reasoner"], docs: "https://api-docs.deepseek.com", note: "官方" },
-        { id: "zhipu", name: "智譜 GLM", base_url: "https://open.bigmodel.cn/api/paas/v4", kind: "openai", models: ["glm-4.7"], docs: "https://open.bigmodel.cn", note: "官方" },
-        { id: "opencode-zen", name: "OpenCode Zen", base_url: "https://opencode.ai/zen/go/v1", kind: "openai-responses", models: ["glm-5.3-flash"], docs: "https://opencode.ai", note: "聚合" },
-        { id: "ollama", name: "Ollama（本機）", base_url: "http://127.0.0.1:11434/v1", kind: "openai", models: ["qwen2.5-coder:14b"], docs: "https://ollama.com", note: "本機、免金鑰" },
+        mockPreset("openai-oauth", "OpenAI Official", "", "responses", [], "account", "ChatGPT 帳號登入", {
+          auth_type: "oauth", icon: "openai", icon_color: "#10a37f", website_url: "https://chatgpt.com/codex",
+          login_hint: "開啟官方 Codex 登入頁，或先執行 `codex login`。",
+        }),
+        mockPreset("github-copilot", "GitHub Copilot", "", "openai", [], "account", "用 GitHub 帳號登入", {
+          auth_type: "oauth", icon: "github", icon_color: "#8b5cf6", website_url: "https://github.com/features/copilot",
+          login_hint: "先用官方 Copilot CLI 完成 GitHub 裝置登入。",
+        }),
+        mockPreset("xai-oauth", "xAI (Grok) OAuth", "", "openai", [], "account", "用 xAI 帳號登入", {
+          auth_type: "oauth", icon: "xai", icon_color: "#e5e7eb", website_url: "https://x.ai/",
+          requires_routing: true, login_hint: "在 Grok Build 完成 xAI 帳號登入。",
+        }),
+        mockPreset("openai", "OpenAI API", "https://api.openai.com/v1", "responses", ["gpt-5.2", "gpt-5.1"], "official", "官方 API Key", {
+          icon: "openai", icon_color: "#10a37f", website_url: "https://platform.openai.com/",
+        }),
+        mockPreset("anthropic", "Anthropic API", "https://api.anthropic.com", "anthropic", ["claude-sonnet-5"], "official", "官方 API Key", {
+          icon: "anthropic", icon_color: "#d97757", website_url: "https://console.anthropic.com/",
+        }),
+        mockPreset("gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "openai", ["gemini-2.5-pro"], "official", "OpenAI 相容端點", {
+          icon: "gemini", icon_color: "#4285f4", website_url: "https://ai.google.dev/", requires_routing: true,
+        }),
+        mockPreset("xai", "xAI Grok", "https://api.x.ai/v1", "openai", ["grok-4"], "official", "官方 API Key", {
+          icon: "xai", icon_color: "#e5e7eb", website_url: "https://x.ai/",
+        }),
+        mockPreset("deepseek", "DeepSeek", "https://api.deepseek.com/v1", "openai", ["deepseek-chat", "deepseek-reasoner"], "official", "官方 API Key", {
+          icon: "deepseek", icon_color: "#4d6bfe", website_url: "https://platform.deepseek.com/",
+        }),
+        mockPreset("moonshot", "Kimi / Moonshot", "https://api.moonshot.cn/v1", "openai", ["kimi-k2-turbo"], "official", "官方 API Key", {
+          icon: "kimi", icon_color: "#22c55e", website_url: "https://platform.moonshot.cn/",
+        }),
+        mockPreset("zhipu", "智譜 GLM", "https://open.bigmodel.cn/api/paas/v4", "openai", ["glm-4.7"], "official", "官方 API Key", {
+          icon: "glm", icon_color: "#7c5cff", website_url: "https://open.bigmodel.cn/",
+        }),
+        mockPreset("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "openai", ["anthropic/claude-sonnet-4.5"], "unified", "跨模型聚合", {
+          icon: "openrouter", icon_color: "#6566f1", website_url: "https://openrouter.ai/",
+        }),
+        mockPreset("siliconflow", "SiliconFlow", "https://api.siliconflow.cn/v1", "openai", ["deepseek-ai/DeepSeek-V3"], "unified", "跨模型聚合", {
+          icon: "siliconflow", icon_color: "#06b6d4", website_url: "https://cloud.siliconflow.cn/",
+        }),
+        mockPreset("opencode-zen", "OpenCode Zen", "https://opencode.ai/zen/go/v1", "openai-responses", ["glm-5.3-flash"], "unified", "跨應用路由", {
+          icon: "opencode", icon_color: "#e5e7eb", website_url: "https://opencode.ai/", requires_routing: true,
+        }),
+        mockPreset("commandcode", "Command Code", "https://api.commandcode.ai/provider/v1", "openai", ["deepseek/deepseek-v4.1-flash"], "unified", "跨應用路由", {
+          icon: "commandcode", icon_color: "#f43f5e", website_url: "https://commandcode.ai/", requires_routing: true,
+        }),
+        mockPreset("ollama", "Ollama", "http://127.0.0.1:11434/v1", "openai", ["qwen2.5-coder:14b"], "local", "本機、免金鑰", {
+          auth_type: "local", icon: "ollama", icon_color: "#e5e7eb", website_url: "https://ollama.com/",
+        }),
+        mockPreset("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1", "openai", ["local-model"], "local", "本機、免金鑰", {
+          auth_type: "local", icon: "lmstudio", icon_color: "#a78bfa", website_url: "https://lmstudio.ai/",
+        }),
       ];
 
     case "health_overview":

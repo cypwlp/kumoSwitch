@@ -88,6 +88,114 @@ test("Pi and Oh My Pi are available as first-class Harnesses", async ({ page }) 
   await expect(page.getByText("~/.omp/agent/models.yml")).toBeVisible();
 });
 
+test("Harness rail shows distinct icons and desktop configuration scope", async ({ page }) => {
+  const icons = page.locator(".rail .tool .harness-icon");
+  await expect(icons).toHaveCount(15);
+  await expect(page.locator('.rail .harness-icon[data-harness="codex"]')).toBeVisible();
+  await expect(page.locator('.rail .harness-icon[data-harness="pi"]')).toBeVisible();
+  await expect(page.locator('.rail .harness-icon[data-harness="omp"]')).toBeVisible();
+
+  await page.getByRole("button", { name: /Pi coding agent/ }).click();
+  await expect(page.getByRole("heading", { name: "Pi", exact: true })).toBeVisible();
+  await expect(page.locator(".panel-head .surface-badge")).toHaveText("CLI");
+
+  await page.getByRole("button", { name: /OpenAI Codex CLI/ }).click();
+  await expect(page.getByRole("heading", { name: "Codex", exact: true })).toBeVisible();
+  await expect(page.locator(".panel-head .surface-badge")).toHaveText("CLI + 桌面版");
+});
+
+test("provider chooser searches categories and keeps account login explicit", async ({ page }) => {
+  await page.getByRole("button", { name: /新增供應商/ }).click();
+  const editor = page.getByRole("dialog").last();
+  await editor.getByRole("button", { name: /瀏覽供應商目錄/ }).click();
+  let chooser = page.getByRole("dialog").last();
+  await expect(chooser.getByRole("heading", { name: /新增供應商.*Codex/ })).toBeVisible();
+  await expect(chooser.getByRole("button", { name: "使用自訂配置", exact: true })).toBeVisible();
+  await expect(chooser.getByRole("navigation", { name: "供應商分類" })).toBeVisible();
+
+  await chooser.getByRole("button", { name: /^模型廠商/ }).click();
+  await chooser.getByLabel("搜尋供應商").fill("Kimi");
+  await expect(chooser.getByRole("button", { name: "選擇供應商 Kimi / Moonshot" })).toBeVisible();
+  await chooser.getByRole("button", { name: "選擇供應商 Kimi / Moonshot" }).click();
+
+  await expect(page.locator(".provider-chooser")).toBeHidden();
+  await expect(editor.getByLabel("名稱")).toHaveValue("Kimi / Moonshot");
+  await expect(editor.getByLabel("Base URL")).toHaveValue("https://api.moonshot.cn/v1");
+  await expect(editor.getByLabel(/類型/)).toHaveValue("chat");
+
+  await editor.getByRole("button", { name: /瀏覽供應商目錄/ }).click();
+  chooser = page.getByRole("dialog").last();
+  await chooser.getByRole("button", { name: /^帳號登入/ }).click();
+  await chooser.getByRole("button", { name: "選擇供應商 OpenAI Official" }).click();
+  await expect(page.locator(".provider-chooser")).toBeHidden();
+  await expect(editor.getByText("OpenAI Official 需要帳號登入")).toBeVisible();
+  await expect(editor.getByText(/不會代為處理 OAuth token/)).toBeVisible();
+  await editor.getByRole("button", { name: "改用自訂配置" }).click();
+  await expect(editor.getByText("OpenAI Official 需要帳號登入")).toHaveCount(0);
+});
+
+test("Harness manager installs a fixed package and explains desktop support", async ({ page }) => {
+  await openWorkspace(page, "Harness 管理");
+  await expect(page.getByRole("heading", { name: "Harness 安裝與管理" })).toBeVisible();
+  await expect(page.locator(".harness-manager-card")).toHaveCount(15);
+
+  const codex = page.getByRole("article", { name: "Harness Codex" });
+  await expect(codex).toContainText("CLI + 桌面版");
+  await expect(codex).toContainText("已偵測");
+
+  const gemini = page.getByRole("article", { name: "Harness Gemini CLI" });
+  await expect(gemini).toContainText("CLI");
+  await gemini.getByRole("button", { name: "安裝 Gemini CLI" }).click();
+  const installDialog = page.getByRole("dialog").last();
+  await expect(installDialog.getByRole("heading", { name: "安裝或更新 Gemini CLI" })).toBeVisible();
+  await expect(installDialog.locator(".harness-command")).toContainText("npm install -g");
+  await expect(installDialog.locator(".harness-command")).toContainText("@google/gemini-cli");
+  await installDialog.getByRole("button", { name: "執行固定命令" }).click();
+  const resultDialog = page.getByRole("dialog").last();
+  await expect(resultDialog.getByRole("heading", { name: "Harness 安裝完成" })).toBeVisible();
+  await resultDialog.locator(".sheet-foot").getByRole("button", { name: "關閉" }).click();
+  await expect(gemini).toContainText("已偵測");
+  await expect(gemini.getByRole("button", { name: "更新 Gemini CLI" })).toBeVisible();
+
+  await page.getByRole("button", { name: "桌面版", exact: true }).click();
+  await expect(page.getByRole("article", { name: "Harness Gemini CLI" })).toHaveCount(0);
+  await expect(page.getByRole("article", { name: "Harness Codex" })).toBeVisible();
+});
+
+test("narrow provider chooser and Harness manager remain contained", async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 820 });
+  await page.reload();
+  await page.getByRole("button", { name: /新增供應商/ }).click();
+  await page.getByRole("button", { name: /瀏覽供應商目錄/ }).click();
+  await expect(page.locator(".provider-chooser")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "供應商分類" })).toBeVisible();
+  const chooserGeometry = await page.evaluate(() => {
+    const grid = document.querySelector<HTMLElement>(".provider-card-grid");
+    return {
+      overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+      columns: grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
+    };
+  });
+  expect(chooserGeometry.overflow).toBe(false);
+  expect(chooserGeometry.columns).toBe(1);
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "取消", exact: true }).last().click();
+  await openWorkspace(page, "Harness 管理");
+  await expect(page.locator(".harness-manager-card")).toHaveCount(15);
+  await expect(page.locator(".harness-toolbar .segmented button")).toHaveCount(4);
+  const managerGeometry = await page.evaluate(() => ({
+    overflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+    filters: Array.from(document.querySelectorAll<HTMLElement>(".harness-toolbar .segmented button")).map((button) => {
+      const rect = button.getBoundingClientRect();
+      return { left: rect.left, right: rect.right };
+    }),
+    viewport: window.innerWidth,
+  }));
+  expect(managerGeometry.overflow).toBe(false);
+  expect(managerGeometry.filters.every((button) => button.left >= -1 && button.right <= managerGeometry.viewport + 1)).toBe(true);
+});
+
 test("settings exposes manual update and fallback installer", async ({ page }) => {
   const dialog = await openSettings(page);
   await expect(dialog).toBeVisible();
@@ -240,7 +348,7 @@ test("settings navigation stays contained at desktop and narrow widths", async (
     const dialog = await openSettings(page);
     const nav = dialog.locator(".settings-nav-grid");
     await expect(nav).toBeVisible();
-    await expect(nav.getByRole("button")).toHaveCount(5);
+    await expect(nav.getByRole("button")).toHaveCount(6);
     const geometry = await page.evaluate(() => ({
       documentScrolls: document.documentElement.scrollWidth > window.innerWidth + 1,
       buttons: Array.from(document.querySelectorAll<HTMLElement>(".settings-nav-grid button")).map((button) => {
@@ -569,6 +677,8 @@ test("Simplified Chinese locale applies to the full interface", async ({ page })
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
   await expect(dialog.getByRole("heading", { name: "无障碍与阅读" })).toBeVisible();
   await dialog.locator(".sheet-foot").getByRole("button", { name: /^(关闭|關閉)/ }).click();
+  await openWorkspace(page, "Harness 管理");
+  await expect(page.getByRole("heading", { name: "Harness 安装与管理" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^(设置|設定)/ }).first()).toBeVisible();
   dialog = await openSettings(page);
   await dialog.getByRole("button", { name: "繁中" }).click();
@@ -586,4 +696,6 @@ test("English locale covers the new roadmap screens", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Backup & migration center" })).toBeVisible();
   await openWorkspace(page, "Guardian");
   await expect(page.getByRole("heading", { name: "Settings Guardian" })).toBeVisible();
+  await openWorkspace(page, "Harness management");
+  await expect(page.getByRole("heading", { name: "Harness setup & management" })).toBeVisible();
 });

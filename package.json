@@ -1,8 +1,8 @@
 {
   "name": "kumoswitch",
   "private": true,
-  "version": "0.19.0",
-  "description": "Switch AI CLI providers without rewriting your config",
+  "version": "0.20.0",
+  "description": "Manage AI harness providers and desktop apps without rewriting your config",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",

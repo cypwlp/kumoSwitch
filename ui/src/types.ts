@@ -133,6 +133,7 @@ export interface ToolView {
   path: string;
   format: Fmt;
   verified: boolean;
+  surface: "cli" | "desktop" | "both";
   restart: string;
   detected: boolean;
   takeover: boolean;
@@ -358,6 +359,42 @@ export interface Preset {
   models: string[];
   docs: string;
   note: string;
+  category: "account" | "official" | "third_party" | "cloud" | "local" | "unified";
+  auth_type: "api_key" | "oauth" | "local";
+  icon: string;
+  icon_color: string;
+  website_url: string;
+  requires_routing: boolean;
+  login_hint: string;
+}
+
+export interface HarnessManagerEntry {
+  id: string;
+  name: string;
+  blurb: string;
+  surface: "cli" | "desktop" | "both";
+  surface_label: string;
+  config_path: string;
+  config_dir: string;
+  detected: boolean;
+  cli_path: string | null;
+  installed: boolean;
+  website_url: string;
+  docs_url: string;
+  desktop_url: string | null;
+  desktop_available: boolean;
+  desktop_note: string;
+  install_manager: string | null;
+  install_package: string | null;
+  install_command: string | null;
+  installable: boolean;
+}
+
+export interface HarnessInstallResult {
+  ok: boolean;
+  command: string;
+  output: string;
+  exit_code: number;
 }
 
 export interface UsageRow {

@@ -18,6 +18,7 @@ import type {
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
 import { ModelSyncModal } from "./ModelSyncModal";
+import { ProviderChooserModal } from "./ProviderChooserModal";
 
 interface EditorProps {
   tool: ToolView;
@@ -138,6 +139,19 @@ function formatUsd(value: number): string {
   return `$${value.toFixed(value < 0.01 ? 6 : 4)}`;
 }
 
+function presetKind(kind: string, choices: string[]): string {
+  if (!choices.length) return "";
+  if (choices.includes(kind)) return kind;
+  const aliases: Record<string, string[]> = {
+    openai: ["openai", "openai-completions", "chat"],
+    "openai-responses": ["openai-responses", "responses"],
+    responses: ["responses", "openai-responses"],
+    anthropic: ["anthropic", "anthropic-messages"],
+    google: ["google-generative-ai", "google"],
+  };
+  return (aliases[kind] ?? []).find((candidate) => choices.includes(candidate)) ?? choices[0] ?? "";
+}
+
 function snapshot(provider: Provider, keyChanged: boolean): string {
   return JSON.stringify({
     id: provider.id,
@@ -200,6 +214,8 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const [modelDiscovery, setModelDiscovery] = useState<ModelDiscovery | null>(null);
   const [syncingModels, setSyncingModels] = useState(false);
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [oauthNotice, setOauthNotice] = useState<Preset | null>(null);
   const [metadataDrafts, setMetadataDrafts] = useState<Record<string, string>>({});
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
@@ -562,9 +578,13 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     }
   };
 
-  const applyPreset = (id: string) => {
-    const preset = presets.find((item) => item.id === id);
-    if (!preset) return;
+  const applyPreset = (preset: Preset) => {
+    setPresetPickerOpen(false);
+    if (preset.auth_type === "oauth") {
+      setOauthNotice(preset);
+      return;
+    }
+    setOauthNotice(null);
     setForm((previous) => {
       const models = [...(previous.models ?? [])];
       for (const modelId of preset.models) {
@@ -572,13 +592,20 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
       }
       return {
         ...previous,
-        name: previous.name || preset.name,
+        name: preset.name,
         base_url: preset.base_url,
-        kind: preset.kind,
+        kind: presetKind(preset.kind, tool.kind_choices),
         models,
-        model: previous.model || preset.models[0] || models[0]?.id || "",
+        model: preset.models[0] || models[0]?.id || "",
       };
     });
+    setTab("connection");
+  };
+
+  const useCustomConfig = () => {
+    setPresetPickerOpen(false);
+    setOauthNotice(null);
+    window.requestAnimationFrame(() => document.getElementById("f-name")?.focus());
   };
 
   const addPresetModels = (id: string) => {
@@ -955,7 +982,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
               <label htmlFor="f-add-preset-models">從預設加入模型</label>
               <select id="f-add-preset-models" value="" onChange={(event) => addPresetModels(event.target.value)}>
                 <option value="" disabled>選擇供應商預設…</option>
-                {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name} · {preset.models.length} 個模型</option>)}
+                {presets.filter((preset) => preset.models.length > 0).map((preset) => <option key={preset.id} value={preset.id}>{preset.name} · {preset.models.length} 個模型</option>)}
               </select>
             </div>
             <div className="model-list">
@@ -1156,13 +1183,27 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
 
         {tab === "connection" ? (
           <div className="detail-panel" id={`panel-connection`} role="tabpanel" aria-labelledby={`tab-connection`}>
-            <div className="field">
-              <label htmlFor="f-preset">從預設選擇（選完仍可修改）</label>
-              <select id="f-preset" value="" onChange={(event) => applyPreset(event.target.value)}>
-                <option value="" disabled>選擇一個已知供應商…</option>
-                {presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name} · {preset.note}</option>)}
-              </select>
-            </div>
+            <button type="button" className="provider-catalog-trigger" onClick={() => setPresetPickerOpen(true)}>
+              <span className="provider-catalog-plus" aria-hidden="true">＋</span>
+              <span>
+                <strong>瀏覽供應商目錄</strong>
+                <small>搜尋模型廠商、第三方平台、雲服務、本機服務與帳號登入</small>
+              </span>
+              <span className="provider-card-arrow" aria-hidden="true">→</span>
+            </button>
+            {oauthNotice ? (
+              <div className="oauth-callout">
+                <div>
+                  <strong>{oauthNotice.name} 需要帳號登入</strong>
+                  <p>{oauthNotice.login_hint}</p>
+                  <small>kumoSwitch 不會代為處理 OAuth token；登入完成後可再回到這裡匯入或建立 provider。</small>
+                </div>
+                <div className="oauth-callout-actions">
+                  <button type="button" className="ghost small" onClick={() => void api.openExternalUrl(oauthNotice.docs)}>開啟官方登入說明</button>
+                  <button type="button" className="primary small" onClick={useCustomConfig}>改用自訂配置</button>
+                </div>
+              </div>
+            ) : null}
             <div className="field-row">
               <div className="field">
                 <label htmlFor="f-name">名稱</label>
@@ -1264,6 +1305,16 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
           busy={confirmLiveModels.some((model) => liveTestingModels[model.id])}
           onCancel={() => setConfirmLiveModels(null)}
           onConfirm={() => void runLiveModelTests(confirmLiveModels)}
+        />
+      ) : null}
+
+      {presetPickerOpen ? (
+        <ProviderChooserModal
+          tool={tool}
+          presets={presets}
+          onPick={applyPreset}
+          onCustom={useCustomConfig}
+          onClose={() => setPresetPickerOpen(false)}
         />
       ) : null}
 

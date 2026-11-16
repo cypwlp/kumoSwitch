@@ -8,6 +8,7 @@ mod compat;
 mod crypto;
 mod export_crypto;
 mod guardian;
+mod harness_manager;
 mod history;
 mod keys;
 mod profiles;
@@ -36,6 +37,7 @@ struct ToolView {
     path: String,
     format: &'static str,
     verified: bool,
+    surface: &'static str,
     restart: &'static str,
     detected: bool,
     takeover: bool,
@@ -459,6 +461,7 @@ fn tool_list() -> Vec<ToolView> {
                     None => "—",
                 },
                 verified: spec.verified,
+                surface: harness_manager::surface_for(spec.id).as_str(),
                 restart: spec.restart,
                 detected: adapters::tool_dir(spec).exists(),
                 takeover: takeover_state(spec.id),
@@ -1598,6 +1601,23 @@ fn provider_presets() -> Vec<presets::Preset> {
 }
 
 #[tauri::command]
+fn harness_manager_list() -> Vec<harness_manager::HarnessManagerEntry> {
+    harness_manager::manager_entries()
+}
+
+#[tauri::command]
+async fn harness_install(
+    id: String,
+    app: tauri::AppHandle,
+) -> Result<harness_manager::HarnessInstallResult, String> {
+    let result = tauri::async_runtime::spawn_blocking(move || harness_manager::install(&id))
+        .await
+        .map_err(|error| format!("Harness 安裝工作失敗：{error}"))?;
+    let _ = app.emit("kumoswitch://changed", ());
+    result
+}
+
+#[tauri::command]
 fn set_auto_health(enabled: bool) -> Result<bool, String> {
     let mut data = store::load();
     data.auto_health = enabled;
@@ -2203,19 +2223,43 @@ fn audit_log(limit: usize) -> Vec<audit::AuditEntry> {
     audit::tail(limit.clamp(1, 200))
 }
 
+fn open_browser(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let spawned = std::process::Command::new("rundll32.exe")
+        .args(["url.dll,FileProtocolHandler", url])
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let spawned = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let spawned = std::process::Command::new("xdg-open").arg(url).spawn();
+    spawned.map(|_| ()).map_err(|error| format!("無法開啟連結：{error}"))
+}
+
+fn validate_external_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    if trimmed.len() > 2048 {
+        return Err("連結過長".into());
+    }
+    let parsed = reqwest::Url::parse(trimmed).map_err(|_| "連結格式不正確".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("只允許開啟 HTTP／HTTPS 連結".into());
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("連結不可包含帳號或密碼".into());
+    }
+    Ok(parsed.to_string())
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    open_browser(&validate_external_url(&url)?)
+}
+
 #[tauri::command]
 fn open_install_page(channel: Option<String>) -> Result<(), String> {
     let channel = if channel.as_deref() == Some("beta") { "beta" } else { "stable" };
     let url = format!("https://cypwlp.github.io/kumoSwitch/install.html?v={}&channel={channel}", env!("CARGO_PKG_VERSION"));
-    #[cfg(target_os = "windows")]
-    let spawned = std::process::Command::new("rundll32.exe")
-        .args(["url.dll,FileProtocolHandler", url.as_str()])
-        .spawn();
-    #[cfg(target_os = "macos")]
-    let spawned = std::process::Command::new("open").arg(&url).spawn();
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let spawned = std::process::Command::new("xdg-open").arg(&url).spawn();
-    spawned.map(|_| ()).map_err(|error| format!("無法開啟安裝向導：{error}"))
+    open_browser(&url)
 }
 
 #[tauri::command]
@@ -2312,6 +2356,8 @@ fn main() {
             set_auto_model_sync,
             usage_report,
             provider_presets,
+            harness_manager_list,
+            harness_install,
             health_overview,
             proxy_status,
             proxy_metrics,
@@ -2345,6 +2391,7 @@ fn main() {
             reveal_path,
             audit_log,
             open_install_page,
+            open_external_url,
             app_info
         ])
         .run(tauri::generate_context!())
@@ -2398,6 +2445,15 @@ mod write_path_tests {
     #[test]
     fn restore_rejects_path_traversal_ids() {
         assert!(backup::restore("codex", "../../etc").is_err());
+    }
+
+    #[test]
+    fn external_links_are_limited_to_http_and_https() {
+        assert!(validate_external_url("https://opencode.ai/download").is_ok());
+        assert!(validate_external_url("http://127.0.0.1:11434").is_ok());
+        assert!(validate_external_url("javascript:alert(1)").is_err());
+        assert!(validate_external_url("file:///C:/Windows/System32/calc.exe").is_err());
+        assert!(validate_external_url("https://user:secret@example.com/").is_err());
     }
 
     #[test]
