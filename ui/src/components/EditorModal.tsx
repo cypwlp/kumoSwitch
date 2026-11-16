@@ -91,6 +91,13 @@ function printableBool(value: boolean | undefined): string {
   return value === undefined ? "unknown" : String(value);
 }
 
+function compactTokens(value: number | null | undefined): string {
+  if (value == null) return "—";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value % 1_000_000 ? 1 : 0)}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
+  return String(value);
+}
+
 function modelSnapshot(model: ModelProfile) {
   return {
     id: model.id,
@@ -444,9 +451,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
         updateModel(index, { reasoning_levels: levels, reasoning_level: preferred });
         setReasoningNotices((previous) => ({
           ...previous,
-          [modelId]: tool.reasoning_target
-            ? `使用 ${tool.name} 支援的 ${levels.length} 個等級 · 寫入 ${tool.reasoning_target}`
-            : `使用 ${tool.name} 支援的 ${levels.length} 個等級（此 Harness 尚未支援寫入設定）`,
+          [modelId]: `${tool.reasoning_target ? `使用 ${tool.name} 支援的 ${levels.length} 個等級 · 寫入 ${tool.reasoning_target}` : `使用 ${tool.name} 支援的 ${levels.length} 個等級（此 Harness 尚未支援寫入設定）`} · 儲存供應商後可查詢 context／max output`,
         }));
         return;
       }
@@ -454,7 +459,12 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
       const preferred = discovered.levels.includes(model.reasoning_level ?? "")
         ? model.reasoning_level!
         : discovered.default_level;
-      updateModel(index, { reasoning_levels: discovered.levels, reasoning_level: preferred });
+      updateModel(index, {
+        reasoning_levels: discovered.levels,
+        reasoning_level: preferred,
+        context_window: discovered.context_window ?? model.context_window,
+        max_output: discovered.max_output ?? model.max_output,
+      });
       setReasoningNotices((previous) => ({
         ...previous,
         [modelId]: `${discovered.message}${discovered.supported ? ` · 寫入 ${discovered.target}` : " · 此 Harness 尚未支援寫入設定"}`,
@@ -1119,6 +1129,8 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                           {model.archived ? <span className="badge subtle">已封存</span> : null}
                           {stale ? <span className="badge warn">本次未回報</span> : null}
                           <span className={`badge ${model.reasoning_level ? "reasoning-level-badge" : "subtle"}`}>{model.reasoning_level || (levels.length ? `${levels.length} 個思考等級` : "未設思考等級")}</span>
+                          {model.context_window ? <span className="badge subtle">{compactTokens(model.context_window)} ctx</span> : null}
+                          {model.max_output ? <span className="badge subtle">{compactTokens(model.max_output)} out</span> : null}
                           {compatibility ? <span className={`badge compatibility-${compatibility.status}`}>{compatibility.status === "compatible" ? "相容" : compatibility.status === "warning" ? `提醒 · ${compatibility.score}` : `不相容 · ${compatibility.score}`}</span> : null}
                         </span>
                         <span className="model-expand-cue">{expanded ? "收起" : "編輯"}</span>
@@ -1151,14 +1163,14 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                         <section className="reasoning-studio">
                           <div className="reasoning-studio-head">
                             <div><strong>思考等級</strong><small>{tool.reasoning_target ? `套用後寫入 ${tool.reasoning_target}` : "此 Harness 尚未支援寫入；等級仍會保存在模型資料"}</small></div>
-                            <button type="button" className="ghost small" aria-label={`自動偵測思考等級 ${model.id || "新模型"}`} disabled={reasoningBusyForModel || !model.id.trim()} onClick={() => void detectReasoningLevels(index, model)}>{reasoningBusyForModel ? <><span className="spin" /> 偵測中</> : "自動偵測等級"}</button>
+                            <button type="button" className="ghost small" aria-label={`自動獲取模型資訊 ${model.id || "新模型"}`} disabled={reasoningBusyForModel || !model.id.trim()} onClick={() => void detectReasoningLevels(index, model)}>{reasoningBusyForModel ? <><span className="spin" /> 查詢中</> : "自動獲取模型資訊"}</button>
                           </div>
                           <div className="reasoning-controls">
                             <label><span>目前選擇</span><select aria-label={`思考等級 ${model.id || "新模型"}`} value={model.reasoning_level ?? ""} onChange={(event) => setReasoningLevel(index, model, event.target.value)}><option value="">模型／Harness 預設</option>{levels.map((level) => <option value={level} key={level}>{level}</option>)}{model.reasoning_level && !levels.includes(model.reasoning_level) ? <option value={model.reasoning_level}>{model.reasoning_level}</option> : null}</select></label>
                             <span className="reasoning-count">{levels.length ? `${levels.length} 個可用等級` : "尚未取得等級"}</span>
                           </div>
                           {reasoningNotice ? <div className="reasoning-notice">{reasoningNotice}</div> : null}
-                          {!levels.length ? <div className="hint">按「自動偵測等級」讀取供應商模型資料；若供應商未公開，會使用 Harness 支援的候選等級。</div> : null}
+                          {!levels.length ? <div className="hint">按「自動獲取模型資訊」讀取供應商模型目錄，補齊 context、max output 與思考等級；未公開的欄位會保留原值。</div> : null}
                         </section>
 
                         {compatibility ? (

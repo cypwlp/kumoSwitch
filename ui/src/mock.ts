@@ -882,7 +882,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.21.0",
+        version: "0.22.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
@@ -1322,10 +1322,12 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return {
         levels,
         default_level: levels.includes("medium") ? "medium" : levels[0],
-        source: "harness",
+        source: "catalog",
         supported: Boolean(MOCK_REASONING_TARGETS[tool]),
         target: MOCK_REASONING_TARGETS[tool] ?? "",
-        message: `Mock：使用 ${seedOf(tool).name} 支援的 ${levels.length} 個思考等級`,
+        context_window: 262144,
+        max_output: 32768,
+        message: `Mock：已取得 Context 262144、Max output 32768 與 ${levels.length} 個思考等級`,
       };
     }
 

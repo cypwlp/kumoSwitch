@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.22.0 — 2026-11-16
+- **自動獲取模型資訊**：模型編輯器的自動查詢現在會一次補齊 context window、最大輸出與思考等級，不再只處理 thinking levels。
+- **更多模型目錄格式**：新增解析 OpenRouter 類 `top_provider.context_length`、`top_provider.max_completion_tokens`，以及 `max_completion_tokens`、`model_spec`、`output_tokens` 等常見欄位。
+- **明確保留原值**：供應商 `/models` 沒公開 context 或 max output 時，不會猜測或覆蓋既有值；UI 會顯示實際取得與保留的欄位。
+- **模型摘要**：模型列表直接顯示 `128K ctx`、`16K out` 等資訊，展開前即可比較模型容量。
+- **回歸測試**：新增 context／max output 自動填入、供應商 metadata 解析與實際 Tauri WebView 回歸。
 ## 0.21.0 — 2026-11-16
 - **模型管理重新整理**：模型改為可搜尋的清單，預設只展開目前模型；每個模型可單獨展開編輯，JSON metadata、能力矩陣與自動同步／實測設定收進進階區。
 - **模型搜尋**：可依 Model ID、顯示名稱、context window、思考等級與 metadata 搜尋目前供應商的模型，並可切換是否顯示封存模型。

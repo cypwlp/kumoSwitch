@@ -144,6 +144,8 @@ struct ModelReasoningView {
     source: &'static str,
     supported: bool,
     target: &'static str,
+    context_window: Option<u64>,
+    max_output: Option<u64>,
     message: String,
 }
 
@@ -783,14 +785,20 @@ fn discover_model_reasoning(
         let metadata_default = adapters::default_reasoning_level_from_metadata(&model.metadata);
         let reasoning_supported = model.reasoning != Some(false);
         let mut levels = model.reasoning_levels.clone();
-        let mut source = if levels.is_empty() { "none" } else { "saved" };
-        let mut message = if levels.is_empty() {
-            String::new()
+        let mut context_window = model.context_window;
+        let mut max_output = model.max_output;
+        let mut source = if levels.is_empty() && context_window.is_none() && max_output.is_none() {
+            "none"
         } else {
-            format!("使用 kumoSwitch 已保存的 {} 個思考等級", levels.len())
+            "saved"
         };
+        let mut catalog_message = String::new();
+        // Model metadata can change when a provider publishes a new context
+        // window or output limit, so an explicit refresh always checks the
+        // catalogue when an endpoint is available.
+        let needs_catalog = !provider.base_url.trim().is_empty();
 
-        if reasoning_supported && levels.is_empty() && !provider.base_url.trim().is_empty() {
+        if needs_catalog {
             match net::discover_models_styled(
                 &provider.base_url,
                 &provider.api_key,
@@ -800,15 +808,20 @@ fn discover_model_reasoning(
             ) {
                 Ok(discovered) => {
                     if let Some(remote) = discovered.models.into_iter().find(|model| model.id == model_id) {
-                        if !remote.reasoning_levels.is_empty() {
-                            levels = remote.reasoning_levels;
-                            source = "catalog";
-                            message = format!("供應商模型目錄回報 {} 個思考等級", levels.len());
+                        if remote.context_window.is_some() {
+                            context_window = remote.context_window;
                         }
+                        if remote.max_output.is_some() {
+                            max_output = remote.max_output;
+                        }
+                        if reasoning_supported && !remote.reasoning_levels.is_empty() {
+                            levels = remote.reasoning_levels;
+                        }
+                        source = "catalog";
                     }
                 }
                 Err(error) => {
-                    message = format!("模型目錄沒有提供思考等級（{error}）");
+                    catalog_message = format!("模型目錄查詢失敗：{error}");
                 }
             }
         }
@@ -817,17 +830,12 @@ fn discover_model_reasoning(
             let defaults = adapters::reasoning_levels_for_tool(spec.id);
             if !defaults.is_empty() {
                 levels = defaults.iter().map(|level| level.to_string()).collect();
-                source = "harness";
-                message = format!(
-                    "供應商沒有公開思考等級；使用 {} 支援的候選等級",
-                    spec.name
-                );
+                if source != "catalog" {
+                    source = "harness";
+                }
             }
         }
 
-        if !reasoning_supported && levels.is_empty() {
-            return Err(format!("{model_id} 被標示為不支援 reasoning／thinking"));
-        }
         levels.sort_by_key(|level| {
             ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "auto", "inherit"]
                 .iter()
@@ -835,9 +843,9 @@ fn discover_model_reasoning(
                 .unwrap_or(usize::MAX)
         });
         levels.dedup();
-        if levels.is_empty() {
+        if levels.is_empty() && context_window.is_none() && max_output.is_none() {
             return Err(format!(
-                "找不到 {model_id} 的思考等級；供應商目錄未公開，且這個 Harness 尚未定義候選等級"
+                "找不到 {model_id} 的模型資訊；供應商目錄未公開 context／max output，且這個 Harness 沒有思考等級可補"
             ));
         }
         let default_level = if levels.contains(&selected_level) {
@@ -845,12 +853,39 @@ fn discover_model_reasoning(
         } else if let Some(level) = metadata_default.filter(|level| levels.contains(level)) {
             level
         } else {
-            levels[0].clone()
+            levels.first().cloned().unwrap_or_default()
         };
         let target = adapters::reasoning_target_for_tool(spec.id);
+        let mut parts = Vec::new();
+        if let Some(context) = context_window {
+            parts.push(format!("Context {context}"));
+        }
+        if let Some(output) = max_output {
+            parts.push(format!("Max output {output}"));
+        }
+        if !levels.is_empty() {
+            parts.push(format!("{} 個思考等級", levels.len()));
+        }
+        let prefix = if source == "catalog" {
+            "已從供應商模型目錄取得"
+        } else if source == "harness" {
+            "使用已保存的模型資訊；思考等級採用 Harness 候選"
+        } else {
+            "使用 kumoSwitch 已保存的模型資訊"
+        };
+        let message = if parts.is_empty() {
+            catalog_message
+        } else if catalog_message.is_empty() {
+            format!("{prefix}：{}", parts.join(" · "))
+        } else {
+            format!("{prefix}：{}（{catalog_message}）", parts.join(" · "))
+        };
         audit::record(
-            "model.reasoning_discover",
-            format!("{tool}:{provider_id}:{model_id};source={source};levels={}", levels.len()),
+            "model.capability_discover",
+            format!(
+                "{tool}:{provider_id}:{model_id};source={source};levels={};context={context_window:?};max_output={max_output:?}",
+                levels.len()
+            ),
         );
         Ok(ModelReasoningView {
             levels,
@@ -858,6 +893,8 @@ fn discover_model_reasoning(
             source,
             supported: !target.is_empty(),
             target,
+            context_window,
+            max_output,
             message,
         })
     })();

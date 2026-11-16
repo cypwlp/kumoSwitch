@@ -378,6 +378,8 @@ export interface ModelReasoningDiscovery {
   source: "saved" | "catalog" | "harness" | "none" | string;
   supported: boolean;
   target: string;
+  context_window: number | null;
+  max_output: number | null;
   message: string;
 }
 

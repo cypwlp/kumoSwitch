@@ -689,7 +689,7 @@ mod tests {
               "capabilities": { "reasoning": true, "vision": false, "tools": true }
             },
             { "id": "glm-5.3-flash", "display_name": "Duplicate" },
-            { "id": "qwen2.5-coder:14b", "name": "Qwen Coder" }
+            { "id": "qwen2.5-coder:14b", "name": "Qwen Coder", "top_provider": { "context_length": 1000000, "max_completion_tokens": 65536 } }
           ]
         }"#)
         .unwrap();
@@ -702,6 +702,8 @@ mod tests {
         assert_eq!(models[0].reasoning_levels, vec!["low", "medium", "high"]);
         assert_eq!(models[0].tools, Some(true));
         assert_eq!(models[0].metadata["display_name"], "GLM 5.3 Flash");
+        assert_eq!(models[1].context_window, Some(1_000_000));
+        assert_eq!(models[1].max_output, Some(65_536));
     }
 
     #[test]

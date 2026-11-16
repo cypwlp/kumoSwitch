@@ -53,7 +53,7 @@ const DICT: Record<string, string> = {
   "搜尋目前供應商的模型": "Search models in this provider",
   "思考等級": "Thinking level",
   "目前選擇": "Current selection",
-  "自動偵測等級": "Auto-detect levels",
+  "自動獲取模型資訊": "Fetch model information",
   "模型／Harness 預設": "Model / Harness default",
   "此 Harness 尚未支援寫入；等級仍會保存在模型資料": "This Harness cannot write the level yet; it will still be saved in model data",
   "進階能力與 Metadata": "Advanced capabilities & metadata",

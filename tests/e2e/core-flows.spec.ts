@@ -236,8 +236,10 @@ test("provider keeps multiple models and can switch the active model", async ({ 
   await card.getByLabel("模型顯示名稱").fill("DeepSeek v4.1");
   await card.getByLabel("Context window").fill("128000");
   await card.getByLabel("Max output").fill("16384");
-  await card.getByRole("button", { name: "自動偵測思考等級 deepseek-v4.1-flash" }).click();
-  await expect(card.getByText(/支援的 \d+ 個思考等級|個思考等級/)).toBeVisible();
+  await card.getByRole("button", { name: "自動獲取模型資訊 deepseek-v4.1-flash" }).click();
+  await expect(card.getByText(/Context 262144.*Max output 32768/)).toBeVisible();
+  await expect(card.getByLabel("Context window")).toHaveValue("262144");
+  await expect(card.getByLabel("Max output")).toHaveValue("32768");
   await card.getByLabel("思考等級 deepseek-v4.1-flash", { exact: true }).selectOption("high");
   await card.locator(".model-advanced > summary").click();
   await card.getByLabel("Reasoning").selectOption("true");
@@ -289,8 +291,10 @@ test("model manager searches models and persists the selected reasoning level", 
   const activeModel = dialog.getByRole("article", { name: "模型 glm-5.3-flash" });
   const level = activeModel.getByLabel("思考等級 glm-5.3-flash", { exact: true });
   await expect(level).toHaveValue("medium");
-  await activeModel.getByRole("button", { name: "自動偵測思考等級 glm-5.3-flash" }).click();
-  await expect(activeModel.getByText(/個思考等級.*寫入 config\.toml/)).toBeVisible();
+  await activeModel.getByRole("button", { name: "自動獲取模型資訊 glm-5.3-flash" }).click();
+  await expect(activeModel.getByText(/Context 262144.*Max output 32768.*寫入 config\.toml/)).toBeVisible();
+  await expect(activeModel.getByLabel("Context window")).toHaveValue("262144");
+  await expect(activeModel.getByLabel("Max output")).toHaveValue("32768");
   await level.selectOption("high");
   await dialog.getByRole("button", { name: "儲存並預覽" }).click();
 
