@@ -845,7 +845,7 @@ fn discover_model_reasoning(
         levels.dedup();
         if levels.is_empty() && context_window.is_none() && max_output.is_none() {
             return Err(format!(
-                "找不到 {model_id} 的模型資訊；供應商目錄未公開 context／max output，且這個 Harness 沒有思考等級可補"
+                "找不到 {model_id} 的模型資訊；供應商目錄未公開 context／max output，且這個工具沒有思考等級可補"
             ));
         }
         let default_level = if levels.contains(&selected_level) {
@@ -869,7 +869,7 @@ fn discover_model_reasoning(
         let prefix = if source == "catalog" {
             "已從供應商模型目錄取得"
         } else if source == "harness" {
-            "使用已保存的模型資訊；思考等級採用 Harness 候選"
+            "使用已保存的模型資訊；思考等級採用工具候選"
         } else {
             "使用 kumoSwitch 已保存的模型資訊"
         };
@@ -1156,7 +1156,7 @@ fn build_warnings(spec: &ToolSpec, provider: &Provider) -> Vec<String> {
     }
     if !spec.verified {
         warnings.push(format!(
-            "{} 的設定格式尚未在真實安裝上驗證，請仔細核對下方 diff 再套用。",
+            "{} 的設定格式尚未在真實安裝上驗證，請仔細核對下方變更預覽再套用。",
             spec.name
         ));
     }
@@ -1762,7 +1762,7 @@ async fn harness_install(
 ) -> Result<harness_manager::HarnessInstallResult, String> {
     let result = tauri::async_runtime::spawn_blocking(move || harness_manager::install(&id))
         .await
-        .map_err(|error| format!("Harness 安裝工作失敗：{error}"))?;
+        .map_err(|error| format!("工具安裝工作失敗：{error}"))?;
     let _ = app.emit("kumoswitch://changed", ());
     result
 }
@@ -2172,7 +2172,7 @@ fn backup_create(tool: String) -> Result<backup::BackupInfo, String> {
     let spec = spec(&tool)?;
     let files = backup_files_for(spec);
     if files.is_empty() {
-        return Err("這個 Harness 目前沒有可備份的設定檔".into());
+        return Err("這個工具目前沒有可備份的設定檔".into());
     }
     let (id, _) = backup::snapshot_with_reason(&tool, &files, "manual")?;
     audit::record("backup.manual", format!("{tool}:{id}"));

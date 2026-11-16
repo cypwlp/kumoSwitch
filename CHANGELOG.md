@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.23.0 — 2026-11-16
+- **統計儀表板擴大來源**：新增 Pi、Oh My Pi 與 DSH 的本機用量；Claude Code 同一則 assistant 訊息被寫成多個 content block 時只計一次，修正 token 與成本重複累加。
+- **統計篩選與速度**：可依來源（Claude Code／Codex／Pi／Oh My Pi／DSH）與模型搜尋篩選，圖表與卡片同步更新；新增平均回應時間、平均輸出速度與 Claude Code 首字延遲估算（以 session log 時間戳推算），Codex 等沒有時間欄位的來源會顯示「—」而不是猜測。
+- **簡單／進階模式**：預設簡單模式只保留切換供應商需要的資訊（名稱、目前模型、狀態、套用／詳情）；健康度、協議、模型 chips、排序與設定檔匯入收進進階模式。工具列與設定頁都可切換，偏好存在 localStorage。
+- **側欄分組**：已偵測或已有供應商的工具優先顯示，其餘收進「其他工具」；搜尋時自動展開全部結果。
+- **用語調整**：Harness → 工具、endpoint → 連線位址、diff → 變更預覽；「Harness」只保留在次要標籤與技術說明。
+- **主畫面優先顯示可切換的供應商**：CC Switch 區塊移到供應商清單之後，並在頂端保留一行提示與跳轉；不再把主要操作推到首屏之外。
+- **移除 1—2—3 資源麵包屑**：Harness／供應商／模型的階層說明改用單行副標，減少一列視覺噪音。
+- **供應商卡片主動作放大**：套用／重新套用改為卡片右側第一顆、橫跨兩欄的主要按鈕，測試與刪除留在次要位置。
+
 ## 0.22.0 — 2026-11-16
 - **自動獲取模型資訊**：模型編輯器的自動查詢現在會一次補齊 context window、最大輸出與思考等級，不再只處理 thinking levels。
 - **更多模型目錄格式**：新增解析 OpenRouter 類 `top_provider.context_length`、`top_provider.max_completion_tokens`，以及 `max_completion_tokens`、`model_spec`、`output_tokens` 等常見欄位。

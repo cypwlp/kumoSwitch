@@ -42,7 +42,7 @@ pub static PRESETS: &[Preset] = &[
         icon_color: "#10a37f",
         website_url: "https://chatgpt.com/codex",
         requires_routing: false,
-        login_hint: "開啟官方 Codex 登入頁，或先執行 `codex login`；完成後再把登入後的 endpoint 匯入 kumoSwitch。",
+        login_hint: "開啟官方 Codex 登入頁，或先執行 `codex login`；完成後再把登入後的連線位址匯入 kumoSwitch。",
     },
     Preset {
         id: "anthropic-oauth",
@@ -74,7 +74,7 @@ pub static PRESETS: &[Preset] = &[
         icon_color: "#8b5cf6",
         website_url: "https://github.com/features/copilot",
         requires_routing: false,
-        login_hint: "先用官方 Copilot CLI／支援 Copilot 的 Harness 完成 GitHub 裝置登入，再選用對應的 Copilot provider。",
+        login_hint: "先用官方 Copilot CLI／支援 Copilot 的工具完成 GitHub 裝置登入，再選用對應的 Copilot provider。",
     },
     Preset {
         id: "xai-oauth",
@@ -90,7 +90,7 @@ pub static PRESETS: &[Preset] = &[
         icon_color: "#e5e7eb",
         website_url: "https://x.ai/",
         requires_routing: true,
-        login_hint: "在 Grok Build 或支援 xAI OAuth 的 Harness 完成登入。需要路由的 Harness 會另外顯示提示。",
+        login_hint: "在 Grok Build 或支援 xAI OAuth 的工具完成登入。需要路由的工具會另外顯示提示。",
     },
 
     // ---------------------------------------------------------- model vendors

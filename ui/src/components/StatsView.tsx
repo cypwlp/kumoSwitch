@@ -5,6 +5,20 @@ import type { HealthOverview, UsageReport } from "../types";
 const fmt = (n: number) => n.toLocaleString("en-US");
 const money = (n: number | null) => (n == null ? "未定價" : `$${n.toFixed(2)}`);
 
+const SOURCE_LABELS: Record<string, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  pi: "Pi",
+  omp: "Oh My Pi",
+  dsh: "DSH",
+};
+const SOURCE_ORDER = ["claude", "codex", "pi", "omp", "dsh"];
+
+const sourceLabel = (source: string) => SOURCE_LABELS[source] ?? source;
+const durationText = (ms: number | null) =>
+  ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+const speedText = (speed: number | null) => (speed == null ? "—" : `${speed.toFixed(1)} tok/s`);
+
 interface Props {
   onError: (message: string) => void;
 }
@@ -16,6 +30,8 @@ export function StatsView({ onError }: Props) {
   const [loading, setLoading] = useState(true);
   const [scanError, setScanError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [query, setQuery] = useState("");
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -43,7 +59,90 @@ export function StatsView({ onError }: Props) {
     };
   }, [days, refreshKey]);
 
-  const maxDay = useMemo(() => Math.max(...(report?.days.map((day) => day.total) ?? [1]), 1), [report]);
+  const sourceOptions = useMemo(() => {
+    const seen = new Set<string>();
+    report?.rows.forEach((row) => seen.add(row.source));
+    report?.roots.forEach((root) => {
+      if (root.exists || root.files > 0) seen.add(root.source);
+    });
+    return [...seen].sort((a, b) => {
+      const ai = SOURCE_ORDER.indexOf(a);
+      const bi = SOURCE_ORDER.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.localeCompare(b);
+    });
+  }, [report]);
+
+  const counts = useMemo(() => {
+    const next: Record<string, number> = {};
+    report?.rows.forEach((row) => {
+      next[row.source] = (next[row.source] ?? 0) + 1;
+    });
+    return next;
+  }, [report]);
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (report?.rows ?? []).filter(
+      (row) =>
+        (sourceFilter === "all" || row.source === sourceFilter) &&
+        (!q || row.model.toLowerCase().includes(q)),
+    );
+  }, [report, sourceFilter, query]);
+
+  const totals = useMemo(() => {
+    let input = 0;
+    let output = 0;
+    let cache = 0;
+    let records = 0;
+    let cost: number | null = null;
+    let duration = 0;
+    let timedOutput = 0;
+    let timedRecords = 0;
+    let ttftSum = 0;
+    let ttftRecords = 0;
+    for (const row of filteredRows) {
+      input += row.input;
+      output += row.output;
+      cache += row.cache_read + row.cache_write;
+      records += row.records;
+      if (row.cost != null) cost = (cost ?? 0) + row.cost;
+      duration += row.duration_ms ?? 0;
+      timedOutput += row.timed_output ?? 0;
+      timedRecords += row.timed_records ?? 0;
+      if (row.ttft_ms != null) {
+        ttftSum += row.ttft_ms * row.ttft_records;
+        ttftRecords += row.ttft_records;
+      }
+    }
+    return {
+      input,
+      output,
+      cache,
+      records,
+      cost,
+      avgDuration: timedRecords ? Math.round(duration / timedRecords) : null,
+      speed: duration ? timedOutput / (duration / 1000) : null,
+      ttft: ttftRecords ? Math.round(ttftSum / ttftRecords) : null,
+      timedRecords,
+    };
+  }, [filteredRows]);
+
+  const chartDays = useMemo(() => {
+    const map = new Map<string, { input: number; output: number; total: number }>();
+    for (const day of report?.days ?? []) {
+      if (sourceFilter !== "all" && day.source !== sourceFilter) continue;
+      const entry = map.get(day.day) ?? { input: 0, output: 0, total: 0 };
+      entry.input += day.input;
+      entry.output += day.output;
+      entry.total += day.total;
+      map.set(day.day, entry);
+    }
+    return [...map.entries()]
+      .map(([day, value]) => ({ day, ...value }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+  }, [report, sourceFilter]);
+
+  const maxDay = useMemo(() => Math.max(...chartDays.map((day) => day.total), 1), [chartDays]);
   const hasUsage = Boolean(report && report.records > 0);
   const totalFiles = report?.roots.reduce((sum, root) => sum + root.files, 0) ?? 0;
 
@@ -51,7 +150,7 @@ export function StatsView({ onError }: Props) {
     <section className="stats">
       <header className="stats-head">
         <h2>統計儀表板</h2>
-        <span className="muted small">串流讀取 Claude Code／Codex 本機 session log，只在本機計算</span>
+        <span className="muted small">只讀本機 session log，統計 Claude Code、Codex、Pi、Oh My Pi、DSH</span>
         <div className="spacer" />
         <div className="segmented compact" role="group" aria-label="統計範圍">
           {[7, 30, 90].map((value) => (
@@ -82,14 +181,57 @@ export function StatsView({ onError }: Props) {
       ) : report ? (
         <>
           {hasUsage ? (
-            <div className="stat-cards">
-              <div className="stat-card"><span className="k">輸入 tokens</span><span className="v">{fmt(report.total_input)}</span></div>
-              <div className="stat-card"><span className="k">輸出 tokens</span><span className="v">{fmt(report.total_output)}</span></div>
-              <div className="stat-card"><span className="k">快取 tokens</span><span className="v">{fmt(report.total_cache)}</span></div>
-              <div className="stat-card"><span className="k">估算成本</span><span className="v accent">{money(report.total_cost)}</span></div>
-              <div className="stat-card"><span className="k">用量記錄</span><span className="v">{fmt(report.records)}</span></div>
-              <div className="stat-card"><span className="k">已掃描檔案</span><span className="v">{fmt(report.files)}</span></div>
-            </div>
+            <>
+              <div className="stats-filters">
+                <div className="segmented compact" role="group" aria-label="來源篩選">
+                  <button className={sourceFilter === "all" ? "on" : ""} aria-pressed={sourceFilter === "all"} onClick={() => setSourceFilter("all")}>
+                    全部
+                  </button>
+                  {sourceOptions.map((source) => (
+                    <button
+                      key={source}
+                      className={sourceFilter === source ? "on" : ""}
+                      aria-pressed={sourceFilter === source}
+                      onClick={() => setSourceFilter(source)}
+                    >
+                      {sourceLabel(source)}
+                      <span className="count">{counts[source] ?? 0}</span>
+                    </button>
+                  ))}
+                </div>
+                <input
+                  className="search stats-search"
+                  type="search"
+                  value={query}
+                  placeholder="搜尋模型…"
+                  aria-label="搜尋模型"
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+                <span className="muted small">{filteredRows.length} / {report.rows.length} 個模型</span>
+              </div>
+
+              <div className="stat-cards">
+                <div className="stat-card"><span className="k">輸入 tokens</span><span className="v">{fmt(totals.input)}</span></div>
+                <div className="stat-card"><span className="k">輸出 tokens</span><span className="v">{fmt(totals.output)}</span></div>
+                <div className="stat-card"><span className="k">快取 tokens</span><span className="v">{fmt(totals.cache)}</span></div>
+                <div className="stat-card"><span className="k">估算成本</span><span className="v accent">{money(totals.cost)}</span></div>
+                <div className="stat-card"><span className="k">用量記錄</span><span className="v">{fmt(totals.records)}</span></div>
+                <div className="stat-card"><span className="k">已掃描檔案</span><span className="v">{fmt(report.files)}</span></div>
+              </div>
+
+              <div className="stat-cards slim">
+                <div className="stat-card" title="有計時資料的請求平均花費時間；不是連線測試延遲">
+                  <span className="k">平均回應時間</span><span className="v">{durationText(totals.avgDuration)}</span>
+                </div>
+                <div className="stat-card" title="輸出 tokens ÷ 有計時請求的總時間；只有 session log 提供 duration 時才計算">
+                  <span className="k">平均輸出速度</span><span className="v">{speedText(totals.speed)}</span>
+                </div>
+                <div className="stat-card" title="Claude Code session log 的使用者訊息→首個 assistant 區塊時間差，僅為估算">
+                  <span className="k">首字延遲（估算）</span><span className="v">{totals.ttft == null ? "—" : `${fmt(totals.ttft)}ms`}</span>
+                </div>
+                <div className="stat-card"><span className="k">有計時請求</span><span className="v">{fmt(totals.timedRecords)}</span></div>
+              </div>
+            </>
           ) : (
             <div className="stats-empty-panel">
               <span className="stats-empty-icon">⌕</span>
@@ -98,7 +240,7 @@ export function StatsView({ onError }: Props) {
                 <p>
                   {totalFiles === 0
                     ? "下面列出實際檢查的資料夾。請確認對應 CLI 曾在這台電腦使用，且 log 沒有被搬到其他位置。"
-                    : `找到 ${totalFiles} 個 .jsonl，其中實際讀取 ${report.files} 個；可能是這個時間範圍沒有用量，或 log 格式尚未包含 usage。`}
+                    : `找到 ${totalFiles} 個檔案，其中實際讀取 ${report.files} 個；可能是這個時間範圍沒有用量，或 log 格式尚未包含 usage。`}
                 </p>
               </div>
             </div>
@@ -116,11 +258,11 @@ export function StatsView({ onError }: Props) {
           {hasUsage ? (
             <>
               <h3 className="stats-sub">每日用量（近 {report.days_scanned} 天）</h3>
-              {report.days.length === 0 ? (
+              {chartDays.length === 0 ? (
                 <div className="empty small">這個範圍內沒有用量記錄</div>
               ) : (
                 <div className="day-chart" role="img" aria-label="每日 token 用量">
-                  {report.days.map((day) => (
+                  {chartDays.map((day) => (
                     <div key={day.day} className="day-col" title={`${day.day} · ${fmt(day.total)} tokens`}>
                       <i style={{ height: `${Math.max(4, Math.round((day.total / maxDay) * 100))}%` }} />
                       <span>{day.day.slice(5)}</span>
@@ -130,35 +272,45 @@ export function StatsView({ onError }: Props) {
               )}
 
               <h3 className="stats-sub">依模型</h3>
-              <div className="table-wrap">
-                <table className="grid">
-                  <thead>
-                    <tr>
-                      <th>來源</th>
-                      <th>模型</th>
-                      <th>輸入</th>
-                      <th>輸出</th>
-                      <th>快取</th>
-                      <th>筆數</th>
-                      <th>估算成本</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.rows.map((row) => (
-                      <tr key={`${row.source}-${row.model}`}>
-                        <td><span className="badge subtle">{row.source}</span></td>
-                        <td className="mono">{row.model}</td>
-                        <td className="mono">{fmt(row.input)}</td>
-                        <td className="mono">{fmt(row.output)}</td>
-                        <td className="mono">{fmt(row.cache_read + row.cache_write)}</td>
-                        <td className="mono">{fmt(row.records)}</td>
-                        <td className="mono">{money(row.cost)}</td>
+              {filteredRows.length === 0 ? (
+                <div className="empty small">沒有符合篩選條件的模型</div>
+              ) : (
+                <div className="table-wrap">
+                  <table className="grid">
+                    <thead>
+                      <tr>
+                        <th>來源</th>
+                        <th>模型</th>
+                        <th>輸入</th>
+                        <th>輸出</th>
+                        <th>快取</th>
+                        <th>筆數</th>
+                        <th title="有計時資料的請求平均花費時間">平均</th>
+                        <th title="輸出 tokens ÷ 有計時請求的總時間">速度</th>
+                        <th title="首字延遲估算（目前只有 Claude Code 時間戳可推算）">首字</th>
+                        <th>估算成本</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="fineprint">成本為公開單價估算（每百萬 token），非帳單金額；未列入價目表的模型顯示「未定價」。</p>
+                    </thead>
+                    <tbody>
+                      {filteredRows.map((row) => (
+                        <tr key={`${row.source}-${row.model}`}>
+                          <td><span className="badge subtle">{sourceLabel(row.source)}</span></td>
+                          <td className="mono">{row.model}</td>
+                          <td className="mono">{fmt(row.input)}</td>
+                          <td className="mono">{fmt(row.output)}</td>
+                          <td className="mono">{fmt(row.cache_read + row.cache_write)}</td>
+                          <td className="mono">{fmt(row.records)}</td>
+                          <td className="mono">{durationText(row.avg_duration_ms)}</td>
+                          <td className="mono">{speedText(row.output_per_sec)}</td>
+                          <td className="mono">{row.ttft_ms == null ? "—" : `${fmt(row.ttft_ms)}ms`}</td>
+                          <td className="mono">{money(row.cost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="fineprint">成本為公開單價估算（每百萬 token），非帳單金額；未列入價目表的模型顯示「未定價」。速度與首字延遲只在 session log 有對應時間欄位時計算，Codex 目前沒有可用的串流時間戳。</p>
             </>
           ) : null}
 
@@ -173,12 +325,15 @@ export function StatsView({ onError }: Props) {
             <div className="scan-root-grid">
               {report.roots.map((root) => (
                 <div className={`scan-root${root.exists ? "" : " missing"}`} key={`${root.source}-${root.path}`}>
-                  <div><strong>{root.source === "codex" ? "Codex" : "Claude Code"}</strong><span className={`badge ${root.exists ? "ok" : "warn"}`}>{root.exists ? "已找到" : "路徑不存在"}</span></div>
+                  <div><strong>{sourceLabel(root.source)}</strong><span className={`badge ${root.exists ? "ok" : "warn"}`}>{root.exists ? "已找到" : "路徑不存在"}</span></div>
                   <code>{root.path}</code>
-                  <span>{root.files} 個 JSONL · 實際讀取 {root.scanned_files} 個</span>
+                  <span>{root.files} 個檔案 · 實際讀取 {root.scanned_files} 個</span>
                 </div>
               ))}
             </div>
+            <p className="fineprint">
+              目前可讀取這五種工具的本機用量。Gemini CLI、OpenCode、Qwen Code、Kilo Code、Crush、Qoder、Grok Build 等工具的 session 檔沒有穩定的 token 欄位，因此不會被估算；等實際格式可解析時會自動納入。
+            </p>
             {report.errors.length ? (
               <details className="scan-errors">
                 <summary>{report.errors.length} 個檔案讀取失敗</summary>

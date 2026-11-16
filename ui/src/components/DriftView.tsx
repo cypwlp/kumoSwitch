@@ -79,7 +79,7 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
 
   const openExpected = async (report: DriftReport) => {
     if (!report.active_id) {
-      onError("這個 Harness 沒有可重新套用的 kumoSwitch 供應商");
+      onError("這個工具沒有可重新套用的 kumoSwitch 供應商");
       return;
     }
     try {
@@ -149,7 +149,7 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
           }
         }
         onToast(
-          `批次重新套用 ${applied} 個 Harness${failures.length ? `，${failures.length} 個失敗` : ""}`,
+          `批次重新套用 ${applied} 個工具${failures.length ? `，${failures.length} 個失敗` : ""}`,
           failures.length ? "err" : "ok",
         );
         if (failures.length) onError(failures.join("\n"));
@@ -168,7 +168,7 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
           }
         }
         onToast(
-          `批次匯入 ${imported} 個供應商${skipped ? `，略過 ${skipped} 個重複項目` : ""}${failures.length ? `，${failures.length} 個 Harness 失敗` : ""}`,
+          `批次匯入 ${imported} 個供應商${skipped ? `，略過 ${skipped} 個重複項目` : ""}${failures.length ? `，${failures.length} 個工具失敗` : ""}`,
           failures.length ? "err" : "ok",
         );
         if (failures.length) onError(failures.join("\n"));
@@ -205,7 +205,7 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
     { id: "clean", label: "一致", value: counts.clean, tone: "ok" },
     { id: "drifted", label: "已漂移", value: counts.drifted, tone: "warn" },
     { id: "unmanaged", label: "未納管", value: counts.unmanaged, tone: "bad" },
-    { id: "all", label: "Harness 總數", value: reports.length, tone: "" },
+    { id: "all", label: "工具總數", value: reports.length, tone: "" },
   ];
 
   return (
@@ -244,7 +244,7 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
           <span className={`guardian-pulse${guardian?.summary.drifted || guardian?.summary.unmanaged ? " alert" : ""}`} />
           <div>
             <strong>{guardian?.watching ? "背景守護中" : "守護已暫停"}</strong>
-            <span>上次掃描 {guardian?.last_scan ? new Date(guardian.last_scan).toLocaleTimeString() : "—"} · 監看 {guardian?.summary.watched_tools ?? 0} 個 Harness</span>
+            <span>上次掃描 {guardian?.last_scan ? new Date(guardian.last_scan).toLocaleTimeString() : "—"} · 監看 {guardian?.summary.watched_tools ?? 0} 個工具</span>
           </div>
         </div>
         <button className={`settings-toggle compact${guardian?.policy.enabled ? " on" : ""}`} aria-pressed={guardian?.policy.enabled ?? false} onClick={() => void saveGuardianPolicy({ enabled: !(guardian?.policy.enabled ?? false) })}>
@@ -274,7 +274,7 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
           ))}
         </div>
         <span className="spacer" />
-        <span className="muted small">{visibleReports.length} / {reports.length} 個 Harness</span>
+        <span className="muted small">{visibleReports.length} / {reports.length} 個工具</span>
         <button type="button" className="ghost small" onClick={toggleSelectAll} disabled={!actionableReports.length || batchBusy}>
           {allActionableSelected ? "取消全選" : `選取待處理 ${actionableReports.length}`}
         </button>
@@ -287,8 +287,8 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
       </div>
 
       {loading && reports.length === 0 ? (
-        <div className="drift-skeleton" role="status" aria-label="正在檢查所有 Harness">
-          <span className="sr-only">正在檢查所有 Harness…</span>
+        <div className="drift-skeleton" role="status" aria-label="正在檢查所有工具">
+          <span className="sr-only">正在檢查所有工具…</span>
           {[0, 1, 2, 3].map((index) => (
             <div className="drift-skeleton-card" key={index} aria-hidden="true">
               <div className="drift-skeleton-head"><i /><span /></div>
@@ -300,13 +300,13 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
         </div>
       ) : reports.length === 0 ? (
         <div className="drift-empty empty">
-          <strong>沒有可檢查的 Harness</strong>
-          <span>確認至少一個 Harness 已安裝並有可讀取的設定檔，然後重新檢查。</span>
+          <strong>沒有可檢查的工具</strong>
+          <span>確認至少一個工具已安裝並有可讀取的設定檔，然後重新檢查。</span>
         </div>
       ) : visibleReports.length === 0 ? (
         <div className="drift-empty empty">
           <strong>這個篩選條件沒有結果</strong>
-          <span>切換到「全部」或「待處理」查看其他 Harness。</span>
+          <span>切換到「全部」或「待處理」查看其他工具。</span>
         </div>
       ) : (
         <div className="drift-grid">
@@ -318,7 +318,7 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
                 <div className="drift-card-head">
                   <div>
                     {reportActionable ? (
-                      <label className="drift-select" title="選取這個 Harness 進行批次操作">
+                      <label className="drift-select" title="選取這個工具進行批次操作">
                         <input
                           type="checkbox"
                           checked={selected.has(report.tool)}
@@ -370,7 +370,7 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
                 <div className="drift-actions">
                   {canApply(report) ? (
                     <button className="primary small" onClick={() => void openExpected(report)}>
-                      查看 diff／重新套用
+                      查看變更預覽／重新套用
                     </button>
                   ) : null}
                   {canImport(report) ? (
@@ -414,8 +414,8 @@ export function DriftView({ onError, onToast, onOpenDiff, onImport }: Props) {
         <ConfirmModal
           title={pendingAction === "apply" ? "批次重新套用設定？" : "批次匯入未納管供應商？"}
           message={pendingAction === "apply"
-            ? `將重新套用 ${applySelection.length} 個已漂移 Harness 的 kumoSwitch 預期設定。\n\n每個 Harness 套用前仍會建立備份，但批次操作不會逐一顯示 diff。`
-            : `將掃描 ${new Set(importSelection.map((report) => report.tool)).size} 個 Harness，匯入其中尚未納管的供應商。\n\n既有項目會略過，不會刪除或覆蓋。`}
+            ? `將重新套用 ${applySelection.length} 個已漂移工具的 kumoSwitch 預期設定。\n\n每個工具套用前仍會建立備份，但批次操作不會逐一顯示變更預覽。`
+            : `將掃描 ${new Set(importSelection.map((report) => report.tool)).size} 個工具，匯入其中尚未納管的供應商。\n\n既有項目會略過，不會刪除或覆蓋。`}
           confirmLabel={pendingAction === "apply" ? "開始重新套用" : "開始匯入"}
           danger={pendingAction === "apply"}
           busy={batchBusy}

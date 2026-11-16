@@ -98,9 +98,9 @@ export function HarnessManagerView({
     <section className="harness-manager">
       <header className="harness-manager-head">
         <div>
-          <span className="kicker">Harness lifecycle</span>
-          <h2>Harness 安裝與管理</h2>
-          <p>查看 CLI／桌面版支援、安裝固定套件、開啟官方下載頁，並直接跳到各 Harness 的設定位置。</p>
+          <span className="kicker">Tool lifecycle</span>
+          <h2>工具安裝與管理</h2>
+          <p>查看 CLI／桌面版支援、安裝固定套件、開啟官方下載頁，並直接跳到各工具的設定位置。</p>
         </div>
         <button className="ghost" onClick={() => void refresh()} disabled={loading}>
           {loading ? <span className="spin" /> : null} 重新掃描
@@ -108,7 +108,7 @@ export function HarnessManagerView({
       </header>
 
       <div className="harness-summary-grid">
-        <div><span>Harness</span><strong>{summary.total}</strong><small>已納入設定管理</small></div>
+        <div><span>工具</span><strong>{summary.total}</strong><small>已納入設定管理</small></div>
         <div><span>已偵測</span><strong>{summary.installed}</strong><small>CLI 或設定目錄存在</small></div>
         <div><span>CLI</span><strong>{summary.cli}</strong><small>可在終端使用</small></div>
         <div><span>桌面版</span><strong>{summary.desktop}</strong><small>有第一方或共用設定</small></div>
@@ -117,15 +117,15 @@ export function HarnessManagerView({
 
       <div className="harness-manager-note">
         <strong>安裝邊界</strong>
-        <span>kumoSwitch 只執行下方顯示的固定 npm 套件命令，不接受任意 shell script 或使用者輸入的參數。沒有安全安裝命令的 Harness 會改開官方文件或下載頁。</span>
+        <span>kumoSwitch 只執行下方顯示的固定 npm 套件命令，不接受任意 shell script 或使用者輸入的參數。沒有安全安裝命令的工具會改開官方文件或下載頁。</span>
       </div>
 
       <div className="harness-toolbar">
         <div className="harness-search">
           <span aria-hidden="true">⌕</span>
-          <input type="search" value={query} placeholder="搜尋 Harness、套件或設定路徑…" aria-label="搜尋 Harness" onChange={(event) => setQuery(event.target.value)} />
+          <input type="search" value={query} placeholder="搜尋工具、套件或設定路徑…" aria-label="搜尋工具" onChange={(event) => setQuery(event.target.value)} />
         </div>
-        <div className="segmented compact" role="group" aria-label="Harness 篩選">
+        <div className="segmented compact" role="group" aria-label="工具篩選">
           {([
             ["all", "全部"],
             ["missing", "未安裝"],
@@ -139,7 +139,7 @@ export function HarnessManagerView({
 
       <div className="harness-manager-grid">
         {filtered.map((entry) => (
-          <article className={`harness-manager-card${entry.installed ? " installed" : ""}`} key={entry.id} aria-label={`Harness ${entry.name}`}>
+          <article className={`harness-manager-card${entry.installed ? " installed" : ""}`} key={entry.id} aria-label={`工具 ${entry.name}`}>
             <div className="harness-card-head">
               <HarnessIcon id={entry.id} name={entry.name} size={42} />
               <div className="harness-card-title">
@@ -182,7 +182,7 @@ export function HarnessManagerView({
         ))}
       </div>
 
-      {!loading && filtered.length === 0 ? <div className="empty">沒有符合條件的 Harness。</div> : null}
+      {!loading && filtered.length === 0 ? <div className="empty">沒有符合條件的工具。</div> : null}
 
       {installTarget ? (
         <Modal
@@ -208,7 +208,7 @@ export function HarnessManagerView({
         <Modal
           top
           narrow
-          title={installResult.ok ? "Harness 安裝完成" : "Harness 安裝未完成"}
+          title={installResult.ok ? "工具安裝完成" : "工具安裝未完成"}
           onClose={() => setInstallResult(null)}
           footer={<button className="primary" onClick={() => setInstallResult(null)}>關閉</button>}
         >

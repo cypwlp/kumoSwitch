@@ -62,6 +62,7 @@ test("API Key can be explicitly cleared without rewriting other fields", async (
 test("CC Switch managed providers are shown separately and can be imported", async ({ page }) => {
   await expect(page.getByText("CC Switch 管理的供應商", { exact: true })).toBeVisible();
   await expect(page.getByText(/來自 cc-switch\.db/)).toBeVisible();
+  await page.getByText("CC Switch 管理的供應商", { exact: true }).click();
   const externalProviders = page.locator(".ccswitch-provider");
   await expect(externalProviders).toHaveCount(3);
   const openRouter = externalProviders.filter({ hasText: "OpenRouter" });
@@ -72,6 +73,7 @@ test("CC Switch managed providers are shown separately and can be imported", asy
 });
 
 test("CC Switch batch import and route-stack mirroring are available", async ({ page }) => {
+  await page.getByText("CC Switch 管理的供應商", { exact: true }).click();
   const openRouter = page.locator(".ccswitch-provider").filter({ hasText: "OpenRouter" });
   await openRouter.getByRole("checkbox", { name: /選取 OpenRouter/ }).check();
   await page.getByRole("button", { name: "批次匯入", exact: true }).click();
@@ -90,6 +92,7 @@ test("Pi and Oh My Pi are available as first-class Harnesses", async ({ page }) 
 
 test("Harness rail shows distinct icons and desktop configuration scope", async ({ page }) => {
   const icons = page.locator(".rail .tool .harness-icon");
+  await page.getByRole("button", { name: /其他工具/ }).click();
   await expect(icons).toHaveCount(15);
   await expect(page.locator('.rail .harness-icon[data-harness="codex"]')).toBeVisible();
   await expect(page.locator('.rail .harness-icon[data-harness="pi"]')).toBeVisible();
@@ -152,15 +155,15 @@ test("provider chooser searches categories and keeps account login explicit", as
 });
 
 test("Harness manager installs a fixed package and explains desktop support", async ({ page }) => {
-  await openWorkspace(page, "Harness 管理");
-  await expect(page.getByRole("heading", { name: "Harness 安裝與管理" })).toBeVisible();
+  await openWorkspace(page, "工具管理");
+  await expect(page.getByRole("heading", { name: "工具安裝與管理" })).toBeVisible();
   await expect(page.locator(".harness-manager-card")).toHaveCount(15);
 
-  const codex = page.getByRole("article", { name: "Harness Codex" });
+  const codex = page.getByRole("article", { name: "工具 Codex" });
   await expect(codex).toContainText("CLI + 桌面版");
   await expect(codex).toContainText("已偵測");
 
-  const gemini = page.getByRole("article", { name: "Harness Gemini CLI" });
+  const gemini = page.getByRole("article", { name: "工具 Gemini CLI" });
   await expect(gemini).toContainText("CLI");
   await gemini.getByRole("button", { name: "安裝 Gemini CLI" }).click();
   const installDialog = page.getByRole("dialog").last();
@@ -169,14 +172,14 @@ test("Harness manager installs a fixed package and explains desktop support", as
   await expect(installDialog.locator(".harness-command")).toContainText("@google/gemini-cli");
   await installDialog.getByRole("button", { name: "執行固定命令" }).click();
   const resultDialog = page.getByRole("dialog").last();
-  await expect(resultDialog.getByRole("heading", { name: "Harness 安裝完成" })).toBeVisible();
+  await expect(resultDialog.getByRole("heading", { name: "工具安裝完成" })).toBeVisible();
   await resultDialog.locator(".sheet-foot").getByRole("button", { name: "關閉" }).click();
   await expect(gemini).toContainText("已偵測");
   await expect(gemini.getByRole("button", { name: "更新 Gemini CLI" })).toBeVisible();
 
   await page.getByRole("button", { name: "桌面版", exact: true }).click();
-  await expect(page.getByRole("article", { name: "Harness Gemini CLI" })).toHaveCount(0);
-  await expect(page.getByRole("article", { name: "Harness Codex" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "工具 Gemini CLI" })).toHaveCount(0);
+  await expect(page.getByRole("article", { name: "工具 Codex" })).toBeVisible();
 });
 
 test("narrow provider chooser and Harness manager remain contained", async ({ page }) => {
@@ -198,7 +201,7 @@ test("narrow provider chooser and Harness manager remain contained", async ({ pa
 
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "取消", exact: true }).last().click();
-  await openWorkspace(page, "Harness 管理");
+  await openWorkspace(page, "工具管理");
   await expect(page.locator(".harness-manager-card")).toHaveCount(15);
   await expect(page.locator(".harness-toolbar .segmented button")).toHaveCount(4);
   const managerGeometry = await page.evaluate(() => ({
@@ -329,6 +332,7 @@ test("model discovery previews additions and preserves unreturned models", async
 });
 
 test("provider cards and command palette can switch models directly", async ({ page }) => {
+  await page.getByRole("button", { name: "進階", exact: true }).click();
   const quick = page.getByLabel("OpenCode Go 快速切換模型");
   await quick.selectOption("muse-spark-1.3");
   await expect(page.getByRole("heading", { name: "套用「OpenCode Go」到 Codex" })).toBeVisible();
@@ -383,7 +387,7 @@ test("drift batch selection can reapply drifted Harnesses", async ({ page }) => 
   const confirm = page.getByRole("dialog");
   await expect(confirm.getByRole("heading", { name: "批次重新套用設定？" })).toBeVisible();
   await confirm.getByRole("button", { name: "開始重新套用" }).click();
-  await expect(page.getByText("批次重新套用 1 個 Harness")).toBeVisible();
+  await expect(page.getByText("批次重新套用 1 個工具")).toBeVisible();
 });
 
 test("drift batch selection can import unmanaged Harnesses", async ({ page }) => {
@@ -557,10 +561,18 @@ test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
   await openWorkspace(page, "用量統計");
   await expect(page.getByRole("heading", { name: "統計儀表板" })).toBeVisible();
   await expect(page.getByText("掃描診斷")).toBeVisible();
-  await expect(page.getByText("3,700")).toBeVisible();
-  await expect(page.locator(".scan-root")).toHaveCount(2);
+  await expect(page.getByText("2,590")).toBeVisible();
+  await expect(page.locator(".scan-root")).toHaveCount(5);
   await expect(page.locator(".scan-root").getByText("Claude Code")).toBeVisible();
   await expect(page.locator(".scan-root").getByText("Codex", { exact: true })).toBeVisible();
+  await expect(page.locator(".scan-root").getByText("DSH", { exact: true })).toBeVisible();
+  await page.locator(".stats").getByRole("button", { name: /^Pi/ }).click();
+  await expect(page.locator(".stats tbody tr")).toHaveCount(1);
+  await expect(page.locator(".stats tbody")).toContainText("deepseek-v4.1-flash");
+  await page.locator(".stats").getByRole("button", { name: "全部", exact: true }).first().click();
+  await page.getByLabel("搜尋模型").fill("glm");
+  await expect(page.locator(".stats tbody tr")).toHaveCount(1);
+  await page.getByLabel("搜尋模型").fill("");
   await page.locator(".stats").getByRole("button", { name: "重新掃描" }).click();
   await expect(page.getByText("掃描診斷")).toBeVisible();
 });
@@ -596,6 +608,7 @@ test("one-click rollback offers the previous provider", async ({ page }) => {
 });
 
 test("configuration import previews conflicts and applies a bulk policy", async ({ page }) => {
+  await page.getByRole("button", { name: "進階", exact: true }).click();
   await page.getByRole("button", { name: /^從設定檔導入/ }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: /掃描到 \d+ 個供應商/ })).toBeVisible();
@@ -667,9 +680,9 @@ test("shared Profile library syncs the same provider across Harnesses", async ({
   await expect(page.getByRole("heading", { name: "共用供應商 Profile" })).toBeVisible();
   const card = page.locator(".profile-card").first();
   await expect(card.getByRole("heading", { name: "OpenCode Zen" })).toBeVisible();
-  await expect(card.getByText("3 個 Harness")).toBeVisible();
+  await expect(card.getByText("3 個工具")).toBeVisible();
   await card.getByRole("button", { name: "同步全部" }).click();
-  await expect(page.getByText(/已同步 1 個 Harness/)).toBeVisible();
+  await expect(page.getByText(/已同步 1 個工具/)).toBeVisible();
   await card.getByRole("button", { name: "編輯" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "編輯共用 Profile" })).toBeVisible();
@@ -720,7 +733,7 @@ test("compatibility matrix and accessibility preferences are visible", async ({ 
   await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
   let dialog = page.getByRole("dialog");
   await dialog.getByRole("tab", { name: /^模型/ }).click();
-  await expect(dialog.getByText("Harness 相容性矩陣", { exact: false }).first()).toBeVisible();
+  await expect(dialog.getByText("工具相容性矩陣", { exact: false }).first()).toBeVisible();
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
 
   dialog = await openSettings(page);
@@ -736,8 +749,8 @@ test("Simplified Chinese locale applies to the full interface", async ({ page })
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
   await expect(dialog.getByRole("heading", { name: "无障碍与阅读" })).toBeVisible();
   await dialog.locator(".sheet-foot").getByRole("button", { name: /^(关闭|關閉)/ }).click();
-  await openWorkspace(page, "Harness 管理");
-  await expect(page.getByRole("heading", { name: "Harness 安装与管理" })).toBeVisible();
+  await openWorkspace(page, "工具管理");
+  await expect(page.getByRole("heading", { name: "工具安装与管理" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^(设置|設定)/ }).first()).toBeVisible();
   dialog = await openSettings(page);
   await dialog.getByRole("button", { name: "繁中" }).click();
@@ -755,6 +768,6 @@ test("English locale covers the new roadmap screens", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Backup & migration center" })).toBeVisible();
   await openWorkspace(page, "Guardian");
   await expect(page.getByRole("heading", { name: "Settings Guardian" })).toBeVisible();
-  await openWorkspace(page, "Harness management");
-  await expect(page.getByRole("heading", { name: "Harness setup & management" })).toBeVisible();
+  await openWorkspace(page, "Tool management");
+  await expect(page.getByRole("heading", { name: "Tool setup & management" })).toBeVisible();
 });

@@ -110,7 +110,7 @@ static MANIFESTS: &[HarnessManifest] = &[
         website_url: "https://geminicli.com/",
         docs_url: "https://github.com/google-gemini/gemini-cli",
         desktop_url: None,
-        desktop_note: "官方 Gemini CLI 目前是終端 Harness；Google 的其他桌面產品不是同一套 CLI 設定。",
+        desktop_note: "官方 Gemini CLI 目前是終端工具；Google 的其他桌面產品不是同一套 CLI 設定。",
         bin: "gemini",
         install: npm("@google/gemini-cli", &[]),
     },
@@ -190,7 +190,7 @@ static MANIFESTS: &[HarnessManifest] = &[
         website_url: "https://charm.land/crush",
         docs_url: "https://github.com/charmbracelet/crush",
         desktop_url: None,
-        desktop_note: "Crush 是終端 TUI；官方桌面通知功能不等於獨立桌面 Harness。",
+        desktop_note: "Crush 是終端 TUI；官方桌面通知功能不等於獨立桌面工具。",
         bin: "crush",
         install: npm("@charmland/crush", &[]),
     },
@@ -310,7 +310,7 @@ pub fn manager_entries() -> Vec<HarnessManagerEntry> {
 }
 
 pub fn install(id: &str) -> Result<HarnessInstallResult, String> {
-    let manifest = find(id).ok_or_else(|| format!("未知的 Harness：{id}"))?;
+    let manifest = find(id).ok_or_else(|| format!("未知的工具：{id}"))?;
     let installer = manifest
         .install
         .ok_or_else(|| format!("{} 尚無安全的內建安裝命令，請使用官方下載頁", manifest.id))?;
@@ -320,7 +320,7 @@ pub fn install(id: &str) -> Result<HarnessInstallResult, String> {
 
     let _guard = INSTALL_LOCK
         .lock()
-        .map_err(|_| "另一個 Harness 安裝工作仍在進行".to_string())?;
+        .map_err(|_| "另一個工具安裝工作仍在進行".to_string())?;
     let command_text = installer.command();
     crate::audit::record("harness.install.start", command_text.clone());
 

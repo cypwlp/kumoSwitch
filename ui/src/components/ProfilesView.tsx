@@ -122,7 +122,7 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
       const result = await api.profileSync(profile.id, toolsToSync);
       await refresh();
       onChanged();
-      onToast(`已同步 ${result.synced.length} 個 Harness${result.skipped.length ? `，略過 ${result.skipped.length} 項` : ""}`, "ok");
+      onToast(`已同步 ${result.synced.length} 個工具${result.skipped.length ? `，略過 ${result.skipped.length} 項` : ""}`, "ok");
     } catch (error) {
       onError(errorText(error));
     } finally {
@@ -137,7 +137,7 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
       setDeleteId(null);
       await refresh();
       onChanged();
-      onToast("共用 Profile 已刪除；各 Harness 既有供應商不會被刪除", "ok");
+      onToast("共用 Profile 已刪除；各工具既有供應商不會被刪除", "ok");
     } catch (error) {
       onError(errorText(error));
     } finally {
@@ -165,9 +165,9 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
     <section className="profiles-view" aria-busy={busy}>
       <header className="profiles-head">
         <div>
-          <span className="kicker">Cross-Harness library</span>
+          <span className="kicker">Cross-tool library</span>
           <h2>共用供應商 Profile</h2>
-          <p>一份加密的 endpoint、金鑰與模型組合，可同步到 Codex、Claude、Gemini 或其他 Harness，各自保留相容的 protocol 與模型映射。</p>
+          <p>一份加密的連線位址、金鑰與模型組合，可同步到 Codex、Claude、Gemini 或其他工具，各自保留相容的 protocol 與模型映射。</p>
         </div>
         <div className="profiles-actions">
           <button className="ghost" onClick={() => void refresh()} disabled={busy}>重新整理</button>
@@ -180,8 +180,8 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
           <strong>從現有供應商建立</strong>
           <span>沿用其加密金鑰與模型目錄，不必重新輸入。</span>
         </div>
-        <select value={importTool} aria-label="來源 Harness" onChange={(event) => { setImportTool(event.target.value); setImportProviderId(""); }}>
-          <option value="">選擇 Harness…</option>
+        <select value={importTool} aria-label="來源工具" onChange={(event) => { setImportTool(event.target.value); setImportProviderId(""); }}>
+          <option value="">選擇工具…</option>
           {tools.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
         </select>
         <select value={importProviderId} aria-label="來源供應商" onChange={(event) => setImportProviderId(event.target.value)} disabled={!importTool}>
@@ -206,10 +206,10 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
                 </div>
                 <code className="profile-url">{profile.base_url}</code>
                 <dl className="profile-facts">
-                  <div><dt>Protocol</dt><dd>{profile.kind || "各 Harness 預設"}</dd></div>
+                  <div><dt>Protocol</dt><dd>{profile.kind || "各工具預設"}</dd></div>
                   <div><dt>模型</dt><dd>{profile.model || "—"}</dd></div>
                   <div><dt>金鑰版本</dt><dd>{profile.key_count || 0}</dd></div>
-                  <div><dt>已綁定</dt><dd>{enabled.length} 個 Harness</dd></div>
+                  <div><dt>已綁定</dt><dd>{enabled.length} 個工具</dd></div>
                 </dl>
                 <div className="profile-targets">
                   {enabled.length ? enabled.map((target) => (
@@ -217,7 +217,7 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
                       {tools.find((tool) => tool.id === target.tool)?.name ?? target.tool}
                       <small>{target.model || profile.model || "預設模型"}</small>
                     </span>
-                  )) : <span className="muted small">尚未選擇要同步的 Harness</span>}
+                  )) : <span className="muted small">尚未選擇要同步的工具</span>}
                 </div>
                 <div className="profile-card-actions">
                   <button className="primary small" disabled={busy} onClick={() => void syncProfile(profile)}>同步全部</button>
@@ -251,7 +251,7 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
           onClose={() => setEditing(null)}
           footer={
             <>
-              <span className="muted small">{enabledTargetCount} 個 Harness 將使用這份 Profile</span>
+              <span className="muted small">{enabledTargetCount} 個工具將使用這份 Profile</span>
               <span className="spacer" />
               <button className="ghost" onClick={() => setEditing(null)} disabled={busy}>取消</button>
               <button className="primary" onClick={() => void save()} disabled={busy}>{busy ? "儲存中…" : "儲存 Profile"}</button>
@@ -272,7 +272,7 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
             <div className="field profile-form-wide"><label>備註</label><input value={editing.note} onChange={(event) => setEditing({ ...editing, note: event.target.value })} placeholder="選填" /></div>
           </div>
 
-          <div className="detail-subhead">要同步到哪些 Harness？</div>
+          <div className="detail-subhead">要同步到哪些工具？</div>
           <div className="profile-target-editor">
             {tools.map((tool) => {
               const target = targetFor(editing, tool.id);
@@ -293,14 +293,14 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
                     aria-label={`${tool.name} protocol 映射`}
                     value={target.kind}
                     disabled={!target.enabled}
-                    placeholder={tool.kind_choices[0] || "Harness 預設"}
+                    placeholder={tool.kind_choices[0] || "工具預設"}
                     onChange={(event) => updateTarget(tool.id, { kind: event.target.value })}
                   />
                 </div>
               );
             })}
           </div>
-          <p className="fineprint">同步只會建立或更新 kumoSwitch 內的供應商資料，不會立即改寫 Harness 設定檔；仍需在該 Harness 手動按「套用」確認 diff。金鑰會以本機安全儲存加密。</p>
+          <p className="fineprint">同步只會建立或更新 kumoSwitch 內的供應商資料，不會立即改寫工具設定檔；仍需在該工具手動按「套用」確認變更預覽。金鑰會以本機安全儲存加密。</p>
         </Modal>
       ) : null}
 
@@ -315,7 +315,7 @@ export function ProfilesView({ onError, onToast, onChanged }: Props) {
             </>
           }
         >
-          <p>這只會刪除共用 Profile；已同步到各 Harness 的供應商與實際設定檔會保留。</p>
+          <p>這只會刪除共用 Profile；已同步到各工具的供應商與實際設定檔會保留。</p>
         </Modal>
       ) : null}
 

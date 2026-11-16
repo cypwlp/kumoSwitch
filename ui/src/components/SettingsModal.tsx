@@ -1,7 +1,7 @@
 import type { AppInfo } from "../types";
 import type { ThemeMode } from "../theme";
 import type { UpdateCheck } from "../updater";
-import type { Density, TextScale, UiPreferences } from "../preferences";
+import type { Density, TextScale, UiMode, UiPreferences } from "../preferences";
 import { AutoIcon, MoonIcon, SunIcon } from "./Icons";
 import { LangToggle } from "./LangToggle";
 import { Modal } from "./Modal";
@@ -133,7 +133,7 @@ export function SettingsModal({
               </select>
             </label>
             <button className={`settings-toggle compact${preUpdateBackup ? " on" : ""}`} onClick={onTogglePreUpdateBackup} aria-pressed={preUpdateBackup}>
-              <span><strong>更新前備份</strong><small>先為所有偵測到的 Harness 建立設定快照</small></span><i aria-hidden="true" />
+              <span><strong>更新前備份</strong><small>先為所有偵測到的工具建立設定快照</small></span><i aria-hidden="true" />
             </button>
           </div>
           <p className="settings-help">自動更新一律使用 Stable 的簽章清單；Beta 通道會開啟對應的預覽版安裝向導，避免預覽版誤推送給一般使用者。</p>
@@ -176,6 +176,18 @@ export function SettingsModal({
               </button>
             ))}
           </div>
+          <div className="settings-choice-row">
+            <span>介面模式</span>
+            <div className="segmented compact" role="group" aria-label="介面模式">
+              {([
+                ["simple", "簡單"],
+                ["advanced", "進階"],
+              ] as [UiMode, string][]).map(([value, label]) => (
+                <button key={value} className={preferences.uiMode === value ? "on" : ""} aria-pressed={preferences.uiMode === value} onClick={() => onPreferences({ uiMode: value })}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <p className="settings-help">簡單模式只保留切換供應商需要的資訊；進階模式顯示健康度、協議、模型與批次工具。</p>
           <div className="settings-choice-row settings-language-row">
             <span>語言</span>
             <LangToggle />
@@ -226,11 +238,11 @@ export function SettingsModal({
             <h4>工具與頁面</h4>
           </div>
           <div className="settings-nav-grid">
-            <button onClick={onOpenHarnesses}><strong>Harness 管理</strong><small>安裝、桌面版與設定位置</small></button>
+            <button onClick={onOpenHarnesses}><strong>工具管理</strong><small>安裝、桌面版與設定位置</small></button>
             <button onClick={onOpenStats}><strong>用量統計</strong><small>Token、成本與掃描診斷</small></button>
             <button onClick={onOpenProxy}><strong>代理與路由</strong><small>故障轉移、路由與即時觀測</small></button>
             <button onClick={onOpenGuardian}><strong>設定守護</strong><small>漂移、時間線與自動修復</small></button>
-            <button onClick={onOpenProfiles}><strong>共用 Profile</strong><small>跨 Harness 重用供應商</small></button>
+            <button onClick={onOpenProfiles}><strong>共用 Profile</strong><small>跨工具重用供應商</small></button>
             <button onClick={onOpenBackups}><strong>備份中心</strong><small>版本、排程與遷移</small></button>
           </div>
         </section>
@@ -258,7 +270,7 @@ export function SettingsModal({
           <div className="settings-data-actions">
             <button className="ghost small" onClick={onExport}>匯出加密清單</button>
             <button className="ghost small" onClick={onImport}>匯入清單／遷移包</button>
-            <button className="ghost small" onClick={onRescan}>重新掃描 Harness</button>
+            <button className="ghost small" onClick={onRescan}>重新掃描工具</button>
           </div>
           <span className="settings-label">本機資料位置</span>
           <code className="settings-path">{info?.dataDir ?? ""}</code>

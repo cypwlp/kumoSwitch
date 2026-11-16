@@ -421,9 +421,16 @@ export interface UsageRow {
   cache_write: number;
   records: number;
   cost: number | null;
+  duration_ms: number;
+  timed_output: number;
+  timed_records: number;
+  avg_duration_ms: number | null;
+  output_per_sec: number | null;
+  ttft_ms: number | null;
+  ttft_records: number;
 }
 
-export interface DayRow { day: string; input: number; output: number; total: number; }
+export interface DayRow { day: string; source: string; input: number; output: number; total: number; }
 
 export interface UsageRoot {
   source: string;
@@ -442,6 +449,12 @@ export interface UsageReport {
   total_output: number;
   total_cache: number;
   total_cost: number | null;
+  total_duration_ms: number;
+  timed_records: number;
+  timed_output: number;
+  avg_duration_ms: number | null;
+  output_per_sec: number | null;
+  ttft_ms: number | null;
   days_scanned: number;
   roots: UsageRoot[];
   skipped_files: number;

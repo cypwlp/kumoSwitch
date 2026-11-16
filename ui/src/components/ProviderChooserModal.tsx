@@ -79,7 +79,7 @@ export function ProviderChooserModal({
       onClose={onClose}
       footer={
         <span className="provider-chooser-footnote">
-          選取後仍可修改。只有按下儲存、檢視 diff 並確認後才會寫入 {tool.name} 設定。
+          選取後仍可修改。只有按下儲存、檢視變更預覽並確認後才會寫入 {tool.name} 設定。
         </span>
       }
     >

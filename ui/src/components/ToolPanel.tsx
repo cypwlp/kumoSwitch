@@ -41,6 +41,8 @@ interface PanelProps {
   onToggleAutoModelSync: () => void;
   sort: "manual" | "name" | "recent";
   onSort: (value: "manual" | "name" | "recent") => void;
+  simple: boolean;
+  onSimple: (simple: boolean) => void;
 }
 
 export function ToolPanel({
@@ -79,6 +81,8 @@ export function ToolPanel({
   onToggleAutoModelSync,
   sort,
   onSort,
+  simple,
+  onSimple,
 }: PanelProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [ccSelected, setCcSelected] = useState<Set<string>>(new Set());
@@ -119,13 +123,13 @@ export function ToolPanel({
         <div className="title-row">
           <HarnessIcon id={tool.id} name={tool.name} size={34} />
           <h2>{tool.name}</h2>
-          <span className="badge subtle">Harness</span>
+          <span className="badge subtle">工具</span>
           <span className={`badge surface-badge ${tool.surface}`}>{tool.surface === "both" ? "CLI + 桌面版" : tool.surface === "desktop" ? "桌面版" : "CLI"}</span>
           <span className="muted">{tool.blurb}</span>
           {tool.verified ? (
             <span className="badge ok">格式已驗證</span>
           ) : (
-            <span className="badge warn">格式未實測，請先看 diff</span>
+            <span className="badge warn">格式未實測，請先看變更預覽</span>
           )}
         </div>
         <div className="path-row">
@@ -140,7 +144,7 @@ export function ToolPanel({
       {tool.takeover ? (
         <div className="banner warn">
           <strong>
-            <WarnIcon /> cc-switch 正在接管這個 Harness
+            <WarnIcon /> cc-switch 正在接管這個工具
           </strong>
           <span>偵測到代理模式啟用中，套用後可能被 cc-switch 覆蓋。建議先切回直連模式。</span>
         </div>
@@ -166,25 +170,134 @@ export function ToolPanel({
         <span className="current-restart">{tool.restart}</span>
       </div>
 
-      <nav className="resource-path" aria-label="Harness、供應商與模型層級">
-        <span className="resource-step complete">
-          <i>1</i>
-          <span><b>Harness</b><em>{tool.name}</em></span>
+      {tool.cc_switch?.available && tool.cc_switch.providers.length ? (
+        <p className="ccswitch-inline">
+          <span className="ccswitch-mark">CC</span>
+          CC Switch 另管 {tool.cc_switch.providers.length} 個供應商
+          <button
+            type="button"
+            className="linklike"
+            onClick={() => {
+              const el = document.getElementById("ccswitch-managed") as HTMLDetailsElement | null;
+              if (!el) return;
+              el.open = true;
+              el.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          >
+            查看／匯入
+          </button>
+        </p>
+      ) : null}
+
+      <div className="provider-list-head">
+        <div>
+          <h3>供應商 <span className="badge subtle">{total}</span></h3>
+          {simple ? null : <p>先選供應商，再進入它的模型。模型是供應商底下的子項目。</p>}
+        </div>
+      </div>
+
+      <div className="toolbar">
+        <input
+          ref={searchRef}
+          className="search"
+          type="search"
+          placeholder="搜尋供應商名稱、URL 或模型…（按 / 聚焦）"
+          autoComplete="off"
+          value={filter}
+          aria-label="篩選供應商"
+          onChange={(event) => onFilter(event.target.value)}
+        />
+        <span className="muted small">
+          {rows.length} / {total} 個供應商
         </span>
-        <span className="resource-chevron" aria-hidden="true">›</span>
-        <span className="resource-step active">
-          <i>2</i>
-          <span><b>供應商</b><em>{total} 個 endpoint／金鑰組合</em></span>
-        </span>
-        <span className="resource-chevron" aria-hidden="true">›</span>
-        <span className="resource-step">
-          <i>3</i>
-          <span><b>模型</b><em>進入供應商後管理</em></span>
-        </span>
-      </nav>
+        <div className="spacer" />
+        {simple ? null : (
+          <>
+            <select
+              className="mini-select"
+              value={sort}
+              aria-label="排序方式"
+              onChange={(event) => onSort(event.target.value as "manual" | "name" | "recent")}
+            >
+              <option value="manual">原始順序</option>
+              <option value="name">依名稱</option>
+              <option value="recent">最近使用</option>
+            </select>
+            <button
+              className="ghost"
+              onClick={onImportConfig}
+              disabled={busy}
+              title="讀取這個工具現有的設定檔，把裡面的供應商收進 kumoSwitch"
+            >
+              從設定檔導入
+              {tool.importable > 0 ? <span className="cnt">{tool.importable}</span> : null}
+            </button>
+          </>
+        )}
+        <div className="segmented compact view-mode" role="group" aria-label="介面模式">
+          <button type="button" className={simple ? "on" : ""} aria-pressed={simple} onClick={() => onSimple(true)}>簡單</button>
+          <button type="button" className={!simple ? "on" : ""} aria-pressed={!simple} onClick={() => onSimple(false)}>進階</button>
+        </div>
+        <div className={`more${moreOpen ? " open" : ""}`} ref={moreRef}>
+          <button
+            ref={moreTriggerRef}
+            type="button"
+            className="ghost more-trigger"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            aria-controls="harness-more-menu"
+            onClick={() => setMoreOpen((open) => !open)}
+          >
+            更多
+          </button>
+          {moreOpen ? (
+            <div className="more-menu" id="harness-more-menu" role="menu" ref={moreMenuRef}>
+              <button type="button" role="menuitem" onClick={menuAction(onPalette)}>
+                快速切換 <kbd>Ctrl</kbd><kbd>K</kbd>
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onBackups)}>
+                備份紀錄
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onDiagnostics)}>
+                匯出診斷摘要
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onCheckUpdate)}>
+                檢查更新
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onOpenInstall)}>
+                開啟安裝／更新向導
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onToggleAutoHealth)}>
+                {autoHealth ? "✓ 自動健康檢查（10 分鐘）" : "自動健康檢查（關）"}
+              </button>
+              <button type="button" role="menuitem" onClick={menuAction(onToggleAutoModelSync)}>
+                {autoModelSync ? "✓ 自動模型同步（供應商排程）" : "自動模型同步（關）"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <button className="primary" onClick={onAdd} title="新增供應商 (Ctrl+N)">
+          ＋ 新增供應商
+        </button>
+      </div>
+
+      <ProviderTable
+        rows={rows}
+        total={total}
+        tests={tests}
+        history={history}
+        activeId={tool.active_id}
+        simple={simple}
+        onAttemptReorder={(ids) => onReorder(ids)}
+        onSwitchModel={onSwitchModel}
+        onApply={onApply}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onTest={onTest}
+      />
 
       {tool.cc_switch?.available ? (
-        <details className="ccswitch-source" open>
+        <details className="ccswitch-source" id="ccswitch-managed" open={simple ? undefined : true}>
           <summary>
             <div className="ccswitch-source-title">
               <span className="ccswitch-mark">CC</span>
@@ -257,105 +370,6 @@ export function ToolPanel({
         </details>
       ) : null}
 
-      <div className="provider-list-head">
-        <div>
-          <span className="eyebrow">Provider directory</span>
-          <h3>供應商</h3>
-          <p>供應商是獨立的 endpoint＋金鑰；模型是供應商底下的子項目。先選供應商，再進入它的模型。</p>
-        </div>
-        <span className="badge subtle">{total} 個供應商</span>
-      </div>
-
-      <div className="toolbar">
-        <input
-          ref={searchRef}
-          className="search"
-          type="search"
-          placeholder="搜尋供應商名稱、URL 或模型…（按 / 聚焦）"
-          autoComplete="off"
-          value={filter}
-          aria-label="篩選供應商"
-          onChange={(event) => onFilter(event.target.value)}
-        />
-        <span className="muted small">
-          {rows.length} / {total} 個供應商
-        </span>
-        <div className="spacer" />
-        <select
-          className="mini-select"
-          value={sort}
-          aria-label="排序方式"
-          onChange={(event) => onSort(event.target.value as "manual" | "name" | "recent")}
-        >
-          <option value="manual">原始順序</option>
-          <option value="name">依名稱</option>
-          <option value="recent">最近使用</option>
-        </select>
-        <button
-          className="ghost"
-          onClick={onImportConfig}
-          disabled={busy}
-          title="讀取這個 Harness 現有的設定檔，把裡面的供應商收進 kumoSwitch"
-        >
-          從設定檔導入
-          {tool.importable > 0 ? <span className="cnt">{tool.importable}</span> : null}
-        </button>
-        <div className={`more${moreOpen ? " open" : ""}`} ref={moreRef}>
-          <button
-            ref={moreTriggerRef}
-            type="button"
-            className="ghost more-trigger"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-            aria-controls="harness-more-menu"
-            onClick={() => setMoreOpen((open) => !open)}
-          >
-            更多
-          </button>
-          {moreOpen ? (
-            <div className="more-menu" id="harness-more-menu" role="menu" ref={moreMenuRef}>
-              <button type="button" role="menuitem" onClick={menuAction(onPalette)}>
-                快速切換 <kbd>Ctrl</kbd><kbd>K</kbd>
-              </button>
-              <button type="button" role="menuitem" onClick={menuAction(onBackups)}>
-                備份紀錄
-              </button>
-              <button type="button" role="menuitem" onClick={menuAction(onDiagnostics)}>
-                匯出診斷摘要
-              </button>
-              <button type="button" role="menuitem" onClick={menuAction(onCheckUpdate)}>
-                檢查更新
-              </button>
-              <button type="button" role="menuitem" onClick={menuAction(onOpenInstall)}>
-                開啟安裝／更新向導
-              </button>
-              <button type="button" role="menuitem" onClick={menuAction(onToggleAutoHealth)}>
-                {autoHealth ? "✓ 自動健康檢查（10 分鐘）" : "自動健康檢查（關）"}
-              </button>
-              <button type="button" role="menuitem" onClick={menuAction(onToggleAutoModelSync)}>
-                {autoModelSync ? "✓ 自動模型同步（供應商排程）" : "自動模型同步（關）"}
-              </button>
-            </div>
-          ) : null}
-        </div>
-        <button className="primary" onClick={onAdd} title="新增供應商 (Ctrl+N)">
-          ＋ 新增供應商
-        </button>
-      </div>
-
-      <ProviderTable
-        rows={rows}
-        total={total}
-        tests={tests}
-        history={history}
-        activeId={tool.active_id}
-        onAttemptReorder={(ids) => onReorder(ids)}
-        onSwitchModel={onSwitchModel}
-        onApply={onApply}
-        onEdit={onEdit}
-        onDelete={onDelete}
-        onTest={onTest}
-      />
     </section>
   );
 }

@@ -144,7 +144,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .tooltip("kumoSwitch — AI Harness 供應商切換器")
+        .tooltip("kumoSwitch — AI 工具供應商切換器")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {

@@ -444,14 +444,14 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     try {
       if (!provider) {
         const levels = tool.reasoning_levels.filter(Boolean);
-        if (!levels.length) throw new Error("這個 Harness 尚未定義思考等級");
+        if (!levels.length) throw new Error("這個工具尚未定義思考等級");
         const preferred = levels.includes(model.reasoning_level ?? "")
           ? model.reasoning_level!
           : levels.includes("medium") ? "medium" : levels[0];
         updateModel(index, { reasoning_levels: levels, reasoning_level: preferred });
         setReasoningNotices((previous) => ({
           ...previous,
-          [modelId]: `${tool.reasoning_target ? `使用 ${tool.name} 支援的 ${levels.length} 個等級 · 寫入 ${tool.reasoning_target}` : `使用 ${tool.name} 支援的 ${levels.length} 個等級（此 Harness 尚未支援寫入設定）`} · 儲存供應商後可查詢 context／max output`,
+          [modelId]: `${tool.reasoning_target ? `使用 ${tool.name} 支援的 ${levels.length} 個等級 · 寫入 ${tool.reasoning_target}` : `使用 ${tool.name} 支援的 ${levels.length} 個等級（此工具尚未支援寫入設定）`} · 儲存供應商後可查詢 context／max output`,
         }));
         return;
       }
@@ -467,7 +467,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
       });
       setReasoningNotices((previous) => ({
         ...previous,
-        [modelId]: `${discovered.message}${discovered.supported ? ` · 寫入 ${discovered.target}` : " · 此 Harness 尚未支援寫入設定"}`,
+        [modelId]: `${discovered.message}${discovered.supported ? ` · 寫入 ${discovered.target}` : " · 此工具尚未支援寫入設定"}`,
       }));
     } catch (error) {
       setReasoningNotices((previous) => ({ ...previous, [modelId]: errorText(error) }));
@@ -909,7 +909,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
         }
       >
         <div className="provider-detail-context" aria-label="目前位置">
-          <span>{tool.name} Harness</span>
+          <span>{tool.name} · 工具</span>
           <b aria-hidden="true">›</b>
           <span>供應商</span>
           <b aria-hidden="true">›</b>
@@ -961,7 +961,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
               </div>
             </div>
             <dl className="detail-grid">
-              <div><dt>Harness</dt><dd>{tool.name}</dd></div>
+              <div><dt>工具</dt><dd>{tool.name}</dd></div>
               <div><dt>Protocol</dt><dd>{form.kind || "預設"}</dd></div>
               <div><dt>Base URL</dt><dd className="mono">{form.base_url || "—"}</dd></div>
               <div><dt>API Key</dt><dd>{clearKey ? "將清除" : form.has_api_key || form.api_key ? form.api_key_masked || "已儲存" : "未設定"}</dd></div>
@@ -981,7 +981,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
               <div>
                 <h4>模型</h4>
                 <p>
-                  設定這個供應商可用的模型。圓點代表下次套用時要寫入 Harness 的模型。
+                  設定這個供應商可用的模型。圓點代表下次套用時要寫入工具的模型。
                   {form.model_synced_at ? ` 上次同步：${new Date(form.model_synced_at).toLocaleString()}` : " 尚未同步模型目錄。"}
                 </p>
               </div>
@@ -992,7 +992,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                     className="ghost"
                     disabled={busy || dirty}
                     onClick={() => void onSwitchModel(form.previous_model!)}
-                    title="切回上一個使用過的模型，並先顯示 diff"
+                    title="切回上一個使用過的模型，並先顯示變更預覽"
                   >
                     ↶ {form.previous_model}
                   </button>
@@ -1136,7 +1136,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                         <span className="model-expand-cue">{expanded ? "收起" : "編輯"}</span>
                       </button>
                       <button type="button" className={`model-active${active ? " on" : ""}`} aria-pressed={active} onClick={() => selectModel(model)} title="把這個模型設為供應商預設"><span className="model-dot" />{active ? "目前模型" : "設為目前"}</button>
-                      <button type="button" className="primary small model-switch" disabled={busy || dirty || !model.id.trim() || Boolean(testingModels[model.id])} title={dirty ? "請先儲存或放棄其他未儲存變更" : "只更新模型欄位，開啟 diff 後再確認"} onClick={() => void onSwitchModel(model.id.trim())}>{active ? "重新套用" : "切換並預覽"}</button>
+                      <button type="button" className="primary small model-switch" disabled={busy || dirty || !model.id.trim() || Boolean(testingModels[model.id])} title={dirty ? "請先儲存或放棄其他未儲存變更" : "只更新模型欄位，開啟變更預覽後再確認"} onClick={() => void onSwitchModel(model.id.trim())}>{active ? "重新套用" : "切換並預覽"}</button>
                       <details className="model-more">
                         <summary className="ghost small">更多</summary>
                         <div className="model-more-menu">
@@ -1162,11 +1162,11 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
 
                         <section className="reasoning-studio">
                           <div className="reasoning-studio-head">
-                            <div><strong>思考等級</strong><small>{tool.reasoning_target ? `套用後寫入 ${tool.reasoning_target}` : "此 Harness 尚未支援寫入；等級仍會保存在模型資料"}</small></div>
+                            <div><strong>思考等級</strong><small>{tool.reasoning_target ? `套用後寫入 ${tool.reasoning_target}` : "此工具尚未支援寫入；等級仍會保存在模型資料"}</small></div>
                             <button type="button" className="ghost small" aria-label={`自動獲取模型資訊 ${model.id || "新模型"}`} disabled={reasoningBusyForModel || !model.id.trim()} onClick={() => void detectReasoningLevels(index, model)}>{reasoningBusyForModel ? <><span className="spin" /> 查詢中</> : "自動獲取模型資訊"}</button>
                           </div>
                           <div className="reasoning-controls">
-                            <label><span>目前選擇</span><select aria-label={`思考等級 ${model.id || "新模型"}`} value={model.reasoning_level ?? ""} onChange={(event) => setReasoningLevel(index, model, event.target.value)}><option value="">模型／Harness 預設</option>{levels.map((level) => <option value={level} key={level}>{level}</option>)}{model.reasoning_level && !levels.includes(model.reasoning_level) ? <option value={model.reasoning_level}>{model.reasoning_level}</option> : null}</select></label>
+                            <label><span>目前選擇</span><select aria-label={`思考等級 ${model.id || "新模型"}`} value={model.reasoning_level ?? ""} onChange={(event) => setReasoningLevel(index, model, event.target.value)}><option value="">模型／工具預設</option>{levels.map((level) => <option value={level} key={level}>{level}</option>)}{model.reasoning_level && !levels.includes(model.reasoning_level) ? <option value={model.reasoning_level}>{model.reasoning_level}</option> : null}</select></label>
                             <span className="reasoning-count">{levels.length ? `${levels.length} 個可用等級` : "尚未取得等級"}</span>
                           </div>
                           {reasoningNotice ? <div className="reasoning-notice">{reasoningNotice}</div> : null}
@@ -1175,7 +1175,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
 
                         {compatibility ? (
                           <details className={`model-compatibility ${compatibility.status}`}>
-                            <summary>Harness 相容性矩陣 · {compatibility.score}/100</summary>
+                            <summary>工具相容性矩陣 · {compatibility.score}/100</summary>
                             <div className="model-compatibility-checks">{compatibility.checks.map((check) => <div className={`compat-check ${check.status}`} key={check.key}><span>{check.label}</span><strong>{check.status === "ok" ? "符合" : check.status === "fail" ? "阻擋" : check.status === "warn" ? "提醒" : "資訊"}</strong><p>{check.detail}</p></div>)}</div>
                             {compatibility.status === "incompatible" ? <div className="note error">明確不相容的組合會在套用前被阻擋。若確定要測試，請在 Metadata 加入 <code>"compatibility_override": true</code>。</div> : null}
                           </details>
@@ -1212,7 +1212,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
             <div className="detail-section-head">
               <div>
                 <h4>API Key 生命週期</h4>
-                <p>同一供應商可保存多把輪替金鑰；只有使用中的金鑰會寫入 Harness。其他金鑰保持加密待命，可隨時測試或切回。</p>
+                <p>同一供應商可保存多把輪替金鑰；只有使用中的金鑰會寫入工具。其他金鑰保持加密待命，可隨時測試或切回。</p>
               </div>
               <span className="badge subtle">{apiKeys.length} 個版本</span>
             </div>
@@ -1261,7 +1261,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 {keyError ? <div className="note error">{keyError}</div> : null}
                 <div className="key-isolation-note">
                   <strong>隔離原則</strong>
-                  <span>不同 Harness 的供應商各自保存金鑰版本；共用 Profile 同步時才會複製金鑰到對應 Harness。所有輪替、切換、測試與刪除都會寫入本機稽核紀錄。</span>
+                  <span>不同工具的供應商各自保存金鑰版本；共用 Profile 同步時才會複製金鑰到對應工具。所有輪替、切換、測試與刪除都會寫入本機稽核紀錄。</span>
                 </div>
               </>
             )}

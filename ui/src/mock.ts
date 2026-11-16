@@ -485,7 +485,7 @@ const MOCK_PROFILES: SharedProfileView[] = [{
   kind: "responses",
   model: "glm-5.3-flash",
   models: [{ id: "glm-5.3-flash", name: "GLM 5.3 Flash", context_window: 128000, max_output: 16384, reasoning: true, tools: true }],
-  note: "可重用到多個 Harness 的共用端點",
+  note: "可重用到多個工具的共用端點",
   tags: ["personal", "fallback"],
   targets: [
     { tool: "codex", provider_id: "cx-1", model: "glm-5.3-flash", kind: "responses", enabled: true, last_synced_at: Date.now() - 60000 },
@@ -603,7 +603,7 @@ function mockHarnessEntries(): HarnessManagerEntry[] {
       docs_url: `https://example.com/${seed.id}/docs`,
       desktop_url: surface === "cli" ? null : `https://example.com/${seed.id}/download`,
       desktop_available: surface !== "cli",
-      desktop_note: surface === "cli" ? "這個 Harness 目前只管理 CLI 設定。" : "CLI 與桌面版共用同一份使用者設定；套用後重新啟動即可。",
+      desktop_note: surface === "cli" ? "這個工具目前只管理 CLI 設定。" : "CLI 與桌面版共用同一份使用者設定；套用後重新啟動即可。",
       install_manager: pkg ? "npm" : null,
       install_package: pkg ?? null,
       install_command: pkg ? `npm install -g --no-fund --no-audit ${pkg}` : null,
@@ -799,7 +799,7 @@ function buildPreview(tool: string, providerId: string): Preview {
     warnings.push(`此供應商未填模型，將沿用目前的 ${seed.current.model || "（工具預設）"}`);
   }
   if (!seed.verified) {
-    warnings.push(`${seed.name} 的設定格式尚未實測，請逐行確認 diff 後再套用。`);
+    warnings.push(`${seed.name} 的設定格式尚未實測，請逐行確認變更預覽 後再套用。`);
   }
   if (seed.takeover) {
     warnings.push("cc-switch 正在接管這個工具，套用後可能被它的代理模式覆蓋。");
@@ -882,7 +882,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.22.0",
+        version: "0.23.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
@@ -1318,7 +1318,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "discover_model_reasoning": {
       const levels = MOCK_REASONING_LEVELS[tool] ?? [];
-      if (!levels.length) throw new Error("這個 Harness 尚未定義思考等級");
+      if (!levels.length) throw new Error("這個工具尚未定義思考等級");
       return {
         levels,
         default_level: levels.includes("medium") ? "medium" : levels[0],
@@ -1337,7 +1337,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "harness_install": {
       const id = typeof args.id === "string" ? args.id : "";
       const pkg = INSTALL_PACKAGES[id];
-      if (!pkg) throw new Error("這個 Harness 沒有內建安裝命令");
+      if (!pkg) throw new Error("這個工具沒有內建安裝命令");
       INSTALLED_HARNESSES.add(id);
       return {
         ok: true,
@@ -1408,9 +1408,11 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "usage_report": {
       const days = Number(args.days ?? 30);
       const rows = [
-        { source: "claude", model: "deepseek-v4.1-flash", input: 4_200_000, output: 310_000, cache_read: 3_600_000, cache_write: 120_000, records: 2100, cost: 2.6 },
-        { source: "claude", model: "muse-spark-1.3-contributor", input: 1_800_000, output: 150_000, cache_read: 1_500_000, cache_write: 60_000, records: 900, cost: null },
-        { source: "codex", model: "codex-session", input: 2_600_000, output: 220_000, cache_read: 2_300_000, cache_write: 0, records: 700, cost: null },
+        { source: "claude", model: "deepseek-v4.1-flash", input: 4_200_000, output: 310_000, cache_read: 3_600_000, cache_write: 120_000, records: 980, cost: 2.6, duration_ms: 690_000, timed_output: 310_000, timed_records: 980, avg_duration_ms: 704, output_per_sec: 449.3, ttft_ms: 1_240, ttft_records: 980 },
+        { source: "claude", model: "muse-spark-1.3-contributor", input: 1_800_000, output: 150_000, cache_read: 1_500_000, cache_write: 60_000, records: 420, cost: null, duration_ms: 355_000, timed_output: 150_000, timed_records: 420, avg_duration_ms: 845, output_per_sec: 422.5, ttft_ms: 1_510, ttft_records: 420 },
+        { source: "codex", model: "codex-session", input: 2_600_000, output: 220_000, cache_read: 2_300_000, cache_write: 0, records: 620, cost: null, duration_ms: 0, timed_output: 0, timed_records: 0, avg_duration_ms: null, output_per_sec: null, ttft_ms: null, ttft_records: 0 },
+        { source: "pi", model: "deepseek-v4.1-flash", input: 780_000, output: 64_000, cache_read: 610_000, cache_write: 0, records: 310, cost: 0.26, duration_ms: 248_000, timed_output: 64_000, timed_records: 310, avg_duration_ms: 800, output_per_sec: 258.1, ttft_ms: null, ttft_records: 0 },
+        { source: "dsh", model: "glm-5.3-flash", input: 1_240_000, output: 96_000, cache_read: 980_000, cache_write: 0, records: 260, cost: 0.38, duration_ms: 201_000, timed_output: 96_000, timed_records: 260, avg_duration_ms: 773, output_per_sec: 477.6, ttft_ms: null, ttft_records: 0 },
       ];
       const dayRows = [];
       const now = Date.now();
@@ -1418,15 +1420,24 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         const d = new Date(now - i * 86400_000).toISOString().slice(0, 10);
         const input = 120_000 + ((i * 37) % 90) * 1000;
         const output = 9000 + ((i * 13) % 40) * 100;
-        dayRows.push({ day: d, input, output, total: input + output });
+        dayRows.push({ day: d, source: "claude", input, output, total: input + output });
+        dayRows.push({ day: d, source: "codex", input: Math.round(input * 0.4), output: Math.round(output * 0.3), total: Math.round(input * 0.4) + Math.round(output * 0.3) });
+        dayRows.push({ day: d, source: "pi", input: Math.round(input * 0.15), output: Math.round(output * 0.12), total: Math.round(input * 0.15) + Math.round(output * 0.12) });
+        dayRows.push({ day: d, source: "dsh", input: Math.round(input * 0.22), output: Math.round(output * 0.18), total: Math.round(input * 0.22) + Math.round(output * 0.18) });
       }
       return {
-        rows, days: dayRows, files: 132, records: 3700,
-        total_input: 8_600_000, total_output: 680_000, total_cache: 7_580_000,
-        total_cost: 2.6, days_scanned: days,
+        rows, days: dayRows, files: 142, records: 2590,
+        total_input: 10_620_000, total_output: 840_000, total_cache: 8_990_000,
+        total_cost: 3.24,
+        total_duration_ms: 1_494_000, timed_records: 1970, timed_output: 620_000,
+        avg_duration_ms: 758, output_per_sec: 414.9, ttft_ms: 1_321,
+        days_scanned: days,
         roots: [
-          { source: "claude", path: `${HOME}\\.claude\\projects`, exists: true, files: 74, scanned_files: 62 },
-          { source: "codex", path: `${HOME}\\.codex\\sessions`, exists: true, files: 58, scanned_files: 51 },
+          { source: "claude", path: `${HOME}\.claude\projects`, exists: true, files: 74, scanned_files: 62 },
+          { source: "codex", path: `${HOME}\.codex\sessions`, exists: true, files: 58, scanned_files: 51 },
+          { source: "pi", path: `${HOME}\.pi\agent\sessions`, exists: true, files: 9, scanned_files: 9 },
+          { source: "omp", path: `${HOME}\.omp\agent\sessions`, exists: false, files: 0, scanned_files: 0 },
+          { source: "dsh", path: `${HOME}\.dsh\storages\model-usage.jsonl`, exists: true, files: 1, scanned_files: 1 },
         ],
         skipped_files: 19,
         errors: [],
@@ -1553,8 +1564,8 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         score: model.tools === false ? 40 : model.tools == null ? 82 : 96,
         checks: [
           { key: "context", label: "Context window", status: (model.context_window ?? 0) >= 32000 ? "ok" : "warn", detail: model.context_window ? `${model.context_window} tokens` : "尚未標記" },
-          { key: "tools", label: "Tool calling", status: model.tools === false ? "fail" : model.tools ? "ok" : "warn", detail: model.tools === false ? "Harness 需要工具呼叫" : "工具能力符合" },
-          { key: "protocol", label: "Protocol", status: "ok", detail: provider.kind || "Harness 預設" },
+          { key: "tools", label: "Tool calling", status: model.tools === false ? "fail" : model.tools ? "ok" : "warn", detail: model.tools === false ? "工具需要工具呼叫" : "工具能力符合" },
+          { key: "protocol", label: "Protocol", status: "ok", detail: provider.kind || "工具預設" },
         ],
         issues: model.tools == null ? ["工具能力未知；建議先實測"] : [],
       }));

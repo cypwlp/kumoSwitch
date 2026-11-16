@@ -338,7 +338,7 @@ pub fn sync(profile_id: &str, requested_tools: &[String]) -> Result<ProfileSyncR
             continue;
         }
         let Some(spec) = crate::adapters::find(&target.tool) else {
-            skipped.push(format!("{}: 未知 Harness", target.tool));
+            skipped.push(format!("{}: 未知工具", target.tool));
             continue;
         };
         let model = if target.model.is_empty() { profile.model.clone() } else { target.model.clone() };

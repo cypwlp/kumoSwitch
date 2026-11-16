@@ -227,7 +227,7 @@ export function ProxyView({ onError, onToast }: Props) {
 
       <h3 className="stats-sub">供應商順序與個別策略</h3>
       <div className="proxy-stack">
-        {all.length === 0 ? <div className="empty small">還沒有供應商，先到各 Harness 新增或導入</div> : all.map((row) => {
+        {all.length === 0 ? <div className="empty small">還沒有供應商，先到各工具新增或導入</div> : all.map((row) => {
           const index = config.stack.indexOf(row.ref);
           const policy = config.policies[row.ref] ?? DEFAULT_POLICY;
           const metric = metrics?.targets[row.ref];
@@ -280,14 +280,14 @@ export function ProxyView({ onError, onToast }: Props) {
         })}
       </div>
 
-      <h3 className="stats-sub">把 Harness 掛載到代理</h3>
+      <h3 className="stats-sub">把工具掛載到代理</h3>
       <div className="proxy-row">
         <select className="mini-select" value={attachTool} onChange={(event) => setAttachTool(event.target.value)}>
-          <option value="">選擇 Harness…</option>
+          <option value="">選擇工具…</option>
           {tools.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
         </select>
         <button className="ghost" onClick={() => void attach()} disabled={busy || !attachTool}>寫入代理設定</button>
-        <span className="muted small">會把該 Harness 的 base URL 指向 127.0.0.1:{config.port}/v1</span>
+        <span className="muted small">會把該工具的 base URL 指向 127.0.0.1:{config.port}/v1</span>
       </div>
 
       <div className="proxy-observability">

@@ -186,7 +186,7 @@ export default function App() {
           return;
         }
         const tool = tools.find((item) => item.id === toolId);
-        if (!tool) throw new Error("找不到這個 Harness");
+        if (!tool) throw new Error("找不到這個工具");
         setModal({ kind: "diff", tool, provider, preview });
       } catch (err) {
         push(errorText(err), "err");
@@ -414,7 +414,7 @@ export default function App() {
       const updated = await api.providerSelectModel(toolId, providerId, modelId);
       await loadProviders(toolId);
       setModal(null);
-      push(`已選擇模型「${modelId}」，請確認 diff 後套用`, "ok");
+      push(`已選擇模型「${modelId}」，請確認變更預覽後套用`, "ok");
       await openDiff(toolId, updated);
     } catch (err) {
       push(errorText(err), "err");
@@ -430,7 +430,7 @@ export default function App() {
     try {
       const updated = await api.providerSelectModel(toolId, provider.id, modelId);
       await loadProviders(toolId);
-      push(`${provider.name} → ${modelId}，請確認 diff`, "ok");
+      push(`${provider.name} → ${modelId}，請確認變更預覽`, "ok");
       await openDiff(toolId, updated);
     } catch (err) {
       push(errorText(err), "err");
@@ -613,7 +613,7 @@ export default function App() {
     try {
       const candidates = await api.importScan();
       if (candidates.length === 0) {
-        push("所有 Harness 都沒有找到可匯入的供應商", "ok");
+        push("所有工具都沒有找到可匯入的供應商", "ok");
         return;
       }
       setModal({ kind: "import-preview", candidates });
@@ -943,6 +943,8 @@ export default function App() {
               onMirrorCcSwitchRoute={() => void mirrorCcSwitchRoute()}
               sort={sort}
               onSort={setSort}
+              simple={preferences.uiMode !== "advanced"}
+              onSimple={(simple) => updatePreferences({ uiMode: simple ? "simple" : "advanced" })}
               onPalette={() => setPalette(true)}
               onDiagnostics={() => void diagnostics()}
               onCheckUpdate={() => { setSettingsOpen(true); void runUpdateCheck(true); }}
@@ -968,19 +970,19 @@ export default function App() {
           ) : (
             <div className="welcome">
               <div className="welcome-card">
-                <h2>選擇左側的 Harness 開始</h2>
+                <h2>選擇左側的工具開始</h2>
                 <p>
                   kumoSwitch 只改寫供應商相關的那幾個鍵，
                   <br />
                   你的註解、外掛、MCP 與其他設定原樣保留。
                 </p>
                 <ul>
-                  <li>套用前一定顯示逐行 diff</li>
+                  <li>套用前一定顯示逐行變更預覽</li>
                   <li>每次寫入自動建立時間戳備份，可一鍵還原</li>
                   <li>所有資料只留在本機</li>
                 </ul>
                 <div className="kbd-hint">
-                  <kbd>/</kbd> 聚焦搜尋 · <kbd>Ctrl</kbd>+<kbd>N</kbd> 新增供應商 · 點擊供應商查看模型與設定 · 套用前先看 diff
+                  <kbd>/</kbd> 聚焦搜尋 · <kbd>Ctrl</kbd>+<kbd>N</kbd> 新增供應商 · 點擊供應商查看模型與設定 · 套用前先看變更預覽
                   {MOCK ? " · 預覽模式（假資料）" : ""}
                 </div>
               </div>

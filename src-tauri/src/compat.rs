@@ -73,7 +73,7 @@ pub fn evaluate_model(tool: &str, provider: &Provider, model: &ModelProfile) -> 
     let mut warned = false;
 
     match model.context_window {
-        Some(value) if value >= req.min_context => checks.push(check("context", "Context window", "ok", format!("{} tokens，符合此 Harness 建議值", compact(value)))),
+        Some(value) if value >= req.min_context => checks.push(check("context", "Context window", "ok", format!("{} tokens，符合此工具建議值", compact(value)))),
         Some(value) => {
             score -= 18;
             warned = true;
@@ -91,7 +91,7 @@ pub fn evaluate_model(tool: &str, provider: &Provider, model: &ModelProfile) -> 
         Some(false) => {
             blocking = true;
             score -= 55;
-            checks.push(check("tools", "Tool calling", "fail", "Harness 需要工具呼叫，但此模型明確標記為不支援"));
+            checks.push(check("tools", "Tool calling", "fail", "工具需要工具呼叫，但此模型明確標記為不支援"));
         }
         None => {
             score -= 10;
@@ -130,11 +130,11 @@ pub fn evaluate_model(tool: &str, provider: &Provider, model: &ModelProfile) -> 
             warned = true;
             checks.push(check("protocol", "Protocol", "warn", "供應商未指定協議"));
         } else if req.protocols.iter().any(|allowed| allowed.eq_ignore_ascii_case(&provider.kind)) {
-            checks.push(check("protocol", "Protocol", "ok", format!("{} 與此 Harness 相容", provider.kind)));
+            checks.push(check("protocol", "Protocol", "ok", format!("{} 與此工具相容", provider.kind)));
         } else {
             blocking = true;
             score -= 35;
-            checks.push(check("protocol", "Protocol", "fail", format!("{} 不在此 Harness 支援清單（{}）", provider.kind, req.protocols.join(" / "))));
+            checks.push(check("protocol", "Protocol", "fail", format!("{} 不在此工具支援清單（{}）", provider.kind, req.protocols.join(" / "))));
         }
     }
 

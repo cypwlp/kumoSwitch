@@ -117,7 +117,7 @@ export function BackupCenterView({ onError, onToast, onChanged, onExport, onImpo
         <div>
           <span className="kicker">Recovery & migration</span>
           <h2>備份／遷移中心</h2>
-          <p>集中查看所有 Harness 的時間點快照、排程與版本資訊。還原前會先保存目前設定；跨電腦遷移仍使用加密的完整清單。</p>
+          <p>集中查看所有工具的時間點快照、排程與版本資訊。還原前會先保存目前設定；跨電腦遷移仍使用加密的完整清單。</p>
         </div>
         <div className="backup-center-actions">
           <button className="ghost" onClick={onImport}>匯入遷移包</button>
@@ -126,7 +126,7 @@ export function BackupCenterView({ onError, onToast, onChanged, onExport, onImpo
       </header>
 
       <div className="backup-stats">
-        <div><span>快照</span><strong>{center?.stats.snapshots ?? 0}</strong><small>{center?.stats.tools ?? 0} 個 Harness</small></div>
+        <div><span>快照</span><strong>{center?.stats.snapshots ?? 0}</strong><small>{center?.stats.tools ?? 0} 個工具</small></div>
         <div><span>涵蓋檔案</span><strong>{center?.stats.files ?? 0}</strong><small>原始路徑與 checksum 均已保存</small></div>
         <div><span>本機容量</span><strong>{bytes(center?.stats.size_bytes ?? 0)}</strong><small>只保留設定的相關檔案</small></div>
         <div><span>最新／最舊</span><strong className="stat-time">{center?.stats.newest || "—"}</strong><small>{center?.stats.oldest ? `最早 ${center.stats.oldest}` : "尚無快照"}</small></div>
@@ -136,7 +136,7 @@ export function BackupCenterView({ onError, onToast, onChanged, onExport, onImpo
         <div>
           <span className="eyebrow">Snapshot policy</span>
           <h3>排程與保留</h3>
-          <p>排程只在應用程式常駐時執行；每個 Harness 分別保留，避免大型日誌或 session 檔佔用空間。</p>
+          <p>排程只在應用程式常駐時執行；每個工具分別保留，避免大型日誌或 session 檔佔用空間。</p>
         </div>
         <button
           className={`settings-toggle compact${center?.policy.scheduled ? " on" : ""}`}
@@ -158,7 +158,7 @@ export function BackupCenterView({ onError, onToast, onChanged, onExport, onImpo
           />
         </label>
         <label className="field inline-field">
-          <span>每個 Harness 保留</span>
+          <span>每個工具保留</span>
           <input
             type="number"
             min={5}
@@ -172,8 +172,8 @@ export function BackupCenterView({ onError, onToast, onChanged, onExport, onImpo
 
       <div className="backup-toolbar">
         <div className="backup-snapshot-create">
-          <select value={snapshotTool} onChange={(event) => setSnapshotTool(event.target.value)} aria-label="要建立快照的 Harness">
-            <option value="">選擇 Harness…</option>
+          <select value={snapshotTool} onChange={(event) => setSnapshotTool(event.target.value)} aria-label="要建立快照的工具">
+            <option value="">選擇工具…</option>
             {tools.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
           </select>
           <button className="primary small" disabled={busy || !snapshotTool} onClick={() => void createSnapshot()}>立即建立快照</button>

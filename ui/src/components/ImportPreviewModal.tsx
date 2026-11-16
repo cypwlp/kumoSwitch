@@ -65,7 +65,7 @@ export function ImportPreviewModal({ candidates, busy, onCancel, onApply }: Impo
       }
     >
       <div className="note import-intro">
-        已掃描所有 Harness 的設定檔。新增項目會直接匯入；衝突項目預設保留本機，你可以逐項選擇覆蓋、合併模型或建立副本。
+        已掃描所有工具的設定檔。新增項目會直接匯入；衝突項目預設保留本機，你可以逐項選擇覆蓋、合併模型或建立副本。
       </div>
       <div className="import-bulk">
         <span>衝突處理</span>

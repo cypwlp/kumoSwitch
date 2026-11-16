@@ -150,7 +150,7 @@ export function CommandPalette({ tools, onPick, onClose, onError }: Props) {
         </div>
         <div className="palette-foot">
           <span><kbd>↑</kbd><kbd>↓</kbd> 移動</span>
-          <span><kbd>Enter</kbd> 查看 diff</span>
+          <span><kbd>Enter</kbd> 查看變更預覽</span>
           <span><kbd>Esc</kbd> 關閉</span>
         </div>
       </div>

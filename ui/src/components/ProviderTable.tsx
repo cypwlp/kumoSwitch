@@ -32,6 +32,7 @@ interface TableProps {
   onTest: (provider: Provider) => void;
   history: HistoryMap;
   activeId: string | null;
+  simple: boolean;
 }
 
 export function ProviderTable({
@@ -46,6 +47,7 @@ export function ProviderTable({
   onTest,
   history,
   activeId,
+  simple,
 }: TableProps) {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [visibleLimit, setVisibleLimit] = useState(24);
@@ -88,7 +90,7 @@ export function ProviderTable({
         return (
           <article
             key={provider.id}
-            className={`provider-card${active ? " active" : ""}${draggedId === provider.id ? " dragging" : ""}`}
+            className={`provider-card${simple ? " simple" : ""}${active ? " active" : ""}${draggedId === provider.id ? " dragging" : ""}`}
             aria-label={`供應商 ${provider.name}`}
             onDragOver={(event) => {
               if (draggedId) event.preventDefault();
@@ -134,6 +136,11 @@ export function ProviderTable({
                   <span className="provider-entity">供應商</span>
                   <h3>{provider.name}</h3>
                   <span className="provider-alias">{provider.note || provider.config_id}</span>
+                  {simple ? (
+                    <span className="provider-current-model">
+                      目前模型 <code>{provider.model || "未設定"}</code>
+                    </span>
+                  ) : null}
                 </div>
                 <div className="provider-card-badges">
                   {active ? <span className="badge ok">使用中</span> : <span className="badge subtle">待用</span>}
@@ -141,6 +148,7 @@ export function ProviderTable({
                 </div>
               </div>
 
+              {simple ? null : (
               <dl className="provider-facts">
                 <div className="provider-fact url-fact">
                   <dt>Base URL</dt>
@@ -150,7 +158,7 @@ export function ProviderTable({
                 </div>
                 <div className="provider-fact">
                   <dt>協議／類型</dt>
-                  <dd>{provider.kind || "由 Harness 決定"}</dd>
+                  <dd>{provider.kind || "由工具決定"}</dd>
                 </div>
                 <div className="provider-fact health-fact">
                   <dt>健康度</dt>
@@ -159,7 +167,9 @@ export function ProviderTable({
                   </dd>
                 </div>
               </dl>
+              )}
 
+              {simple ? null : (
               <div className="provider-models">
                 <div className="provider-models-head">
                   <span className="eyebrow">此供應商的模型</span>
@@ -175,20 +185,31 @@ export function ProviderTable({
                   {visibleModels.length > 4 ? <span className="provider-model-more">+{visibleModels.length - 4}</span> : null}
                 </div>
               </div>
+              )}
 
-              <span className="provider-open-hint">
-                進入供應商詳情 <span aria-hidden="true">→</span>
-              </span>
+              {simple ? null : (
+                <span className="provider-open-hint">
+                  進入供應商詳情 <span aria-hidden="true">→</span>
+                </span>
+              )}
             </button>
 
-            <div className="provider-card-actions" role="group" aria-label={`${provider.name} 的操作`}>
-              {(provider.models?.filter((model) => !model.archived).length ?? 0) > 1 ? (
+            <div className={`provider-card-actions${simple ? " simple" : ""}`} role="group" aria-label={`${provider.name} 的操作`}>
+              <button
+                type="button"
+                className="small primary provider-apply"
+                onClick={() => onApply(provider)}
+                title="先看變更預覽再套用"
+              >
+                {active ? "重新套用" : "套用"}
+              </button>
+              {!simple && (provider.models?.filter((model) => !model.archived).length ?? 0) > 1 ? (
                 <select
                   className="provider-model-quick"
                   aria-label={`${provider.name} 快速切換模型`}
                   value={provider.model}
                   onChange={(event) => onSwitchModel(provider, event.target.value)}
-                  title="直接切換模型並預覽 diff"
+                  title="直接切換模型並預覽變更"
                 >
                   {[...(provider.models ?? [])]
                     .filter((model) => !model.archived)
@@ -200,29 +221,25 @@ export function ProviderTable({
                     ))}
                 </select>
               ) : null}
-              <button
-                type="button"
-                className="small ghost"
-                onClick={() => onTest(provider)}
-                disabled={test === "pending"}
-                title="送一個最小請求測試這組 Base URL / API Key"
-              >
-                測試
-              </button>
-              <button
-                type="button"
-                className="small primary"
-                onClick={() => onApply(provider)}
-                title="先看 diff 再套用"
-              >
-                {active ? "重新套用" : "套用"}
-              </button>
+              {simple ? null : (
+                <button
+                  type="button"
+                  className="small ghost"
+                  onClick={() => onTest(provider)}
+                  disabled={test === "pending"}
+                  title="送一個最小請求測試這組 Base URL / API Key"
+                >
+                  測試
+                </button>
+              )}
               <button type="button" className="small ghost" onClick={() => onEdit(provider)}>
                 詳情
               </button>
-              <button type="button" className="small danger" onClick={() => onDelete(provider)}>
-                刪除
-              </button>
+              {simple ? null : (
+                <button type="button" className="small danger" onClick={() => onDelete(provider)}>
+                  刪除
+                </button>
+              )}
             </div>
           </article>
         );

@@ -430,7 +430,7 @@ impl Snapshot {
         if !self.installed {
             return Err("找不到 CC Switch 資料庫".into());
         }
-        let app_type = tool_app_type(tool).ok_or_else(|| "這個 Harness 尚未支援 CC Switch 匯入".to_string())?;
+        let app_type = tool_app_type(tool).ok_or_else(|| "這個工具尚未支援 CC Switch 匯入".to_string())?;
         let raw = self
             .providers
             .iter()
