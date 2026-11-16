@@ -112,6 +112,23 @@ test("provider chooser searches categories and keeps account login explicit", as
   await expect(chooser.getByRole("heading", { name: /新增供應商.*Codex/ })).toBeVisible();
   await expect(chooser.getByRole("button", { name: "使用自訂配置", exact: true })).toBeVisible();
   await expect(chooser.getByRole("navigation", { name: "供應商分類" })).toBeVisible();
+  const footerLayout = await page.evaluate(() => {
+    const sheet = document.querySelector<HTMLElement>(".modal.top .sheet")!;
+    const results = document.querySelector<HTMLElement>(".provider-results")!;
+    const foot = document.querySelector<HTMLElement>(".modal.top .sheet-foot")!;
+    results.scrollTop = 420;
+    const sheetRect = sheet.getBoundingClientRect();
+    const footRect = foot.getBoundingClientRect();
+    return {
+      footerGap: Math.abs(sheetRect.bottom - footRect.bottom),
+      footerPosition: getComputedStyle(foot).position,
+      resultsScrollTop: results.scrollTop,
+    };
+  });
+  expect(footerLayout.footerGap).toBeLessThanOrEqual(2);
+  expect(footerLayout.footerPosition).not.toBe("sticky");
+  expect(footerLayout.resultsScrollTop).toBeGreaterThan(0);
+  await page.locator(".provider-results").evaluate((element) => { element.scrollTop = 0; });
 
   await chooser.getByRole("button", { name: /^模型廠商/ }).click();
   await chooser.getByLabel("搜尋供應商").fill("Kimi");

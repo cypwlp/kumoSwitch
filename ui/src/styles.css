@@ -553,12 +553,14 @@ button .cnt { opacity: 0.7; margin-left: 4px; font-size: 11px; }
 }
 .modal.top { z-index: 60; }
 .sheet {
+  display: flex;
+  flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--line-2);
   border-radius: 16px;
   width: min(880px, 100%);
   max-height: calc(100vh - 56px);
-  overflow: auto;
+  overflow: hidden;
   box-shadow: var(--sheet-shadow);
   animation: sheet-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1) both;
   outline: none;
@@ -566,19 +568,21 @@ button .cnt { opacity: 0.7; margin-left: 4px; font-size: 11px; }
 .sheet.narrow { width: min(560px, 100%); }
 .sheet-head {
   display: flex; align-items: center; gap: 10px;
+  flex: 0 0 auto;
   padding: 16px 20px;
   border-bottom: 1px solid var(--line);
-  position: sticky; top: 0;
+  position: relative;
   background: var(--panel);
   z-index: 2;
 }
 .sheet-head h3 { margin: 0; font-size: 15px; flex: 1; }
-.sheet-body { padding: 18px 20px; }
+.sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 20px; }
 .sheet-foot {
   display: flex; justify-content: flex-end; gap: 8px;
+  flex: 0 0 auto;
   padding: 14px 20px;
   border-top: 1px solid var(--line);
-  position: sticky; bottom: 0;
+  position: relative;
   background: var(--panel);
 }
 
@@ -2696,6 +2700,8 @@ html[data-text-scale="xlarge"] .app { zoom: 1.16; width: 86.2%; min-height: 86.2
   display: grid;
   grid-template-columns: 168px minmax(0, 1fr);
   gap: 14px;
+  min-height: 0;
+  height: min(61vh, 620px);
   max-height: min(61vh, 620px);
 }
 .provider-categories {
@@ -2727,7 +2733,7 @@ html[data-text-scale="xlarge"] .app { zoom: 1.16; width: 86.2%; min-height: 86.2
 .provider-categories button:hover { color: var(--text); background: var(--hover-tint); }
 .provider-categories button.active { color: var(--text); border-color: var(--line-2); background: var(--seg-active-bg); }
 .provider-categories b { color: var(--muted); font-size: 10px; font-weight: 600; }
-.provider-results { min-width: 0; overflow-y: auto; padding-right: 2px; }
+.provider-results { min-width: 0; min-height: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
 .provider-custom-card {
   width: 100%;
   display: flex;

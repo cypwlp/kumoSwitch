@@ -160,4 +160,21 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   await expect(page.locator(".rail .harness-icon")).toHaveCount(15);
   await expect(page.locator(".harness-manager-card")).toHaveCount(15);
   await expect(page.getByRole("article", { name: "Harness Codex" })).toContainText("CLI + 桌面版");
+
+  await page.locator(".rail .tool").filter({ has: page.locator("b", { hasText: "Codex" }) }).first().click();
+  await page.getByRole("button", { name: /新增供應商/ }).click();
+  await page.getByRole("button", { name: /瀏覽供應商目錄/ }).click();
+  await expect(page.locator(".provider-chooser")).toBeVisible();
+  const chooserGeometry = await page.evaluate(() => {
+    const sheet = document.querySelector<HTMLElement>(".modal.top .sheet")!;
+    const results = document.querySelector<HTMLElement>(".provider-results")!;
+    const foot = document.querySelector<HTMLElement>(".modal.top .sheet-foot")!;
+    results.scrollTop = 420;
+    return {
+      footerGap: Math.abs(sheet.getBoundingClientRect().bottom - foot.getBoundingClientRect().bottom),
+      resultsScrollTop: results.scrollTop,
+    };
+  });
+  expect(chooserGeometry.footerGap).toBeLessThanOrEqual(2);
+  expect(chooserGeometry.resultsScrollTop).toBeGreaterThan(0);
 });
