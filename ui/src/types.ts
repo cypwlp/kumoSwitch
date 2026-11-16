@@ -43,6 +43,8 @@ export interface ModelProfile {
   context_window?: number;
   max_output?: number;
   reasoning?: boolean;
+  reasoning_levels?: string[];
+  reasoning_level?: string;
   vision?: boolean;
   tools?: boolean;
   metadata?: unknown;
@@ -134,6 +136,8 @@ export interface ToolView {
   format: Fmt;
   verified: boolean;
   surface: "cli" | "desktop" | "both";
+  reasoning_levels: string[];
+  reasoning_target: string;
   restart: string;
   detected: boolean;
   takeover: boolean;
@@ -366,6 +370,15 @@ export interface Preset {
   website_url: string;
   requires_routing: boolean;
   login_hint: string;
+}
+
+export interface ModelReasoningDiscovery {
+  levels: string[];
+  default_level: string;
+  source: "saved" | "catalog" | "harness" | "none" | string;
+  supported: boolean;
+  target: string;
+  message: string;
 }
 
 export interface HarnessManagerEntry {

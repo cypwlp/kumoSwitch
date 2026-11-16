@@ -55,6 +55,24 @@ const HARNESS_SURFACES: Record<string, "cli" | "desktop" | "both"> = {
 
 const INSTALLED_HARNESSES = new Set<string>();
 
+const MOCK_REASONING_LEVELS: Record<string, string[]> = {
+  codex: ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+  claude: ["low", "medium", "high", "xhigh", "max"],
+  opencode: ["minimal", "low", "medium", "high", "xhigh", "max"],
+  kilo: ["minimal", "low", "medium", "high", "xhigh", "max"],
+  pi: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+  omp: ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto", "inherit"],
+};
+
+const MOCK_REASONING_TARGETS: Record<string, string> = {
+  codex: "config.toml → model_reasoning_effort",
+  claude: "settings.json → env.CLAUDE_CODE_EFFORT_LEVEL",
+  opencode: "opencode.json → provider.models.*.options.reasoningEffort",
+  kilo: "kilo.jsonc → provider.models.*.options.reasoningEffort",
+  pi: "settings.json → modelThinkingLevels",
+  omp: "config.yml → modelRoles.default",
+};
+
 const INSTALL_PACKAGES: Record<string, string> = {
   codex: "@openai/codex",
   claude: "@anthropic-ai/claude-code",
@@ -122,7 +140,7 @@ function p(
     base_url: baseUrl,
     api_key: apiKey,
     model,
-    models: model ? [{ id: model, name: model }] : [],
+    models: model ? [{ id: model, name: model, reasoning: true, reasoning_levels: ["minimal", "low", "medium", "high", "xhigh", "max"], reasoning_level: "" }] : [],
     kind,
     note,
   };
@@ -142,8 +160,8 @@ const PROVIDERS: Record<string, Provider[]> = {
         "主力",
       ),
       models: [
-        { id: "glm-5.3-flash", name: "GLM 5.3 Flash", context_window: 128000, max_output: 16384, reasoning: true, tools: true, favorite: true, last_used_at: Date.now() - 120000 },
-        { id: "muse-spark-1.3", name: "Muse Spark 1.3", context_window: 128000, max_output: 16384, reasoning: true, tools: true, last_seen_at: Date.now() - 86400000 },
+        { id: "glm-5.3-flash", name: "GLM 5.3 Flash", context_window: 128000, max_output: 16384, reasoning: true, reasoning_levels: ["minimal", "low", "medium", "high", "xhigh", "max"], reasoning_level: "medium", tools: true, favorite: true, last_used_at: Date.now() - 120000 },
+        { id: "muse-spark-1.3", name: "Muse Spark 1.3", context_window: 128000, max_output: 16384, reasoning: true, reasoning_levels: ["low", "medium", "high", "xhigh"], tools: true, last_seen_at: Date.now() - 86400000 },
       ],
     },
     p(
@@ -537,6 +555,8 @@ function toolViews(): ToolView[] {
     format: s.format,
     verified: s.verified,
     surface: HARNESS_SURFACES[s.id] ?? "cli",
+    reasoning_levels: MOCK_REASONING_LEVELS[s.id] ?? [],
+    reasoning_target: MOCK_REASONING_TARGETS[s.id] ?? "",
     restart: s.restart,
     detected: s.detected,
     takeover: s.takeover,
@@ -635,12 +655,16 @@ function tomlPreview(tool: string, target: Provider): FileDiff {
   const activeId = ACTIVE[tool];
   const from = activeId ? findProvider(tool, activeId) : target;
   const modelLine = target.model ? [`-model = "${from.model}"`, `+model = "${target.model}"`] : [];
+  const targetLevel = target.models?.find((model) => model.id === target.model)?.reasoning_level ?? "";
+  const fromLevel = from.models?.find((model) => model.id === from.model)?.reasoning_level ?? "medium";
+  const reasoningLine = targetLevel ? [`-model_reasoning_effort = "${fromLevel}"`, `+model_reasoning_effort = "${targetLevel}"`] : [];
   const body = [
     "@@ -1,8 +1,8 @@",
     " # Codex CLI — 供應商鍵位由 kumoSwitch 維護",
     `-model_provider = "${from.config_id}"`,
     `+model_provider = "${target.config_id}"`,
     ...modelLine,
+    ...reasoningLine,
     ' approval_policy = "on-request"',
     " ",
     " [desktop]",
@@ -682,6 +706,10 @@ function jsonPreview(tool: string, target: Provider): FileDiff {
       `+    "ANTHROPIC_BASE_URL": "${target.base_url}",`,
       `+    "ANTHROPIC_AUTH_TOKEN": "${target.api_key}",`,
       `+    "ANTHROPIC_MODEL": "${target.model}",`,
+      ...(() => {
+        const level = target.models?.find((model) => model.id === target.model)?.reasoning_level;
+        return level ? [`+    "CLAUDE_CODE_EFFORT_LEVEL": "${level}",`] : [];
+      })(),
       '     "CLAUDE_CODE_DISABLE_TELEMETRY": "1"',
       "   },",
       '   "includeCoAuthoredBy": false',
@@ -699,7 +727,7 @@ function jsonPreview(tool: string, target: Provider): FileDiff {
       ' +      "npm": "@ai-sdk/openai-compatible",',
       `+      "name": "${target.name}",`,
       `+      "options": { "baseURL": "${target.base_url}", "apiKey": "${target.api_key}" },`,
-      `+      "models": { "${target.model}": { "name": "${target.model}" } }`,
+      `+      "models": { "${target.model}": { "name": "${target.model}"${target.models?.find((model) => model.id === target.model)?.reasoning_level ? `, "options": { "reasoningEffort": "${target.models.find((model) => model.id === target.model)!.reasoning_level}" }` : ""} }`,
       " +    },",
       `     "${from.config_id}": {`,
       '       "npm": "@ai-sdk/openai-compatible",',
@@ -854,7 +882,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.20.1",
+        version: "0.21.0",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,
@@ -1286,6 +1314,19 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       const decisions = Array.isArray(args.decisions) ? args.decisions : [];
       const imported = decisions.filter((item) => item && typeof item === "object" && "action" in item && item.action !== "skip").length;
       return { imported, skipped: decisions.length - imported } satisfies JsonImportResult;
+    }
+
+    case "discover_model_reasoning": {
+      const levels = MOCK_REASONING_LEVELS[tool] ?? [];
+      if (!levels.length) throw new Error("這個 Harness 尚未定義思考等級");
+      return {
+        levels,
+        default_level: levels.includes("medium") ? "medium" : levels[0],
+        source: "harness",
+        supported: Boolean(MOCK_REASONING_TARGETS[tool]),
+        target: MOCK_REASONING_TARGETS[tool] ?? "",
+        message: `Mock：使用 ${seedOf(tool).name} 支援的 ${levels.length} 個思考等級`,
+      };
     }
 
     case "harness_manager_list":

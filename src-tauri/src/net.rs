@@ -685,6 +685,7 @@ mod tests {
               "display_name": "GLM 5.3 Flash",
               "context_window": 128000,
               "max_output_tokens": 16384,
+              "reasoning_levels": ["low", "medium", "high"],
               "capabilities": { "reasoning": true, "vision": false, "tools": true }
             },
             { "id": "glm-5.3-flash", "display_name": "Duplicate" },
@@ -698,6 +699,7 @@ mod tests {
         assert_eq!(models[0].context_window, Some(128000));
         assert_eq!(models[0].max_output, Some(16384));
         assert_eq!(models[0].reasoning, Some(true));
+        assert_eq!(models[0].reasoning_levels, vec!["low", "medium", "high"]);
         assert_eq!(models[0].tools, Some(true));
         assert_eq!(models[0].metadata["display_name"], "GLM 5.3 Flash");
     }

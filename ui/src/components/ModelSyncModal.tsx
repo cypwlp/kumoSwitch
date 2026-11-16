@@ -2,13 +2,14 @@ import { useMemo, useState } from "react";
 import type { ModelDiscovery, ModelProfile } from "../types";
 import { Modal } from "./Modal";
 
-type SyncField = "name" | "context_window" | "max_output" | "reasoning" | "vision" | "tools" | "metadata";
+type SyncField = "name" | "context_window" | "max_output" | "reasoning" | "reasoning_levels" | "vision" | "tools" | "metadata";
 
 const FIELD_LABELS: Record<SyncField, string> = {
   name: "名稱",
   context_window: "Context",
   max_output: "Max Output",
   reasoning: "Reasoning",
+  reasoning_levels: "思考等級",
   vision: "Vision",
   tools: "Tools",
   metadata: "Metadata",
@@ -35,6 +36,7 @@ function capabilityTags(model: ModelProfile): string[] {
   if (model.context_window) tags.push(`${compactNumber(model.context_window)} ctx`);
   if (model.max_output) tags.push(`${compactNumber(model.max_output)} out`);
   if (model.reasoning) tags.push("Reasoning");
+  if (model.reasoning_levels?.length) tags.push(`${model.reasoning_levels.length} 思考等級`);
   if (model.vision) tags.push("Vision");
   if (model.tools) tags.push("Tools");
   return tags;
@@ -54,6 +56,7 @@ function modelDiff(existing: ModelProfile, discovered: ModelProfile): SyncField[
   if (existing.context_window !== discovered.context_window) fields.push("context_window");
   if (existing.max_output !== discovered.max_output) fields.push("max_output");
   if (existing.reasoning !== discovered.reasoning) fields.push("reasoning");
+  if (stable(existing.reasoning_levels) !== stable(discovered.reasoning_levels)) fields.push("reasoning_levels");
   if (existing.vision !== discovered.vision) fields.push("vision");
   if (existing.tools !== discovered.tools) fields.push("tools");
   if (stable(existing.metadata) !== stable(discovered.metadata)) fields.push("metadata");

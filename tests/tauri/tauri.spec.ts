@@ -152,7 +152,14 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   await providerButton.click();
   await expect(page.getByRole("heading", { name: "供應商詳情 · Codex" })).toBeVisible();
   await expect(page.getByRole("tab", { name: /^模型/ })).toBeVisible();
-  await page.getByRole("dialog").locator(".sheet-head").getByRole("button", { name: "關閉" }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByRole("tab", { name: /^模型/ }).click();
+  await expect(editor.getByLabel("搜尋目前供應商的模型")).toBeVisible();
+  await editor.getByLabel("思考等級 e2e-model", { exact: true }).selectOption("high");
+  await editor.getByRole("button", { name: "儲存並預覽" }).click();
+  const reasoningDiff = page.getByRole("dialog").filter({ hasText: "套用「E2E Provider」到 Codex" });
+  await expect(reasoningDiff.locator("pre.diff")).toContainText('model_reasoning_effort = "high"');
+  await reasoningDiff.getByRole("button", { name: "取消" }).click();
 
   await page.getByRole("button", { name: /^設定/ }).first().click();
   await page.getByRole("dialog").last().getByRole("button", { name: /Harness 管理/ }).click();

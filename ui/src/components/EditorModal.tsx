@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "../api";
 import type {
   BackupInfo,
@@ -98,6 +98,8 @@ function modelSnapshot(model: ModelProfile) {
     context_window: model.context_window,
     max_output: model.max_output,
     reasoning: model.reasoning,
+    reasoning_levels: model.reasoning_levels,
+    reasoning_level: model.reasoning_level,
     vision: model.vision,
     tools: model.tools,
     metadata: model.metadata,
@@ -216,6 +218,16 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [oauthNotice, setOauthNotice] = useState<Preset | null>(null);
+  const [modelQuery, setModelQuery] = useState("");
+  const [showArchivedModels, setShowArchivedModels] = useState(false);
+  const [expandedModelIndex, setExpandedModelIndex] = useState<number | null>(() => {
+    if (!provider) return null;
+    const index = (provider.models ?? []).findIndex((model) => model.id === provider.model);
+    return index >= 0 ? index : null;
+  });
+  const [reasoningBusy, setReasoningBusy] = useState<Record<string, boolean>>({});
+  const [reasoningNotices, setReasoningNotices] = useState<Record<string, string>>({});
+  const [automationOpen, setAutomationOpen] = useState(false);
   const [metadataDrafts, setMetadataDrafts] = useState<Record<string, string>>({});
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
@@ -246,6 +258,13 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
         { id: "connection", label: "連線" },
         { id: "models", label: "模型" },
       ];
+
+  useEffect(() => {
+    const index = (provider?.models ?? []).findIndex((model) => model.id === provider?.model);
+    setExpandedModelIndex(index >= 0 ? index : null);
+    setModelQuery("");
+    setReasoningNotices({});
+  }, [provider?.id, tool.id]);
 
   useEffect(() => {
     let alive = true;
@@ -366,11 +385,13 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   };
 
   const addModel = (id = "") => {
+    const nextIndex = form.models?.length ?? 0;
     setForm((previous) => ({
       ...previous,
       models: [...(previous.models ?? []), { id, name: id }],
       model: previous.model || id,
     }));
+    setExpandedModelIndex(nextIndex);
   };
 
   const removeModel = (index: number) => {
@@ -378,6 +399,11 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
       const models = (previous.models ?? []).filter((_, at) => at !== index);
       const model = models.some((item) => item.id === previous.model) ? previous.model : models[0]?.id || "";
       return { ...previous, models, model };
+    });
+    setExpandedModelIndex((current) => {
+      if (current == null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
     });
   };
 
@@ -387,6 +413,61 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
       return;
     }
     setForm((previous) => ({ ...previous, model: model.id.trim() }));
+  };
+
+  const reasoningLevelsFor = (model: ModelProfile): string[] => {
+    const levels = (model.reasoning_levels?.length ? model.reasoning_levels : tool.reasoning_levels) ?? [];
+    return Array.from(new Set(levels.map((level) => level.trim()).filter(Boolean)));
+  };
+
+  const setReasoningLevel = (index: number, model: ModelProfile, level: string) => {
+    updateModel(index, {
+      reasoning_levels: reasoningLevelsFor(model),
+      reasoning_level: level,
+    });
+  };
+
+  const detectReasoningLevels = async (index: number, model: ModelProfile) => {
+    const modelId = model.id.trim();
+    if (!modelId) {
+      setModelError("請先填寫 Model ID，才能偵測思考等級");
+      return;
+    }
+    setReasoningBusy((previous) => ({ ...previous, [modelId]: true }));
+    try {
+      if (!provider) {
+        const levels = tool.reasoning_levels.filter(Boolean);
+        if (!levels.length) throw new Error("這個 Harness 尚未定義思考等級");
+        const preferred = levels.includes(model.reasoning_level ?? "")
+          ? model.reasoning_level!
+          : levels.includes("medium") ? "medium" : levels[0];
+        updateModel(index, { reasoning_levels: levels, reasoning_level: preferred });
+        setReasoningNotices((previous) => ({
+          ...previous,
+          [modelId]: tool.reasoning_target
+            ? `使用 ${tool.name} 支援的 ${levels.length} 個等級 · 寫入 ${tool.reasoning_target}`
+            : `使用 ${tool.name} 支援的 ${levels.length} 個等級（此 Harness 尚未支援寫入設定）`,
+        }));
+        return;
+      }
+      const discovered = await api.discoverModelReasoning(tool.id, provider.id, modelId);
+      const preferred = discovered.levels.includes(model.reasoning_level ?? "")
+        ? model.reasoning_level!
+        : discovered.default_level;
+      updateModel(index, { reasoning_levels: discovered.levels, reasoning_level: preferred });
+      setReasoningNotices((previous) => ({
+        ...previous,
+        [modelId]: `${discovered.message}${discovered.supported ? ` · 寫入 ${discovered.target}` : " · 此 Harness 尚未支援寫入設定"}`,
+      }));
+    } catch (error) {
+      setReasoningNotices((previous) => ({ ...previous, [modelId]: errorText(error) }));
+    } finally {
+      setReasoningBusy((previous) => {
+        const next = { ...previous };
+        delete next[modelId];
+        return next;
+      });
+    }
   };
 
   const testModel = async (model: ModelProfile) => {
@@ -674,6 +755,22 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   };
 
   const metadataValue = (model: ModelProfile) => metadataDrafts[model.id] ?? modelMetadataText(model);
+  const visibleModelRows = useMemo(() => {
+    const query = modelQuery.trim().toLowerCase();
+    return (form.models ?? []).map((model, index) => ({ model, index })).filter(({ model }) => {
+      if (model.archived && !showArchivedModels) return false;
+      if (!query) return true;
+      return [
+        model.id,
+        model.name,
+        model.reasoning_level ?? "",
+        ...(model.reasoning_levels ?? []),
+        model.context_window ?? "",
+        model.max_output ?? "",
+        JSON.stringify(model.metadata ?? null),
+      ].join(" ").toLowerCase().includes(query);
+    });
+  }, [form.models, modelQuery, showArchivedModels]);
 
   const selectedLiveModels = (form.models ?? []).filter((model) => model.id.trim() && liveSelected.has(model.id));
   const liveMaxOutput = livePolicy?.max_output_tokens ?? 8;
@@ -911,8 +1008,13 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 <button type="button" className="ghost" onClick={() => addModel()}>＋ 新增模型</button>
               </div>
             </div>
-            <div className="model-automation-grid">
-              <div className="model-schedule-card">
+            <section className="model-automation-details">
+              <button type="button" className="model-automation-toggle" aria-expanded={automationOpen} onClick={() => setAutomationOpen((value) => !value)}>
+                <span><strong>自動同步與實測成本保護</strong><small>同步排程、失敗退避與真實模型實測配額</small></span>
+                <b>{automationOpen ? "收起" : "展開"}</b>
+              </button>
+              {automationOpen ? <div className="model-automation-grid">
+                <div className="model-schedule-card">
                 <div className="model-automation-head">
                   <div>
                     <strong>自動模型同步</strong>
@@ -975,8 +1077,9 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                   </div>
                 ) : null}
                 {liveBatchNotice ? <div className="note">{liveBatchNotice}</div> : null}
-              </div>
-            </div>
+                </div>
+              </div> : null}
+            </section>
 
             <div className="field compact-field">
               <label htmlFor="f-add-preset-models">從預設加入模型</label>
@@ -985,133 +1088,105 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 {presets.filter((preset) => preset.models.length > 0).map((preset) => <option key={preset.id} value={preset.id}>{preset.name} · {preset.models.length} 個模型</option>)}
               </select>
             </div>
+            <div className="model-manager-toolbar">
+              <div className="model-search">
+                <span aria-hidden="true">⌕</span>
+                <input type="search" aria-label="搜尋目前供應商的模型" placeholder="搜尋模型名稱、ID、思考等級…" value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} />
+                {modelQuery ? <button type="button" className="ghost small" onClick={() => setModelQuery("")}>清除</button> : null}
+              </div>
+              <span className="model-result-count">{visibleModelRows.length} / {form.models?.length ?? 0} 個模型</span>
+              <button type="button" className={`ghost small${showArchivedModels ? " on" : ""}`} aria-pressed={showArchivedModels} onClick={() => setShowArchivedModels((value) => !value)}>封存 {(form.models ?? []).filter((model) => model.archived).length}</button>
+            </div>
+
             <div className="model-list">
-              {(form.models ?? []).map((model, index) => {
+              {visibleModelRows.map(({ model, index }) => {
                 const active = form.model === model.id && Boolean(model.id);
+                const expanded = expandedModelIndex === index;
                 const stale = Boolean(form.model_synced_at && (!model.last_seen_at || model.last_seen_at < form.model_synced_at));
                 const compatibility = compat[model.id];
+                const levels = reasoningLevelsFor(model);
+                const reasoningBusyForModel = Boolean(model.id && reasoningBusy[model.id]);
+                const reasoningNotice = reasoningNotices[model.id];
                 return (
-                  <article className={`model-card${active ? " active" : ""}${model.archived ? " archived" : ""}${stale ? " stale" : ""}`} key={`${index}-${model.id}`} aria-label={`模型 ${model.id || "新模型"}`}>
-                    <div className="model-actions">
-                      <label className="model-live-pick" title="選取此模型進行批次實測">
-                        <input
-                          type="checkbox"
-                          aria-label={`選取實測模型 ${model.id || "新模型"}`}
-                          checked={Boolean(model.id && liveSelected.has(model.id))}
-                          disabled={!provider || !model.id.trim()}
-                          onChange={() => toggleLiveSelected(model.id)}
-                        />
-                        <span>選取</span>
-                      </label>
-                      <button type="button" className={`model-active${active ? " on" : ""}`} aria-pressed={active} onClick={() => selectModel(model)} title="把這個模型設為供應商預設">
-                        <span className="model-dot" />
-                        {active ? "目前模型" : "設為目前"}
-                      </button>
-                      <button
-                        type="button"
-                        className={`small ghost model-favorite${model.favorite ? " on" : ""}`}
-                        disabled={busy || !provider || !model.id}
-                        aria-label={model.favorite ? `取消常用模型 ${model.id}` : `設為常用模型 ${model.id}`}
-                        aria-pressed={Boolean(model.favorite)}
-                        onClick={() => void toggleFavoriteModel(model)}
-                        title="常用模型會排在快速切換選單前面"
-                      >
-                        {model.favorite ? "★ 常用" : "☆ 常用"}
-                      </button>
-                      <button
-                        type="button"
-                        className="small primary model-switch"
-                        disabled={busy || dirty || !model.id.trim() || Boolean(testingModels[model.id])}
-                        title={dirty ? "請先儲存或放棄其他未儲存變更" : "只更新模型欄位，開啟 diff 後再確認"}
-                        onClick={() => void onSwitchModel(model.id.trim())}
-                      >
-                        {active ? "重新套用" : "切換並預覽"}
-                      </button>
-                      <button
-                        type="button"
-                        className="small ghost"
-                        aria-label={`測試模型 ${model.id || "新模型"}`}
-                        disabled={busy || !provider || !model.id.trim() || Boolean(testingModels[model.id])}
-                        onClick={() => void testModel(model)}
-                        title="讀取 /models 驗證這個模型；不送出 prompt，也不產生推論費用"
-                      >
-                        {testingModels[model.id] ? <><span className="spin" /> 測試中</> : "測試"}
-                      </button>
-                      <button
-                        type="button"
-                        className="small ghost live-test"
-                        aria-label={`實測模型 ${model.id || "新模型"}`}
-                        disabled={busy || !provider || !model.id.trim() || Boolean(liveTestingModels[model.id])}
-                        onClick={() => setConfirmLiveModels([model])}
-                        title="送出極小推論請求；可能產生少量費用"
-                      >
-                        {liveTestingModels[model.id] ? <><span className="spin" /> 實測中</> : "實測"}
-                      </button>
-                      <button
-                        type="button"
-                        className="small ghost"
-                        disabled={busy || !provider || !model.id}
-                        onClick={() => void toggleArchiveModel(model)}
-                        title="封存只影響 kumoSwitch 顯示，不會刪除任何設定"
-                      >
-                        {model.archived ? "取消封存" : "封存"}
-                      </button>
-                      <button type="button" className="small danger model-remove" onClick={() => removeModel(index)}>移除</button>
-                    </div>
-                    <div className="model-fields">
-                      {(model.favorite || model.archived || stale || compatibility) ? (
-                        <div className="model-card-status">
+                  <article className={`model-card${active ? " active" : ""}${model.archived ? " archived" : ""}${stale ? " stale" : ""}${expanded ? " expanded" : ""}`} key={`${index}-${model.id}`} aria-label={`模型 ${model.id || "新模型"}`}>
+                    <div className="model-card-summary">
+                      <label className="model-live-pick" title="選取此模型進行批次實測"><input type="checkbox" aria-label={`選取實測模型 ${model.id || "新模型"}`} checked={Boolean(model.id && liveSelected.has(model.id))} disabled={!provider || !model.id.trim()} onChange={() => toggleLiveSelected(model.id)} /><span>實測</span></label>
+                      <button type="button" className="model-summary-main" aria-expanded={expanded} aria-controls={`model-editor-${index}`} onClick={() => setExpandedModelIndex(expanded ? null : index)}>
+                        <span className="model-summary-title"><strong>{model.name || model.id || "新模型"}</strong>{model.id ? <code>{model.id}</code> : <span className="muted">尚未設定 ID</span>}</span>
+                        <span className="model-summary-badges">
+                          {active ? <span className="badge ok">使用中</span> : null}
                           {model.favorite ? <span className="badge ok">★ 常用</span> : null}
                           {model.archived ? <span className="badge subtle">已封存</span> : null}
                           {stale ? <span className="badge warn">本次未回報</span> : null}
+                          <span className={`badge ${model.reasoning_level ? "reasoning-level-badge" : "subtle"}`}>{model.reasoning_level || (levels.length ? `${levels.length} 個思考等級` : "未設思考等級")}</span>
                           {compatibility ? <span className={`badge compatibility-${compatibility.status}`}>{compatibility.status === "compatible" ? "相容" : compatibility.status === "warning" ? `提醒 · ${compatibility.score}` : `不相容 · ${compatibility.score}`}</span> : null}
+                        </span>
+                        <span className="model-expand-cue">{expanded ? "收起" : "編輯"}</span>
+                      </button>
+                      <button type="button" className={`model-active${active ? " on" : ""}`} aria-pressed={active} onClick={() => selectModel(model)} title="把這個模型設為供應商預設"><span className="model-dot" />{active ? "目前模型" : "設為目前"}</button>
+                      <button type="button" className="primary small model-switch" disabled={busy || dirty || !model.id.trim() || Boolean(testingModels[model.id])} title={dirty ? "請先儲存或放棄其他未儲存變更" : "只更新模型欄位，開啟 diff 後再確認"} onClick={() => void onSwitchModel(model.id.trim())}>{active ? "重新套用" : "切換並預覽"}</button>
+                      <details className="model-more">
+                        <summary className="ghost small">更多</summary>
+                        <div className="model-more-menu">
+                          <button type="button" className={`ghost small${model.favorite ? " on" : ""}`} disabled={busy || !provider || !model.id} aria-label={model.favorite ? `取消常用模型 ${model.id}` : `設為常用模型 ${model.id}`} aria-pressed={Boolean(model.favorite)} onClick={() => void toggleFavoriteModel(model)}>{model.favorite ? "★ 取消常用" : "☆ 設為常用"}</button>
+                          <button type="button" className="ghost small" aria-label={`測試模型 ${model.id || "新模型"}`} disabled={busy || !provider || !model.id.trim() || Boolean(testingModels[model.id])} onClick={() => void testModel(model)}>{testingModels[model.id] ? <><span className="spin" /> 測試中</> : "測試模型目錄"}</button>
+                          <button type="button" className="ghost small live-test" aria-label={`實測模型 ${model.id || "新模型"}`} disabled={busy || !provider || !model.id.trim() || Boolean(liveTestingModels[model.id])} onClick={() => setConfirmLiveModels([model])}>{liveTestingModels[model.id] ? <><span className="spin" /> 實測中</> : "真實模型實測"}</button>
+                          <button type="button" className="ghost small" disabled={busy || !provider || !model.id} onClick={() => void toggleArchiveModel(model)}>{model.archived ? "取消封存" : "封存模型"}</button>
+                          <button type="button" className="danger small" onClick={() => removeModel(index)}>移除模型</button>
                         </div>
-                      ) : null}
-                      {compatibility ? (
-                        <details className={`model-compatibility ${compatibility.status}`}>
-                          <summary>Harness 相容性矩陣 · {compatibility.score}/100</summary>
-                          <div className="model-compatibility-checks">
-                            {compatibility.checks.map((check) => (
-                              <div className={`compat-check ${check.status}`} key={check.key}>
-                                <span>{check.label}</span>
-                                <strong>{check.status === "ok" ? "符合" : check.status === "fail" ? "阻擋" : check.status === "warn" ? "提醒" : "資訊"}</strong>
-                                <p>{check.detail}</p>
-                              </div>
-                            ))}
-                          </div>
-                          {compatibility.status === "incompatible" ? <div className="note error">明確不相容的組合會在套用前被阻擋。若確定要測試，請在 Metadata 加入 <code>"compatibility_override": true</code>。</div> : null}
-                        </details>
-                      ) : null}
-                      <div className="field-row">
-                        <div className="field">
-                          <label>Model ID</label>
-                          <input aria-label="Model ID" list="model-suggestions" value={model.id} placeholder="glm-5.3-flash" onChange={(event) => updateModel(index, { id: event.target.value })} />
-                        </div>
-                        <div className="field">
-                          <label>顯示名稱</label>
-                          <input aria-label="模型顯示名稱" value={model.name} placeholder="選填" onChange={(event) => updateModel(index, { name: event.target.value })} />
-                        </div>
-                      </div>
-                      <div className="model-number-row">
-                        <div className="field"><label>Context window</label><input aria-label="Context window" inputMode="numeric" value={model.context_window ?? ""} placeholder="128000" onChange={(event) => updateModel(index, { context_window: optionalNumber(event.target.value) })} /></div>
-                        <div className="field"><label>Max output</label><input aria-label="Max output" inputMode="numeric" value={model.max_output ?? ""} placeholder="16384" onChange={(event) => updateModel(index, { max_output: optionalNumber(event.target.value) })} /></div>
-                        <div className="field"><label>Reasoning</label><select aria-label="Reasoning" value={printableBool(model.reasoning)} onChange={(event) => updateModel(index, { reasoning: optionalBool(event.target.value) })}><option value="unknown">未知</option><option value="true">支援</option><option value="false">不支援</option></select></div>
-                        <div className="field"><label>Vision</label><select aria-label="Vision" value={printableBool(model.vision)} onChange={(event) => updateModel(index, { vision: optionalBool(event.target.value) })}><option value="unknown">未知</option><option value="true">支援</option><option value="false">不支援</option></select></div>
-                        <div className="field"><label>Tools</label><select aria-label="Tools" value={printableBool(model.tools)} onChange={(event) => updateModel(index, { tools: optionalBool(event.target.value) })}><option value="unknown">未知</option><option value="true">支援</option><option value="false">不支援</option></select></div>
-                      </div>
-                      <div className="field">
-                        <label>Metadata（JSON）</label>
-                        <textarea aria-label="模型 metadata" rows={3} value={metadataValue(model)} onChange={(event) => setMetadataDrafts((previous) => ({ ...previous, [model.id]: event.target.value }))} />
-                      </div>
-                      <div className="model-health-row">
-                        <ModelHealth checks={model.checks} />
-                        {modelNotices[model.id] ? <span className="model-test-notice">{modelNotices[model.id]}</span> : null}
-                      </div>
+                      </details>
                     </div>
+
+                    {expanded ? (
+                      <div className="model-fields" id={`model-editor-${index}`}>
+                        <div className="field-row">
+                          <div className="field"><label>Model ID</label><input aria-label="Model ID" list="model-suggestions" value={model.id} placeholder="glm-5.3-flash" onChange={(event) => updateModel(index, { id: event.target.value })} /></div>
+                          <div className="field"><label>顯示名稱</label><input aria-label="模型顯示名稱" value={model.name} placeholder="選填" onChange={(event) => updateModel(index, { name: event.target.value })} /></div>
+                        </div>
+                        <div className="model-number-row model-core-row">
+                          <div className="field"><label>Context window</label><input aria-label="Context window" inputMode="numeric" value={model.context_window ?? ""} placeholder="128000" onChange={(event) => updateModel(index, { context_window: optionalNumber(event.target.value) })} /></div>
+                          <div className="field"><label>Max output</label><input aria-label="Max output" inputMode="numeric" value={model.max_output ?? ""} placeholder="16384" onChange={(event) => updateModel(index, { max_output: optionalNumber(event.target.value) })} /></div>
+                        </div>
+
+                        <section className="reasoning-studio">
+                          <div className="reasoning-studio-head">
+                            <div><strong>思考等級</strong><small>{tool.reasoning_target ? `套用後寫入 ${tool.reasoning_target}` : "此 Harness 尚未支援寫入；等級仍會保存在模型資料"}</small></div>
+                            <button type="button" className="ghost small" aria-label={`自動偵測思考等級 ${model.id || "新模型"}`} disabled={reasoningBusyForModel || !model.id.trim()} onClick={() => void detectReasoningLevels(index, model)}>{reasoningBusyForModel ? <><span className="spin" /> 偵測中</> : "自動偵測等級"}</button>
+                          </div>
+                          <div className="reasoning-controls">
+                            <label><span>目前選擇</span><select aria-label={`思考等級 ${model.id || "新模型"}`} value={model.reasoning_level ?? ""} onChange={(event) => setReasoningLevel(index, model, event.target.value)}><option value="">模型／Harness 預設</option>{levels.map((level) => <option value={level} key={level}>{level}</option>)}{model.reasoning_level && !levels.includes(model.reasoning_level) ? <option value={model.reasoning_level}>{model.reasoning_level}</option> : null}</select></label>
+                            <span className="reasoning-count">{levels.length ? `${levels.length} 個可用等級` : "尚未取得等級"}</span>
+                          </div>
+                          {reasoningNotice ? <div className="reasoning-notice">{reasoningNotice}</div> : null}
+                          {!levels.length ? <div className="hint">按「自動偵測等級」讀取供應商模型資料；若供應商未公開，會使用 Harness 支援的候選等級。</div> : null}
+                        </section>
+
+                        {compatibility ? (
+                          <details className={`model-compatibility ${compatibility.status}`}>
+                            <summary>Harness 相容性矩陣 · {compatibility.score}/100</summary>
+                            <div className="model-compatibility-checks">{compatibility.checks.map((check) => <div className={`compat-check ${check.status}`} key={check.key}><span>{check.label}</span><strong>{check.status === "ok" ? "符合" : check.status === "fail" ? "阻擋" : check.status === "warn" ? "提醒" : "資訊"}</strong><p>{check.detail}</p></div>)}</div>
+                            {compatibility.status === "incompatible" ? <div className="note error">明確不相容的組合會在套用前被阻擋。若確定要測試，請在 Metadata 加入 <code>"compatibility_override": true</code>。</div> : null}
+                          </details>
+                        ) : null}
+
+                        <details className="model-advanced">
+                          <summary>進階能力與 Metadata</summary>
+                          <div className="model-number-row">
+                            <div className="field"><label>Reasoning</label><select aria-label="Reasoning" value={printableBool(model.reasoning)} onChange={(event) => updateModel(index, { reasoning: optionalBool(event.target.value) })}><option value="unknown">未知</option><option value="true">支援</option><option value="false">不支援</option></select></div>
+                            <div className="field"><label>Vision</label><select aria-label="Vision" value={printableBool(model.vision)} onChange={(event) => updateModel(index, { vision: optionalBool(event.target.value) })}><option value="unknown">未知</option><option value="true">支援</option><option value="false">不支援</option></select></div>
+                            <div className="field"><label>Tools</label><select aria-label="Tools" value={printableBool(model.tools)} onChange={(event) => updateModel(index, { tools: optionalBool(event.target.value) })}><option value="unknown">未知</option><option value="true">支援</option><option value="false">不支援</option></select></div>
+                          </div>
+                          <div className="field"><label>候選思考等級（逗號分隔）</label><input aria-label="候選思考等級" value={reasoningLevelsFor(model).join(", ")} placeholder="off, low, medium, high" onChange={(event) => updateModel(index, { reasoning_levels: event.target.value.split(",").map((level) => level.trim()).filter(Boolean) })} /></div>
+                          <div className="field"><label>Metadata（JSON）</label><textarea aria-label="模型 metadata" rows={4} value={metadataValue(model)} onChange={(event) => setMetadataDrafts((previous) => ({ ...previous, [model.id]: event.target.value }))} /></div>
+                        </details>
+
+                        <div className="model-health-row"><ModelHealth checks={model.checks} />{modelNotices[model.id] ? <span className="model-test-notice">{modelNotices[model.id]}</span> : null}</div>
+                      </div>
+                    ) : null}
                   </article>
                 );
               })}
-              {(form.models?.length ?? 0) === 0 ? <div className="empty small">還沒有模型。新增模型，或從供應商預設加入。</div> : null}
+              {visibleModelRows.length === 0 ? <div className="empty small">{(form.models?.length ?? 0) === 0 ? "還沒有模型。新增模型，或從供應商預設加入。" : "沒有符合搜尋條件的模型。"}</div> : null}
             </div>
             <datalist id="model-suggestions">
               {Array.from(new Set(presets.flatMap((preset) => preset.models))).sort((left, right) => left.localeCompare(right)).map((model) => <option key={model} value={model} />)}

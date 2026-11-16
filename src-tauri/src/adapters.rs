@@ -64,6 +64,13 @@ pub struct ModelProfile {
     pub max_output: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<bool>,
+    /// Thinking levels advertised by the provider or known to the Harness.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reasoning_levels: Vec<String>,
+    /// The level written to the Harness when this model is active. Empty means
+    /// "use the model/Harness default".
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reasoning_level: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vision: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -108,6 +115,8 @@ impl Default for ModelProfile {
             context_window: None,
             max_output: None,
             reasoning: None,
+            reasoning_levels: Vec::new(),
+            reasoning_level: String::new(),
             vision: None,
             tools: None,
             metadata: Value::Null,
@@ -184,12 +193,164 @@ pub struct Provider {
     pub model_sync_last_error: String,
 }
 
+impl Provider {
+    pub fn active_model_profile(&self) -> Option<&ModelProfile> {
+        self.models.iter().find(|model| model.id == self.model)
+    }
+
+    pub fn active_reasoning_level(&self) -> &str {
+        self.active_model_profile()
+            .map(|model| model.reasoning_level.trim())
+            .unwrap_or("")
+    }
+}
+
 pub(crate) fn default_model_sync_interval_secs() -> u64 {
     24 * 60 * 60
 }
 
 pub(crate) fn default_model_sync_jitter_secs() -> u64 {
     5 * 60
+}
+
+pub fn canonical_reasoning_level(value: &str) -> Option<String> {
+    let normalized = value.trim().to_ascii_lowercase().replace('_', "-").replace(' ', "-");
+    let level = match normalized.as_str() {
+        "none" | "disabled" | "disable" => "off",
+        "minimum" => "minimal",
+        "med" => "medium",
+        "maximum" => "max",
+        "x-high" => "xhigh",
+        other => other,
+    }
+    .trim_matches('-');
+    if level.is_empty() || level.len() > 32 {
+        return None;
+    }
+    level
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'))
+        .then(|| level.to_string())
+}
+
+fn level_from_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(level) => canonical_reasoning_level(level),
+        Value::Object(map) => ["id", "effort", "level", "name", "value"]
+            .iter()
+            .find_map(|key| map.get(*key).and_then(Value::as_str))
+            .and_then(canonical_reasoning_level),
+        _ => None,
+    }
+}
+
+fn push_level(levels: &mut Vec<String>, level: Option<String>) {
+    if let Some(level) = level {
+        if !levels.iter().any(|item| item == &level) {
+            levels.push(level);
+        }
+    }
+}
+
+/// Extract explicitly advertised thinking levels from provider/model metadata.
+pub fn reasoning_levels_from_metadata(value: &Value) -> Vec<String> {
+    if value.is_null() {
+        return Vec::new();
+    }
+    let mut levels = Vec::new();
+    for pointer in [
+        "/reasoningLevels",
+        "/reasoning_levels",
+        "/reasoning_efforts",
+        "/reasoningEfforts",
+        "/supported_reasoning_efforts",
+        "/supportedReasoningEfforts",
+        "/thinkingLevels",
+        "/thinking_levels",
+        "/thinking_efforts",
+        "/thinkingEfforts",
+        "/capabilities/reasoning_levels",
+        "/capabilities/reasoningLevels",
+        "/capabilities/reasoning_efforts",
+        "/capabilities/reasoningEfforts",
+        "/capabilities/thinking_levels",
+        "/capabilities/thinkingLevels",
+        "/reasoning/levels",
+        "/thinking/levels",
+    ] {
+        let Some(value) = value.pointer(pointer) else { continue };
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    push_level(&mut levels, level_from_value(item));
+                }
+            }
+            Value::Object(items) => {
+                for (level, enabled) in items {
+                    if !enabled.is_null() && enabled != &Value::Bool(false) {
+                        push_level(&mut levels, canonical_reasoning_level(level));
+                    }
+                }
+            }
+            other => push_level(&mut levels, level_from_value(other)),
+        }
+    }
+    for pointer in ["/thinkingLevelMap", "/thinking_level_map", "/reasoningLevelMap", "/reasoning_level_map"] {
+        let Some(Value::Object(items)) = value.pointer(pointer) else { continue };
+        for (level, mapping) in items {
+            if !mapping.is_null() && mapping != &Value::Bool(false) {
+                push_level(&mut levels, canonical_reasoning_level(level));
+            }
+        }
+    }
+    levels
+}
+
+pub fn default_reasoning_level_from_metadata(value: &Value) -> Option<String> {
+    ["/default_reasoning_level", "/default_reasoning_effort", "/reasoning/default", "/thinking/default"]
+        .iter()
+        .find_map(|pointer| value.pointer(pointer).and_then(level_from_value))
+}
+
+pub fn reasoning_levels_for_tool(tool: &str) -> &'static [&'static str] {
+    match tool {
+        "codex" => CODEX_REASONING_LEVELS,
+        "claude" => CLAUDE_REASONING_LEVELS,
+        "opencode" | "kilo" => OPENCODE_REASONING_LEVELS,
+        "pi" => PI_REASONING_LEVELS,
+        "omp" => OMP_REASONING_LEVELS,
+        _ => EMPTY,
+    }
+}
+
+pub fn reasoning_target_for_tool(tool: &str) -> &'static str {
+    match tool {
+        "codex" => "config.toml → model_reasoning_effort",
+        "claude" => "settings.json → env.CLAUDE_CODE_EFFORT_LEVEL",
+        "opencode" => "opencode.json → provider.models.*.options.reasoningEffort",
+        "kilo" => "kilo.jsonc → provider.models.*.options.reasoningEffort",
+        "pi" => "settings.json → modelThinkingLevels",
+        "omp" => "config.yml → modelRoles.default",
+        _ => "",
+    }
+}
+
+fn normalize_model_reasoning(model: &mut ModelProfile) {
+    let mut levels = std::mem::take(&mut model.reasoning_levels)
+        .into_iter()
+        .filter_map(|level| canonical_reasoning_level(&level))
+        .collect::<Vec<_>>();
+    for level in reasoning_levels_from_metadata(&model.metadata) {
+        push_level(&mut levels, Some(level));
+    }
+    model.reasoning_level = model
+        .reasoning_level
+        .trim()
+        .to_ascii_lowercase();
+    if !model.reasoning_level.is_empty() && !levels.contains(&model.reasoning_level) {
+        levels.insert(0, model.reasoning_level.clone());
+    }
+    model.reasoning_levels = levels;
 }
 
 /// Normalize legacy and edited model data without dropping metadata.
@@ -206,6 +367,7 @@ pub fn normalize_provider_models(provider: &mut Provider) {
         if model.name.is_empty() {
             model.name = model.id.clone();
         }
+        normalize_model_reasoning(&mut model);
         if seen.insert(model.id.clone()) {
             models.push(model);
         }
@@ -255,6 +417,7 @@ pub enum Val {
 pub enum When {
     Always,
     HasModel,
+    HasReasoningLevel,
     /// Skip when the key already exists, so user customisations survive.
     IfMissing,
 }
@@ -291,6 +454,11 @@ const CODEX_WIRE: &[&str] = &["responses", "chat"];
 const DSH_API: &[&str] = &["openai-completions", "openai-responses", "anthropic-messages"];
 const OPENCODE_API: &[&str] = &["openai", "anthropic", "responses"];
 const PI_API: &[&str] = &["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
+const CODEX_REASONING_LEVELS: &[&str] = &["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+const CLAUDE_REASONING_LEVELS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+const OPENCODE_REASONING_LEVELS: &[&str] = &["minimal", "low", "medium", "high", "xhigh", "max"];
+const PI_REASONING_LEVELS: &[&str] = &["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const OMP_REASONING_LEVELS: &[&str] = &["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto", "inherit"];
 const EMPTY: &[&str] = &[];
 
 pub static TOOLS: &[ToolSpec] = &[
@@ -307,6 +475,7 @@ pub static TOOLS: &[ToolSpec] = &[
         steps: &[
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_provider"], val: s("{{config_id}}"), when: When::Always },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model"], val: s("{{model}}"), when: When::HasModel },
+            Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_reasoning_effort"], val: s("{{reasoning_level}}"), when: When::HasReasoningLevel },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "name"], val: s("{{name}}"), when: When::Always },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "base_url"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "wire_api"], val: s("{{kind}}"), when: When::Always },
@@ -329,6 +498,7 @@ pub static TOOLS: &[ToolSpec] = &[
             Step { file: "settings.json", fmt: Fmt::Json, path: &["env", "ANTHROPIC_BASE_URL"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "settings.json", fmt: Fmt::Json, path: &["env", "ANTHROPIC_AUTH_TOKEN"], val: s("{{api_key}}"), when: When::Always },
             Step { file: "settings.json", fmt: Fmt::Json, path: &["env", "ANTHROPIC_MODEL"], val: s("{{model}}"), when: When::HasModel },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["env", "CLAUDE_CODE_EFFORT_LEVEL"], val: s("{{reasoning_level}}"), when: When::HasReasoningLevel },
         ],
         kind_choices: EMPTY,
     },
@@ -384,6 +554,7 @@ pub static TOOLS: &[ToolSpec] = &[
             Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "options", "baseURL"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "options", "apiKey"], val: s("{{api_key}}"), when: When::Always },
             Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "models", "{{model}}", "name"], val: s("{{model}}"), when: When::IfMissing },
+            Step { file: "opencode.json", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "models", "{{model}}", "options", "reasoningEffort"], val: s("{{reasoning_level}}"), when: When::HasReasoningLevel },
             Step { file: "opencode.json", fmt: Fmt::Json, path: &["model"], val: s("{{config_id}}/{{model}}"), when: When::HasModel },
         ],
         kind_choices: OPENCODE_API,
@@ -562,6 +733,7 @@ pub static TOOLS: &[ToolSpec] = &[
             Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "options", "baseURL"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "options", "apiKey"], val: s("{{api_key}}"), when: When::Always },
             Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "models", "{{model}}", "name"], val: s("{{model}}"), when: When::IfMissing },
+            Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["provider", "{{config_id}}", "models", "{{model}}", "options", "reasoningEffort"], val: s("{{reasoning_level}}"), when: When::HasReasoningLevel },
             Step { file: "kilo.jsonc", fmt: Fmt::Json, path: &["model"], val: s("{{config_id}}/{{model}}"), when: When::HasModel },
         ],
         kind_choices: EMPTY,
@@ -618,6 +790,7 @@ pub static TOOLS: &[ToolSpec] = &[
             },
             Step { file: "settings.json", fmt: Fmt::Json, path: &["defaultProvider"], val: s("{{config_id}}"), when: When::Always },
             Step { file: "settings.json", fmt: Fmt::Json, path: &["defaultModel"], val: s("{{model}}"), when: When::HasModel },
+            Step { file: "settings.json", fmt: Fmt::Json, path: &["modelThinkingLevels", "{{config_id}}/{{model}}"], val: s("{{reasoning_level}}"), when: When::HasReasoningLevel },
         ],
         kind_choices: PI_API,
     },
@@ -645,7 +818,7 @@ pub static TOOLS: &[ToolSpec] = &[
                 val: Val::Yaml(r#"[{"id":"{{model}}","name":"{{model}}","reasoning":true,"input":["text","image"],"contextWindow":128000,"maxTokens":16384}]"#),
                 when: When::IfMissing,
             },
-            Step { file: "config.yml", fmt: Fmt::Yaml, path: &["modelRoles", "default"], val: s("{{config_id}}/{{model}}"), when: When::HasModel },
+            Step { file: "config.yml", fmt: Fmt::Yaml, path: &["modelRoles", "default"], val: s("{{config_id}}/{{model_with_reasoning}}"), when: When::HasModel },
         ],
         kind_choices: PI_API,
     },
@@ -714,13 +887,21 @@ pub fn display_path(path: &Path) -> String {
 }
 
 fn subst(template: &str, provider: &Provider, index: usize) -> String {
+    let reasoning_level = provider.active_reasoning_level();
+    let model_with_reasoning = if reasoning_level.is_empty() {
+        provider.model.clone()
+    } else {
+        format!("{}:{reasoning_level}", provider.model)
+    };
     template
         .replace("{{index}}", &index.to_string())
         .replace("{{config_id}}", &provider.config_id)
         .replace("{{name}}", &provider.name)
         .replace("{{base_url}}", provider.base_url.trim_end_matches('/'))
         .replace("{{api_key}}", &provider.api_key)
+        .replace("{{model_with_reasoning}}", &model_with_reasoning)
         .replace("{{model}}", &provider.model)
+        .replace("{{reasoning_level}}", reasoning_level)
         .replace("{{kind}}", &provider.kind)
 }
 
@@ -1026,6 +1207,9 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
         if step.when == When::HasModel && provider.model.trim().is_empty() {
             continue;
         }
+        if step.when == When::HasReasoningLevel && provider.active_reasoning_level().is_empty() {
+            continue;
+        }
         let path = resolve_file_in(spec, step.file, dir);
         let display = display_path(&path);
         let idx = match files.iter().position(|f| f.file == display) {
@@ -1147,6 +1331,8 @@ pub(crate) fn model_profile_from_value(id: String, value: &Value) -> ModelProfil
             "/limit/output",
         ]),
         reasoning: boolean(&["/reasoning", "/capabilities/reasoning", "/supports_reasoning"]),
+        reasoning_levels: reasoning_levels_from_metadata(value),
+        reasoning_level: default_reasoning_level_from_metadata(value).unwrap_or_default(),
         vision: boolean(&["/vision", "/capabilities/vision", "/attachment"]).or_else(|| {
             value.get("input").and_then(Value::as_array).map(|inputs| {
                 inputs.iter().any(|input| input.as_str() == Some("image"))

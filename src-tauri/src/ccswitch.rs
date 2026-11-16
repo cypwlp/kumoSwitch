@@ -182,6 +182,8 @@ fn parse_models(settings: &Value, model: &str) -> Vec<ModelProfile> {
                     .or_else(|| item.get("max_output_tokens"))
                     .and_then(Value::as_u64),
                 reasoning: Some(reasoning),
+                reasoning_levels: crate::adapters::reasoning_levels_from_metadata(item),
+                reasoning_level: String::new(),
                 vision: Some(vision),
                 tools: None,
                 metadata: item.clone(),
@@ -502,6 +504,7 @@ mod tests {
         assert_eq!(model, "deepseek-v4.1");
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].context_window, Some(1_048_576));
+        assert_eq!(models[0].reasoning_levels, vec!["high"]);
         assert_eq!(models[0].vision, Some(true));
         assert_eq!(base_url, "https://example.com/v1");
         assert_eq!(kind, "responses");

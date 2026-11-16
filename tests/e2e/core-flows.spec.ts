@@ -236,6 +236,10 @@ test("provider keeps multiple models and can switch the active model", async ({ 
   await card.getByLabel("模型顯示名稱").fill("DeepSeek v4.1");
   await card.getByLabel("Context window").fill("128000");
   await card.getByLabel("Max output").fill("16384");
+  await card.getByRole("button", { name: "自動偵測思考等級 deepseek-v4.1-flash" }).click();
+  await expect(card.getByText(/支援的 \d+ 個思考等級|個思考等級/)).toBeVisible();
+  await card.getByLabel("思考等級 deepseek-v4.1-flash", { exact: true }).selectOption("high");
+  await card.locator(".model-advanced > summary").click();
   await card.getByLabel("Reasoning").selectOption("true");
   await card.getByRole("button", { name: "設為目前" }).click();
   await expect(card.getByText("目前模型")).toBeVisible();
@@ -250,7 +254,9 @@ test("each model can be tested and quickly switched without the full editor", as
   let dialog = page.getByRole("dialog");
   await dialog.getByRole("tab", { name: /^模型/ }).click();
 
-  await dialog.getByRole("button", { name: "測試模型 glm-5.3-flash" }).click();
+  const activeModel = dialog.getByRole("article", { name: "模型 glm-5.3-flash" });
+  await activeModel.locator(".model-more > summary").click();
+  await activeModel.getByRole("button", { name: "測試模型 glm-5.3-flash" }).click();
   await expect(dialog.getByText(/最近 100% · 平均 \d+ms · 200/)).toBeVisible();
 
   await dialog.locator(".sheet-head").getByRole("button", { name: "關閉" }).click();
@@ -264,6 +270,32 @@ test("each model can be tested and quickly switched without the full editor", as
   await model.getByRole("button", { name: "切換並預覽" }).click();
   await expect(page.getByRole("heading", { name: "套用「OpenCode Go」到 Codex" })).toBeVisible();
   await expect(page.locator("pre.diff")).toContainText('model = "muse-spark-1.3"');
+});
+
+test("model manager searches models and persists the selected reasoning level", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /^模型/ }).click();
+
+  const search = dialog.getByLabel("搜尋目前供應商的模型");
+  await search.fill("muse");
+  await expect(dialog.locator(".model-card")).toHaveCount(1);
+  await expect(dialog.getByRole("article", { name: "模型 muse-spark-1.3" })).toBeVisible();
+  await expect(dialog.getByText("1 / 2 個模型")).toBeVisible();
+  await search.fill("high");
+  await expect(dialog.locator(".model-card")).toHaveCount(2);
+  await search.fill("");
+
+  const activeModel = dialog.getByRole("article", { name: "模型 glm-5.3-flash" });
+  const level = activeModel.getByLabel("思考等級 glm-5.3-flash", { exact: true });
+  await expect(level).toHaveValue("medium");
+  await activeModel.getByRole("button", { name: "自動偵測思考等級 glm-5.3-flash" }).click();
+  await expect(activeModel.getByText(/個思考等級.*寫入 config\.toml/)).toBeVisible();
+  await level.selectOption("high");
+  await dialog.getByRole("button", { name: "儲存並預覽" }).click();
+
+  const diff = page.getByRole("dialog").filter({ hasText: "套用「OpenCode Go」到 Codex" });
+  await expect(diff.locator("pre.diff")).toContainText('model_reasoning_effort = "high"');
 });
 
 test("model discovery previews additions and preserves unreturned models", async ({ page }) => {
@@ -312,7 +344,9 @@ test("live model test requires explicit cost warning", async ({ page }) => {
   await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
   const editor = page.getByRole("dialog");
   await editor.getByRole("tab", { name: /^模型/ }).click();
-  await editor.getByRole("button", { name: "實測模型 glm-5.3-flash" }).click();
+  const activeModel = editor.getByRole("article", { name: "模型 glm-5.3-flash" });
+  await activeModel.locator(".model-more > summary").click();
+  await activeModel.getByRole("button", { name: "實測模型 glm-5.3-flash" }).click();
 
   const confirm = page.getByRole("dialog").filter({ hasText: "進行真實模型實測？" });
   await expect(confirm.getByText(/供應商可能收取少量費用/)).toBeVisible();
@@ -407,6 +441,10 @@ test("model sync schedule and live-test budget are configurable", async ({ page 
   await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("tab", { name: /^模型/ }).click();
+  const automation = dialog.locator(".model-automation-details");
+  const automationToggle = automation.getByRole("button", { name: /自動同步與實測成本保護/ });
+  await automationToggle.click();
+  await expect(automationToggle).toHaveAttribute("aria-expanded", "true");
 
   await expect(dialog.getByLabel("模型同步間隔")).toHaveValue("86400");
   await expect(dialog.getByText(/離線快取：2 個模型/)).toBeVisible();

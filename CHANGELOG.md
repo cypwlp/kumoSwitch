@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.21.0 — 2026-11-16
+- **模型管理重新整理**：模型改為可搜尋的清單，預設只展開目前模型；每個模型可單獨展開編輯，JSON metadata、能力矩陣與自動同步／實測設定收進進階區。
+- **模型搜尋**：可依 Model ID、顯示名稱、context window、思考等級與 metadata 搜尋目前供應商的模型，並可切換是否顯示封存模型。
+- **思考等級偵測**：從供應商 `/models` 的 `reasoningLevels`、`reasoning_efforts`、`thinkingLevels`、`thinkingLevelMap` 等欄位解析可用等級；供應商未公開時改用 Harness 支援的候選等級。
+- **模型思考等級**：每個模型可保存思考等級與候選清單，並可自動偵測、手動調整候選值；模型同步會顯示並可合併思考等級差異。
+- **實際寫入 Harness**：Codex 寫入 `model_reasoning_effort`、Claude 寫入 `CLAUDE_CODE_EFFORT_LEVEL`、OpenCode／Kilo 寫入模型 `reasoningEffort`、Pi 寫入 `modelThinkingLevels`、Oh My Pi 寫入 `modelRoles.default` 的 thinking suffix；其他 Harness 會明確標示尚未支援寫入。
+- **安全與相容性**：思考等級只接受正規化字元與已知候選，未知能力仍保留原始 metadata；切換模型時會套用該模型自己的思考等級。
+- **回歸測試**：新增模型搜尋、思考等級偵測／保存、實際 diff 寫入與跨 Harness adapter 測試。
 ## 0.20.1 — 2026-11-16
 - 修正供應商選擇器的 modal 滾動結構：標題與底部安全提示固定在 modal 上／下緣，不再隨供應商清單滾到畫面中間。
 - 供應商分類與卡片改為在 modal 中央區域獨立滾動，避免 footer 遮住 MiniMax、Groq 等項目。

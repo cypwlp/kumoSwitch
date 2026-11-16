@@ -38,6 +38,8 @@ struct ToolView {
     format: &'static str,
     verified: bool,
     surface: &'static str,
+    reasoning_levels: Vec<&'static str>,
+    reasoning_target: &'static str,
     restart: &'static str,
     detected: bool,
     takeover: bool,
@@ -133,6 +135,16 @@ struct ProviderSearchRow {
     tool: String,
     tool_name: String,
     provider: ProviderView,
+}
+
+#[derive(Serialize)]
+struct ModelReasoningView {
+    levels: Vec<String>,
+    default_level: String,
+    source: &'static str,
+    supported: bool,
+    target: &'static str,
+    message: String,
 }
 
 #[derive(Serialize)]
@@ -462,6 +474,8 @@ fn tool_list() -> Vec<ToolView> {
                 },
                 verified: spec.verified,
                 surface: harness_manager::surface_for(spec.id).as_str(),
+                reasoning_levels: adapters::reasoning_levels_for_tool(spec.id).to_vec(),
+                reasoning_target: adapters::reasoning_target_for_tool(spec.id),
                 restart: spec.restart,
                 detected: adapters::tool_dir(spec).exists(),
                 takeover: takeover_state(spec.id),
@@ -750,6 +764,105 @@ fn discover_provider_models(
         endpoint: discovered.endpoint,
         message: discovered.message,
     })
+}
+
+#[tauri::command]
+fn discover_model_reasoning(
+    tool: String,
+    provider_id: String,
+    model_id: String,
+) -> Result<ModelReasoningView, String> {
+    let (spec, mut provider) = load_provider(&tool, &provider_id)?;
+    let outcome = (|| -> Result<ModelReasoningView, String> {
+        let model = provider
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .ok_or_else(|| format!("找不到模型：{model_id}"))?;
+        let selected_level = model.reasoning_level.trim().to_string();
+        let metadata_default = adapters::default_reasoning_level_from_metadata(&model.metadata);
+        let reasoning_supported = model.reasoning != Some(false);
+        let mut levels = model.reasoning_levels.clone();
+        let mut source = if levels.is_empty() { "none" } else { "saved" };
+        let mut message = if levels.is_empty() {
+            String::new()
+        } else {
+            format!("使用 kumoSwitch 已保存的 {} 個思考等級", levels.len())
+        };
+
+        if reasoning_supported && levels.is_empty() && !provider.base_url.trim().is_empty() {
+            match net::discover_models_styled(
+                &provider.base_url,
+                &provider.api_key,
+                uses_anthropic_wire(&tool, &provider.kind),
+                &tool,
+                &provider.kind,
+            ) {
+                Ok(discovered) => {
+                    if let Some(remote) = discovered.models.into_iter().find(|model| model.id == model_id) {
+                        if !remote.reasoning_levels.is_empty() {
+                            levels = remote.reasoning_levels;
+                            source = "catalog";
+                            message = format!("供應商模型目錄回報 {} 個思考等級", levels.len());
+                        }
+                    }
+                }
+                Err(error) => {
+                    message = format!("模型目錄沒有提供思考等級（{error}）");
+                }
+            }
+        }
+
+        if reasoning_supported && levels.is_empty() {
+            let defaults = adapters::reasoning_levels_for_tool(spec.id);
+            if !defaults.is_empty() {
+                levels = defaults.iter().map(|level| level.to_string()).collect();
+                source = "harness";
+                message = format!(
+                    "供應商沒有公開思考等級；使用 {} 支援的候選等級",
+                    spec.name
+                );
+            }
+        }
+
+        if !reasoning_supported && levels.is_empty() {
+            return Err(format!("{model_id} 被標示為不支援 reasoning／thinking"));
+        }
+        levels.sort_by_key(|level| {
+            ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "auto", "inherit"]
+                .iter()
+                .position(|candidate| candidate == level)
+                .unwrap_or(usize::MAX)
+        });
+        levels.dedup();
+        if levels.is_empty() {
+            return Err(format!(
+                "找不到 {model_id} 的思考等級；供應商目錄未公開，且這個 Harness 尚未定義候選等級"
+            ));
+        }
+        let default_level = if levels.contains(&selected_level) {
+            selected_level
+        } else if let Some(level) = metadata_default.filter(|level| levels.contains(level)) {
+            level
+        } else {
+            levels[0].clone()
+        };
+        let target = adapters::reasoning_target_for_tool(spec.id);
+        audit::record(
+            "model.reasoning_discover",
+            format!("{tool}:{provider_id}:{model_id};source={source};levels={}", levels.len()),
+        );
+        Ok(ModelReasoningView {
+            levels,
+            default_level,
+            source,
+            supported: !target.is_empty(),
+            target,
+            message,
+        })
+    })();
+    provider.api_key.zeroize();
+    outcome
 }
 
 #[tauri::command]
@@ -2333,6 +2446,7 @@ fn main() {
             toggle_model_favorite,
             archive_model,
             discover_provider_models,
+            discover_model_reasoning,
             model_compatibility,
             api_key_add,
             api_key_update,

@@ -59,6 +59,30 @@ fn apply(dir: &Path, tool: &str, config_id: &str) -> Vec<String> {
     written
 }
 
+#[test]
+fn reasoning_levels_are_written_to_supported_harnesses() {
+    let cases = [
+        ("codex", "model_reasoning_effort = \"high\""),
+        ("claude", "\"CLAUDE_CODE_EFFORT_LEVEL\": \"high\""),
+        ("opencode", "\"reasoningEffort\": \"high\""),
+        ("kilo", "\"reasoningEffort\": \"high\""),
+        ("pi", "modelThinkingLevels"),
+        ("omp", "e2e/e2e-model:high"),
+    ];
+    for (tool, expected) in cases {
+        let dir = sandbox(&format!("reasoning-{tool}"));
+        let spec = adapters::find(tool).unwrap();
+        let mut p = provider("e2e");
+        p.kind = spec.kind_choices.first().copied().unwrap_or("").to_string();
+        p.models[0].reasoning_levels = vec!["low".into(), "medium".into(), "high".into()];
+        p.models[0].reasoning_level = "high".into();
+        let changes = adapters::plan_in(spec, &p, &dir).unwrap();
+        let planned = changes.iter().map(|change| change.after.as_str()).collect::<Vec<_>>().join("\n");
+        assert!(planned.contains(expected), "{tool} did not write {expected}: {planned}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
 const CODEX_SEED: &str = r#"# 使用者註解
 model_provider = "old"
 model = "old-model"
