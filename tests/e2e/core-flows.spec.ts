@@ -938,6 +938,23 @@ async function browserCloseDialog(page: import("@playwright/test").Page) {
   await page.locator(".sheet-foot").getByRole("button", { name: "Close" }).click();
 }
 
+test("model ID combobox filters live without closing", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /^模型/ }).click();
+  await dialog.getByRole("button", { name: "＋ 新增模型" }).click();
+  const card = page.locator(".model-card").last();
+  const input = card.getByLabel("Model ID");
+  await input.click();
+  await expect(card.locator(".model-id-options")).toBeVisible();
+  await input.fill("coder-plus");
+  await expect(card.locator(".model-id-options")).toBeVisible();
+  await expect(card.locator(".model-id-options button")).toHaveCount(1);
+  await card.locator(".model-id-options button").first().click();
+  await expect(input).toHaveValue("qwen3-coder-plus");
+  await expect(card.getByLabel("Context window")).toHaveValue("262144");
+});
+
 test("migration centre groups backup, config scan and compatibility import", async ({ page }) => {
   await openAdvancedSettings(page);
   await page.getByRole("button", { name: "搬家中心" }).click();

@@ -19,6 +19,7 @@ import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
 import { ModelSyncModal } from "./ModelSyncModal";
 import { ModelPickerModal } from "./ModelPickerModal";
+import { ModelIdCombobox } from "./ModelIdCombobox";
 import { ProviderChooserModal } from "./ProviderChooserModal";
 
 interface EditorProps {
@@ -845,6 +846,11 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     await onSave(payload, previewAfter);
   };
 
+  const modelIdOptions = useMemo(
+    () => [...new Set([...presets.flatMap((preset) => preset.models), ...catalogModels.map((model) => model.id)])].sort((left, right) => left.localeCompare(right)),
+    [presets, catalogModels],
+  );
+
   const metadataValue = (model: ModelProfile) => metadataDrafts[model.id] ?? modelMetadataText(model);
   const visibleModelRows = useMemo(() => {
     const query = modelQuery.trim().toLowerCase();
@@ -1200,7 +1206,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 const reasoningBusyForModel = Boolean(model.id && reasoningBusy[model.id]);
                 const reasoningNotice = reasoningNotices[model.id];
                 return (
-                  <article className={`model-card${active ? " active" : ""}${model.archived ? " archived" : ""}${stale ? " stale" : ""}${expanded ? " expanded" : ""}`} key={`${index}-${model.id}`} aria-label={`模型 ${model.id || "新模型"}`}>
+                  <article className={`model-card${active ? " active" : ""}${model.archived ? " archived" : ""}${stale ? " stale" : ""}${expanded ? " expanded" : ""}`} key={`model-${index}`} aria-label={`模型 ${model.id || "新模型"}`}>
                     <div className="model-card-summary">
                       <label className="model-live-pick" title="選取此模型進行批次實測"><input type="checkbox" aria-label={`選取實測模型 ${model.id || "新模型"}`} checked={Boolean(model.id && liveSelected.has(model.id))} disabled={!provider || !model.id.trim()} onChange={() => toggleLiveSelected(model.id)} /><span>實測</span></label>
                       <button type="button" className="model-summary-main" aria-expanded={expanded} aria-controls={`model-editor-${index}`} onClick={() => setExpandedModelIndex(expanded ? null : index)}>
@@ -1236,7 +1242,15 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                         <div className="field-row">
                           <div className="field">
                             <label>Model ID</label>
-                            <input aria-label="Model ID" list="model-suggestions" value={model.id} placeholder="glm-5.3-flash" onChange={(event) => changeModelId(index, event.target.value)} />
+                            <ModelIdCombobox
+                              value={model.id}
+                              ariaLabel="Model ID"
+                              placeholder="glm-5.3-flash"
+                              options={modelIdOptions}
+                              onFocus={() => { void ensureCatalog(); }}
+                              onChange={(value) => changeModelId(index, value)}
+                              onPick={(value) => changeModelId(index, value)}
+                            />
                             {!model.id && catalogLoading ? <span className="hint">正在讀取供應商模型目錄…</span> : null}
                             {!model.id && !catalogLoading && catalogModels.length ? <span className="hint">已載入 {catalogModels.length} 個供應商模型；輸入或選取後會自動填入 context／max output。</span> : null}
                           </div>
@@ -1287,11 +1301,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
               })}
               {visibleModelRows.length === 0 ? <div className="empty small">{(form.models?.length ?? 0) === 0 ? "還沒有模型。新增模型，或從供應商預設加入。" : "沒有符合搜尋條件的模型。"}</div> : null}
             </div>
-            <datalist id="model-suggestions">
-              {Array.from(new Set([...presets.flatMap((preset) => preset.models), ...catalogModels.map((model) => model.id)]))
-                .sort((left, right) => left.localeCompare(right))
-                .map((model) => <option key={model} value={model} />)}
-            </datalist>
+
             {modelError ? <div className="note error">{modelError}</div> : null}
           </div>
         ) : null}

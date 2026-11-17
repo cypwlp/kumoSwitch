@@ -3044,6 +3044,36 @@ html[data-text-scale="xlarge"] .app { zoom: 1.16; width: 86.2%; min-height: 86.2
   font-size: 12px;
 }
 .model-result-count { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.model-id-combo { position: relative; }
+.model-id-combo input { width: 100%; }
+.model-id-options {
+  position: absolute;
+  z-index: 12;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow: var(--sheet-shadow);
+}
+.model-id-options button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.model-id-options button:hover, .model-id-options button[aria-selected="true"] { background: var(--hover-tint); color: var(--accent); }
 .model-picker { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .model-picker .model-search { flex: 0 0 auto; width: 100%; }
 .model-picker-meta { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10.5px; }
