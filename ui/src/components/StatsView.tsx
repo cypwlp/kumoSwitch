@@ -42,8 +42,6 @@ export function StatsView({ onError }: Props) {
   const [report, setReport] = useState<UsageReport | null>(null);
   const [health, setHealth] = useState<HealthOverview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [autoRefresh, setAutoRefreshState] = useState(readAutoRefresh);
   const [scanError, setScanError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
@@ -57,20 +55,17 @@ export function StatsView({ onError }: Props) {
 
   const reload = useCallback(async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
-    else setRefreshing(true);
     setScanError("");
     try {
       const [nextReport, nextHealth] = await Promise.all([api.usageReport(days), api.healthOverview()]);
       setReport(nextReport);
       setHealth(nextHealth);
-      setLastUpdated(Date.now());
     } catch (error) {
       const message = errorText(error);
       setScanError(message);
       onErrorRef.current(message);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, [days]);
 
@@ -261,15 +256,9 @@ export function StatsView({ onError }: Props) {
           <option value={30}>每 30 秒</option>
           <option value={60}>每 60 秒</option>
         </select>
-        <button className="ghost small" onClick={() => void reload(true)} disabled={loading || refreshing}>
-          {loading || refreshing ? <span className="spin" /> : null} 重新掃描
+        <button className="ghost small" onClick={() => void reload(true)} disabled={loading}>
+          {loading ? <span className="spin" /> : null} 重新掃描
         </button>
-        {lastUpdated ? (
-          <span className="stats-live muted small" title={timeText(lastUpdated)}>
-            {refreshing ? <span className="spin" /> : <i className="live-dot" />}
-            {new Date(lastUpdated).toLocaleTimeString()}
-          </span>
-        ) : null}
       </header>
 
       {loading ? (

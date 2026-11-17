@@ -606,7 +606,6 @@ test("usage dashboard auto refresh preference persists", async ({ page }) => {
   const select = page.getByLabel("自動重新整理");
   await expect(select).toHaveValue("15");
   await select.selectOption("5");
-  await expect(page.locator(".stats-live")).toBeVisible();
   await page.reload();
   await openWorkspace(page, "用量統計");
   await expect(page.getByLabel("自動重新整理")).toHaveValue("5");

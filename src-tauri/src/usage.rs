@@ -13,7 +13,7 @@
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::Path;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -145,7 +145,7 @@ fn day_of(ts: &str) -> String {
     ts.chars().take(10).collect()
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Acc {
     input: u64,
     output: u64,
@@ -164,6 +164,23 @@ struct Acc {
 }
 
 impl Acc {
+    fn merge(&mut self, other: &Acc) {
+        self.input += other.input;
+        self.output += other.output;
+        self.cache_read += other.cache_read;
+        self.cache_write += other.cache_write;
+        self.records += other.records;
+        self.reasoning += other.reasoning;
+        self.duration_ms += other.duration_ms;
+        self.timed_output += other.timed_output;
+        self.timed_records += other.timed_records;
+        self.ttft_ms += other.ttft_ms;
+        self.ttft_records += other.ttft_records;
+        self.request_speeds.extend(other.request_speeds.iter().copied());
+        self.samples.extend(other.samples.iter().copied());
+        self.slow_records += other.slow_records;
+    }
+
     fn add_usage(&mut self, i: u64, o: u64, cr: u64, cw: u64, count: bool) {
         self.input += i;
         self.output += o;
@@ -259,12 +276,56 @@ enum Kind {
     Codex,
     /// Pi / Oh My Pi session JSONL.
     AgentSession,
+    /// DSH flat request log.
+    Dsh,
 }
+
+#[derive(Clone, Default)]
+struct Contribution {
+    models: BTreeMap<(String, String), Acc>,
+    days: BTreeMap<(String, String), (u64, u64)>,
+    records: usize,
+    samples: Vec<UsageSample>,
+}
+
+impl Contribution {
+    fn merge_into(
+        &self,
+        models: &mut BTreeMap<(String, String), Acc>,
+        days: &mut BTreeMap<(String, String), (u64, u64)>,
+        records: &mut usize,
+        samples: &mut Vec<UsageSample>,
+    ) {
+        for ((source, model), acc) in &self.models {
+            models.entry((source.clone(), model.clone())).or_default().merge(acc);
+        }
+        for (key, (input, output)) in &self.days {
+            let entry = days.entry(key.clone()).or_insert((0, 0));
+            entry.0 += input;
+            entry.1 += output;
+        }
+        *records += self.records;
+        samples.extend(self.samples.iter().cloned());
+    }
+}
+
+#[derive(Clone)]
+struct FileCache {
+    mtime_ms: u64,
+    len: u64,
+    offset: u64,
+    cutoff: String,
+    contribution: Contribution,
+}
+
+static USAGE_CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<std::path::PathBuf, FileCache>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 struct Scanner<'a> {
     source: &'a str,
     kind: Kind,
     cutoff: &'a str,
+    offset: u64,
     models: &'a mut BTreeMap<(String, String), Acc>,
     days: &'a mut BTreeMap<(String, String), (u64, u64)>,
     records: &'a mut usize,
@@ -323,7 +384,17 @@ impl Scanner<'_> {
 
 fn scan_claude(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
     let file = File::open(path).map_err(|error| format!("{}：{error}", path.display()))?;
-    let reader = BufReader::new(file);
+    let mut reader = BufReader::new(file);
+    if scanner.offset > 0 {
+        reader
+            .seek(SeekFrom::Start(scanner.offset))
+            .map_err(|error| format!("{}：{error}", path.display()))?;
+    }
+    if scanner.offset > 0 {
+        reader
+            .seek(SeekFrom::Start(scanner.offset))
+            .map_err(|error| format!("{}：{error}", path.display()))?;
+    }
 
     // A single assistant turn is written once per content block. Keep the
     // largest usage seen per message so thinking/tool blocks do not multiply it.
@@ -473,6 +544,11 @@ fn scan_claude(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
 fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
     let file = File::open(path).map_err(|error| format!("{}：{error}", path.display()))?;
     let mut reader = BufReader::new(file);
+    if scanner.offset > 0 {
+        reader
+            .seek(SeekFrom::Start(scanner.offset))
+            .map_err(|error| format!("{}：{error}", path.display()))?;
+    }
     let mut line = String::new();
     loop {
         line.clear();
@@ -529,6 +605,11 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
 fn scan_agent_session(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
     let file = File::open(path).map_err(|error| format!("{}：{error}", path.display()))?;
     let mut reader = BufReader::new(file);
+    if scanner.offset > 0 {
+        reader
+            .seek(SeekFrom::Start(scanner.offset))
+            .map_err(|error| format!("{}：{error}", path.display()))?;
+    }
     let mut line = String::new();
     let mut seen: HashSet<String> = HashSet::new();
     loop {
@@ -663,9 +744,11 @@ fn scan_file(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         Kind::Claude => scan_claude(path, scanner),
         Kind::Codex => scan_codex(path, scanner),
         Kind::AgentSession => scan_agent_session(path, scanner),
+        Kind::Dsh => scan_dsh(path, scanner),
     }
 }
 
+#[allow(dead_code)]
 fn modified_secs(path: &Path) -> Option<u64> {
     std::fs::metadata(path)
         .ok()?
@@ -677,6 +760,7 @@ fn modified_secs(path: &Path) -> Option<u64> {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(dead_code)]
 fn walk(
     dir: &Path,
     scanner: &mut Scanner<'_>,
@@ -770,6 +854,41 @@ fn median(values: &[f64]) -> Option<f64> {
     }
 }
 
+fn collect_jsonl(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_jsonl(&path, out);
+        } else if path.extension().and_then(|value| value.to_str()) == Some("jsonl") {
+            out.push(path);
+        }
+    }
+}
+
+fn scan_into(
+    path: &Path,
+    source: &str,
+    kind: Kind,
+    cutoff: &str,
+    offset: u64,
+    contribution: &mut Contribution,
+) -> Result<(), String> {
+    let mut scanner = Scanner {
+        source,
+        kind,
+        cutoff,
+        offset,
+        models: &mut contribution.models,
+        days: &mut contribution.days,
+        records: &mut contribution.records,
+        samples: &mut contribution.samples,
+    };
+    scan_file(path, &mut scanner)
+}
+
 pub fn report(days_back: u32) -> UsageReport {
     let started = Instant::now();
     let home = crate::adapters::home();
@@ -777,8 +896,7 @@ pub fn report(days_back: u32) -> UsageReport {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let cutoff_secs = now.saturating_sub(days_back as u64 * 86_400);
-    let cutoff = epoch_day(cutoff_secs);
+    let cutoff = epoch_day(now.saturating_sub(days_back as u64 * 86_400));
 
     let mut models = BTreeMap::new();
     let mut days = BTreeMap::new();
@@ -793,49 +911,103 @@ pub fn report(days_back: u32) -> UsageReport {
         ("pi", Kind::AgentSession, home.join(".pi").join("agent").join("sessions")),
         ("omp", Kind::AgentSession, home.join(".omp").join("agent").join("sessions")),
     ];
+    let dsh_path = home.join(".dsh").join("storages").join("model-usage.jsonl");
+
     let mut roots = Vec::new();
+    let mut jobs: Vec<(&str, Kind, std::path::PathBuf)> = Vec::new();
     for (source, kind, dir) in sources {
         let mut root = root_report(source, &dir);
-        {
-            let mut scanner = Scanner {
-                source,
-                kind,
-                cutoff: &cutoff,
-                models: &mut models,
-                days: &mut days,
-                records: &mut records,
-                samples: &mut samples,
-            };
-            walk(&dir, &mut scanner, cutoff_secs, &mut root, &mut skipped_files, &mut errors);
+        let mut files = Vec::new();
+        collect_jsonl(&dir, &mut files);
+        root.files = files.len();
+        for file in files {
+            jobs.push((source, kind, file));
         }
         roots.push(root);
     }
-
-    // DSH writes one flat JSONL request log instead of session directories.
-    let dsh_path = home.join(".dsh").join("storages").join("model-usage.jsonl");
     let mut dsh_root = root_report("dsh", &dsh_path);
     if dsh_path.is_file() {
         dsh_root.files = 1;
-        let mut scanner = Scanner {
-            source: "dsh",
-            kind: Kind::AgentSession,
-            cutoff: &cutoff,
-            models: &mut models,
-            days: &mut days,
-            records: &mut records,
-            samples: &mut samples,
-        };
-        match scan_dsh(&dsh_path, &mut scanner) {
-            Ok(()) => dsh_root.scanned_files = 1,
-            Err(error) => {
-                if errors.len() < 20 {
-                    errors.push(error);
-                }
-                skipped_files += 1;
-            }
-        }
+        jobs.push(("dsh", Kind::Dsh, dsh_path));
     }
     roots.push(dsh_root);
+
+    let mut cache = USAGE_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut seen = HashSet::new();
+    for (source, kind, path) in jobs {
+        seen.insert(path.clone());
+        let meta = match std::fs::metadata(&path) {
+            Ok(meta) => meta,
+            Err(error) => {
+                if errors.len() < 20 {
+                    errors.push(format!("{}：{error}", path.display()));
+                }
+                skipped_files += 1;
+                continue;
+            }
+        };
+        let mtime_ms = meta
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+        let len = meta.len();
+        let cached = cache.get(&path);
+        let contribution = match cached {
+            Some(cached)
+                if cached.cutoff == cutoff && cached.mtime_ms == mtime_ms && cached.len == len =>
+            {
+                cached.contribution.clone()
+            }
+            Some(cached)
+                if cached.cutoff == cutoff && cached.mtime_ms == mtime_ms && len > cached.len =>
+            {
+                let mut next = cached.contribution.clone();
+                match scan_into(&path, source, kind, &cutoff, cached.offset, &mut next) {
+                    Ok(()) => next,
+                    Err(error) => {
+                        if errors.len() < 20 {
+                            errors.push(error);
+                        }
+                        skipped_files += 1;
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                let mut fresh = Contribution::default();
+                match scan_into(&path, source, kind, &cutoff, 0, &mut fresh) {
+                    Ok(()) => fresh,
+                    Err(error) => {
+                        if errors.len() < 20 {
+                            errors.push(error);
+                        }
+                        skipped_files += 1;
+                        continue;
+                    }
+                }
+            }
+        };
+        cache.insert(
+            path.clone(),
+            FileCache {
+                mtime_ms,
+                len,
+                offset: len,
+                cutoff: cutoff.clone(),
+                contribution: contribution.clone(),
+            },
+        );
+        contribution.merge_into(&mut models, &mut days, &mut records, &mut samples);
+        if let Some(root) = roots.iter_mut().find(|root| root.source == source) {
+            root.scanned_files += 1;
+        }
+    }
+    cache.retain(|path, _| seen.contains(path));
+    drop(cache);
 
     let files = roots.iter().map(|root| root.scanned_files).sum();
 
@@ -996,6 +1168,15 @@ mod tests {
         let (speed, overhead) = decode_estimate(&samples).expect("estimate");
         assert!((speed - 200.0).abs() < 1.0, "speed={speed}");
         assert!((overhead as i64 - 5_000).abs() <= 1, "overhead={overhead}");
+    }
+
+    #[test]
+    fn cached_report_matches_fresh_scan() {
+        let first = report(365);
+        let second = report(365);
+        assert_eq!(first.records, second.records);
+        assert_eq!(first.total_input, second.total_input);
+        assert_eq!(first.requests.len(), second.requests.len());
     }
 
     #[test]
