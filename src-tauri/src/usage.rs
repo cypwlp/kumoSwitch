@@ -51,6 +51,21 @@ pub struct UsageRow {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct UsageSample {
+    pub ts: u64,
+    pub source: String,
+    pub model: String,
+    pub status: String,
+    pub input: u64,
+    pub output: u64,
+    pub cache: u64,
+    pub reasoning: u64,
+    pub duration_ms: u64,
+    pub cost: Option<f64>,
+    pub id: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct DayRow {
     pub day: String,
     pub source: String,
@@ -71,6 +86,7 @@ pub struct UsageRoot {
 #[derive(Serialize, Clone, Debug)]
 pub struct UsageReport {
     pub rows: Vec<UsageRow>,
+    pub requests: Vec<UsageSample>,
     pub days: Vec<DayRow>,
     pub files: usize,
     pub records: usize,
@@ -251,9 +267,44 @@ struct Scanner<'a> {
     models: &'a mut BTreeMap<(String, String), Acc>,
     days: &'a mut BTreeMap<(String, String), (u64, u64)>,
     records: &'a mut usize,
+    samples: &'a mut Vec<UsageSample>,
+}
+
+fn sample_cost(model: &str, input: u64, output: u64, cache: u64, reasoning: u64) -> Option<f64> {
+    price_for(model).map(|(i, o, c)| {
+        (input as f64 * i + (output + reasoning) as f64 * o + cache as f64 * c) / 1_000_000.0
+    })
 }
 
 impl Scanner<'_> {
+    fn push_sample(
+        &mut self,
+        ts: u64,
+        model: &str,
+        status: &str,
+        input: u64,
+        output: u64,
+        cache: u64,
+        reasoning: u64,
+        duration_ms: u64,
+        id: &str,
+    ) {
+        let cost = sample_cost(model, input, output, cache, reasoning);
+        self.samples.push(UsageSample {
+            ts,
+            source: self.source.to_string(),
+            model: model.to_string(),
+            status: status.to_string(),
+            input,
+            output,
+            cache,
+            reasoning,
+            duration_ms,
+            cost,
+            id: id.to_string(),
+        });
+    }
+
     fn bump_day(&mut self, day: &str, source: &str, input: u64, output: u64) {
         if day.is_empty() {
             return;
@@ -275,7 +326,7 @@ fn scan_claude(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
     // largest usage seen per message so thinking/tool blocks do not multiply it.
     let mut seen: HashMap<String, (u64, u64, u64, u64)> = HashMap::new();
     let mut last_user_ms: Option<i64> = None;
-    let mut requests: HashMap<String, (String, i64, i64, u64, Option<u64>)> = HashMap::new();
+    let mut requests: HashMap<String, (String, i64, i64, u64, Option<u64>, u64, u64, u64)> = HashMap::new();
     let mut counted: HashSet<String> = HashSet::new();
 
     for line in reader.lines() {
@@ -376,26 +427,41 @@ fn scan_claude(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
                 .and_modify(|slot| {
                     slot.2 = slot.2.max(ts);
                     slot.3 = slot.3.max(o);
+                    slot.5 = slot.5.saturating_add(delta.0);
+                    slot.6 = slot.6.saturating_add(delta.2);
+                    slot.7 = slot.7.saturating_add(usage.get("output_tokens_details").and_then(|v| v.get("reasoning_tokens")).and_then(|v| v.as_u64()).unwrap_or(0));
                 })
                 .or_insert_with(|| {
                     let ttft = last_user_ms.and_then(|start| {
                         let elapsed = ts - start;
                         (0..=300_000).contains(&elapsed).then_some(elapsed as u64)
                     });
-                    (model, ts, ts, o, ttft)
+                    (
+                        model,
+                        ts,
+                        ts,
+                        o,
+                        ttft,
+                        delta.0,
+                        delta.2,
+                        usage.get("output_tokens_details").and_then(|v| v.get("reasoning_tokens")).and_then(|v| v.as_u64()).unwrap_or(0),
+                    )
                 });
         }
     }
 
-    for (_, (model, first, last, output, ttft)) in requests {
+    for (id, (model, first, last, output, ttft, input, cache, reasoning)) in requests {
         let span = last.saturating_sub(first).max(0) as u64;
         let duration = span + ttft.unwrap_or(0);
         if duration > 0 && output > 0 {
             scanner
                 .models
-                .entry((scanner.source.to_string(), model))
+                .entry((scanner.source.to_string(), model.clone()))
                 .or_default()
                 .add_timing(duration, output, ttft);
+        }
+        if (first as u64) > 0 {
+            scanner.push_sample(first as u64, &model, "completed", input, output, cache, reasoning, duration, &id);
         }
     }
     Ok(())
@@ -443,11 +509,15 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         }
         scanner
             .models
-            .entry((scanner.source.to_string(), model))
+            .entry((scanner.source.to_string(), model.clone()))
             .or_default()
             .add_usage(i, o, cr, cw, true);
         scanner.bump_day(&day, scanner.source, i, o);
         *scanner.records += 1;
+        if let Some(ts) = parse_iso_ms(&ts) {
+            let id = payload.get("response_id").and_then(|v| v.as_str()).unwrap_or("");
+            scanner.push_sample(ts as u64, &model, "completed", i, o, cr + cw, num(&usage, "reasoning_output_tokens"), 0, id);
+        }
     }
     Ok(())
 }
@@ -508,15 +578,20 @@ fn scan_agent_session(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), Stri
         }
         let acc = scanner
             .models
-            .entry((scanner.source.to_string(), model))
+            .entry((scanner.source.to_string(), model.clone()))
             .or_default();
         acc.add_usage(i, o, cr, cw, true);
-        acc.reasoning += num(&usage, "reasoning");
+        let reasoning = num(&usage, "reasoning");
+        acc.reasoning += reasoning;
         if let Some(duration) = message.get("durationMs").and_then(|v| v.as_u64()) {
             acc.add_timing(duration, o, None);
         }
         scanner.bump_day(&day, scanner.source, i, o);
         *scanner.records += 1;
+        if let Some(ts) = parse_iso_ms(ts) {
+            let status = message.get("stopReason").and_then(|v| v.as_str()).unwrap_or("completed");
+            scanner.push_sample(ts as u64, &model, status, i, o, cr + cw, reasoning, message.get("durationMs").and_then(|v| v.as_u64()).unwrap_or(0), id);
+        }
     }
     Ok(())
 }
@@ -563,15 +638,19 @@ fn scan_dsh(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
             .to_string();
         let acc = scanner
             .models
-            .entry((scanner.source.to_string(), model))
+            .entry((scanner.source.to_string(), model.clone()))
             .or_default();
         acc.add_usage(i, o, cr, cw, true);
-        acc.reasoning += num(&d, "rsn");
+        let reasoning = num(&d, "rsn");
+        acc.reasoning += reasoning;
         if let Some(duration) = d.get("dur").and_then(|v| v.as_u64()) {
             acc.add_timing(duration, o, None);
         }
         scanner.bump_day(&day, scanner.source, i, o);
         *scanner.records += 1;
+        let status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let id = d.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        scanner.push_sample(ts_ms, &model, status, i, o, cr + cw, reasoning, d.get("dur").and_then(|v| v.as_u64()).unwrap_or(0), id);
     }
     Ok(())
 }
@@ -701,6 +780,7 @@ pub fn report(days_back: u32) -> UsageReport {
     let mut models = BTreeMap::new();
     let mut days = BTreeMap::new();
     let mut records = 0;
+    let mut samples: Vec<UsageSample> = Vec::new();
     let mut skipped_files = 0;
     let mut errors = Vec::new();
 
@@ -721,6 +801,7 @@ pub fn report(days_back: u32) -> UsageReport {
                 models: &mut models,
                 days: &mut days,
                 records: &mut records,
+                samples: &mut samples,
             };
             walk(&dir, &mut scanner, cutoff_secs, &mut root, &mut skipped_files, &mut errors);
         }
@@ -739,6 +820,7 @@ pub fn report(days_back: u32) -> UsageReport {
             models: &mut models,
             days: &mut days,
             records: &mut records,
+            samples: &mut samples,
         };
         match scan_dsh(&dsh_path, &mut scanner) {
             Ok(()) => dsh_root.scanned_files = 1,
@@ -833,8 +915,12 @@ pub fn report(days_back: u32) -> UsageReport {
         .sum();
     let ttft_records: u64 = rows.iter().map(|r| r.ttft_records).sum();
 
+    samples.sort_by(|a, b| b.ts.cmp(&a.ts).then_with(|| b.id.cmp(&a.id)));
+    samples.truncate(300);
+
     UsageReport {
         rows,
+        requests: samples,
         days: day_rows,
         files,
         records,
@@ -897,6 +983,8 @@ mod tests {
         assert!(report.records > 0, "有檔案卻沒解析到任何用量");
         assert!(report.total_input + report.total_output > 0);
         assert!(!report.rows.is_empty());
+        assert!(!report.requests.is_empty(), "沒有收集到逐筆請求記錄");
+        assert!(report.requests.iter().all(|sample| sample.ts > 0 && !sample.model.is_empty()));
     }
 
     #[test]

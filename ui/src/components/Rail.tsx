@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { AppInfo, ToolView } from "../types";
 import { Logo, SettingsIcon } from "./Icons";
+import { t, useLang } from "../i18n";
 import { HarnessIcon } from "./Marks";
 
 interface RailProps {
@@ -48,6 +49,7 @@ function ToolButton({
 }
 
 export function Rail({ tools, selectedId, filter, info, onFilter, onSelect, onSettings }: RailProps) {
+  useLang();
   const [showOthers, setShowOthers] = useState(false);
   const q = filter.trim().toLowerCase();
   const visible = useMemo(
@@ -73,21 +75,21 @@ export function Rail({ tools, selectedId, filter, info, onFilter, onSelect, onSe
         <Logo />
         <div>
           <h1>kumoSwitch</h1>
-          <p>AI 工具供應商切換</p>
+          <p>{t("AI 工具供應商切換")}</p>
         </div>
       </div>
 
       <input
         className="rail-search"
         type="search"
-        placeholder="篩選工具…"
+        placeholder={t("篩選工具…")}
         autoComplete="off"
         value={filter}
-        aria-label="篩選工具"
+        aria-label={t("篩選工具")}
         onChange={(event) => onFilter(event.target.value)}
       />
 
-      <nav className="tools" aria-label="工具清單">
+      <nav className="tools" aria-label={t("工具清單")}>
         {q ? (
           visible.length ? (
             visible.map((tool) => (
@@ -105,7 +107,7 @@ export function Rail({ tools, selectedId, filter, info, onFilter, onSelect, onSe
           <>
             {used.length ? (
               <>
-                {others.length ? <div className="rail-group-label">我的工具</div> : null}
+                {others.length ? <div className="rail-group-label">{t("我的工具")}</div> : null}
                 {used.map((tool) => (
                   <ToolButton
                     key={tool.id}
@@ -124,7 +126,7 @@ export function Rail({ tools, selectedId, filter, info, onFilter, onSelect, onSe
                   aria-expanded={othersOpen}
                   onClick={() => setShowOthers((open) => !open)}
                 >
-                  <span>其他工具</span>
+                  <span>{t("其他工具")}</span>
                   <span className="n">{others.length}</span>
                   <span className="chev" aria-hidden="true">›</span>
                 </button>
@@ -146,11 +148,11 @@ export function Rail({ tools, selectedId, filter, info, onFilter, onSelect, onSe
       </nav>
 
       <div className="rail-foot rail-foot-simple">
-        <button className="rail-settings-primary" onClick={onSettings} title="語言、主題、導覽、資料與更新">
+        <button className="rail-settings-primary" onClick={onSettings} title={t("語言、主題、導覽、資料與更新")}>
           <SettingsIcon />
           <span>
-            <strong>設定</strong>
-            <small>語言、外觀、工具與資料</small>
+            <strong>{t("設定")}</strong>
+            <small>{t("語言、外觀、工具與資料")}</small>
           </span>
         </button>
         <div className="rail-meta">

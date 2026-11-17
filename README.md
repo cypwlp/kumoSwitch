@@ -25,6 +25,8 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。簡
 - **自動備份與一鍵還原** —— 每次寫入前把要動的檔案複製到時間戳快照；快速切換的復原會直接還原剛建立的安全快照。
 - **快速新增供應商** —— 可從 28 個供應商目錄選擇並自動填入 Base URL、模型與協議，貼上 API Key 即可；也可手動輸入，儲存後自動抓取 `/models` 並立即切換。
 - **最近使用與釘選** —— 主畫面保留最近 5 個切換，常用供應商可釘選到最前面；系統托盤的切換也會同步到最近清單。
+- **逐筆用量記錄** —— 統計頁可查看最近請求的時間、來源、模型、狀態、耗時與成本，最多保留 300 筆並可依來源／模型篩選。
+- **搬家中心** —— 設定頁集中引導「備份 → 官方設定檔 → 選用相容匯入」三個步驟。
 - **相容匯入（預設關閉）** —— 可在設定明確開啟後，唯讀取用本機 `cc-switch.db`，獨立列出其他切換工具管理的供應商與路由狀態；只讀、不上傳、不修改，逐項選取後才匯入。kumoSwitch 與任何第三方工具都沒有官方合作或背書關係。
 - **接管狀態偵測** —— 偵測到其他代理工具正接管同一套設定時會提示，避免兩個工具互相覆蓋。
 - **本機優先** —— 無帳號、無雲端、無遙測。設定與備份都在 `%APPDATA%\kumoSwitch`；清單與歷史採原子寫入，Unix 上資料目錄為 `0700`、應用檔案為 `0600`。
@@ -83,7 +85,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。簡
 
 ## 下載
 
-使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.25.3) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
+使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.25.4) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
 
 - Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `kumoSwitch-portable.exe`
 - macOS Apple Silicon／Intel：`.dmg`

@@ -436,6 +436,20 @@ export interface UsageRow {
   ttft_records: number;
 }
 
+export interface UsageSample {
+  ts: number;
+  source: string;
+  model: string;
+  status: string;
+  input: number;
+  output: number;
+  cache: number;
+  reasoning: number;
+  duration_ms: number;
+  cost: number | null;
+  id: string;
+}
+
 export interface DayRow { day: string; source: string; input: number; output: number; total: number; }
 
 export interface UsageRoot {
@@ -448,6 +462,7 @@ export interface UsageRoot {
 
 export interface UsageReport {
   rows: UsageRow[];
+  requests: UsageSample[];
   days: DayRow[];
   files: number;
   records: number;

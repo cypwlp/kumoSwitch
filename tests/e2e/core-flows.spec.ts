@@ -591,14 +591,25 @@ test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
   await expect(page.locator(".scan-root").getByText("Codex", { exact: true })).toBeVisible();
   await expect(page.locator(".scan-root").getByText("DSH", { exact: true })).toBeVisible();
   await page.locator(".stats").getByRole("button", { name: /^Pi/ }).click();
-  await expect(page.locator(".stats tbody tr")).toHaveCount(1);
-  await expect(page.locator(".stats tbody")).toContainText("deepseek-v4.1-flash");
+  await expect(page.locator(".stats .grid:not(.request-grid) tbody tr")).toHaveCount(1);
+  await expect(page.locator(".stats .grid:not(.request-grid) tbody")).toContainText("deepseek-v4.1-flash");
   await page.locator(".stats").getByRole("button", { name: "全部", exact: true }).first().click();
   await page.getByLabel("搜尋模型").fill("glm");
-  await expect(page.locator(".stats tbody tr")).toHaveCount(1);
+  await expect(page.locator(".stats .grid:not(.request-grid) tbody tr")).toHaveCount(1);
   await page.getByLabel("搜尋模型").fill("");
   await page.locator(".stats").getByRole("button", { name: "重新掃描" }).click();
   await expect(page.getByText("掃描診斷")).toBeVisible();
+});
+
+test("usage dashboard shows per-request history", async ({ page }) => {
+  await openWorkspace(page, "用量統計");
+  await expect(page.getByRole("heading", { name: "最近請求" })).toBeVisible();
+  const rows = page.locator(".request-grid tbody tr");
+  await expect(rows).toHaveCount(4);
+  await expect(rows.first()).toContainText("7f3c5fc0");
+  await expect(rows.first()).toContainText("$0.00");
+  await page.locator(".stats").getByRole("button", { name: /^Pi/ }).click();
+  await expect(rows).toHaveCount(2);
 });
 
 test("proxy route strategy and observability are usable", async ({ page }) => {
@@ -876,6 +887,77 @@ test("Simplified Chinese locale applies to the full interface", async ({ page })
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hant");
 });
 
+
+test("English locale leaves no translatable Chinese residue", async ({ page }) => {
+  const allow = new Set(["繁中", "简中"]);
+  const chinese = /[一-鿿]/;
+  const scan = async (label: string) => {
+    const found = await page.evaluate(() => {
+      const out: string[] = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        const text = (node.nodeValue || "").trim();
+        if (text && /[一-鿿]/.test(text)) out.push(text.slice(0, 120));
+      }
+      for (const el of document.querySelectorAll("[title],[aria-label],[placeholder]")) {
+        for (const attr of ["title", "aria-label", "placeholder"]) {
+          const value = el.getAttribute(attr);
+          if (value && /[一-鿿]/.test(value)) out.push(attr + ": " + value.slice(0, 120));
+        }
+      }
+      return [...new Set(out)];
+    });
+    const residue = found.filter((text) => !allow.has(text));
+    expect(residue, label + ": " + residue.join(" | ")).toEqual([]);
+  };
+
+  await page.getByRole("button", { name: /^設定/ }).first().click();
+  await page.getByRole("button", { name: "EN", exact: true }).click();
+  await page.locator(".sheet-foot").getByRole("button", { name: /^(Close|關閉)/ }).click();
+  await scan("main");
+
+  await page.getByRole("button", { name: /^Settings/ }).first().click();
+  await scan("settings basic");
+  await page.getByRole("tab", { name: /Advanced/ }).click();
+  await scan("settings advanced");
+  await page.locator(".sheet-foot").getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: /View model and settings for provider OpenCode Go/ }).click();
+  const tabs = page.locator(".detail-tabs button");
+  for (const index of [0, 1, 2, 3]) {
+    await tabs.nth(index).click();
+    await page.waitForTimeout(80);
+    await scan("provider tab " + index);
+  }
+  const close = page.locator(".sheet-foot").getByRole("button", { name: "Close" }).last();
+  if (await close.count()) await close.click();
+});
+
+async function browserCloseDialog(page: import("@playwright/test").Page) {
+  await page.locator(".sheet-foot").getByRole("button", { name: "Close" }).click();
+}
+
+test("migration centre groups backup, config scan and compatibility import", async ({ page }) => {
+  await openAdvancedSettings(page);
+  await page.getByRole("button", { name: "搬家中心" }).click();
+  const dialog = page.getByRole("dialog").last();
+  await expect(dialog.getByRole("heading", { name: "搬家中心" })).toBeVisible();
+  await expect(dialog).toContainText("先備份現在的設定");
+  await expect(dialog).toContainText("從官方設定檔帶入");
+  await expect(dialog).toContainText("第三方相容匯入（選用）");
+});
+
+test("collapsed model card hides secondary badges", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /^模型/ }).click();
+  const card = page.locator(".model-card").last();
+  await expect(card).not.toHaveClass(/expanded/);
+  await expect(card.locator(".badge.optional").first()).toBeHidden();
+  await card.locator(".model-summary-main").click();
+  await expect(card.locator(".badge.optional").first()).toBeVisible();
+});
 
 test("English locale covers the new roadmap screens", async ({ page }) => {
   let dialog = await openSettings(page);

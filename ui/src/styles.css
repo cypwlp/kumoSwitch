@@ -706,6 +706,12 @@ button .cnt { opacity: 0.7; margin-left: 4px; font-size: 11px; }
 .field .hint { font-size: 11px; color: var(--muted); margin-top: 5px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .settings-basic-grid { grid-template-columns: minmax(0, 1fr); }
+.migration-steps { display: flex; flex-direction: column; gap: 12px; }
+.migration-step { display: flex; gap: 12px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.migration-num { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%; background: var(--note-tint); border: 1px solid var(--note-line); color: var(--accent); font-size: 12px; font-weight: 700; }
+.migration-step h4 { margin: 2px 0 4px; font-size: 12.5px; }
+.migration-step p { margin: 0 0 9px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.migration-actions { display: flex; gap: 7px; flex-wrap: wrap; }
 .settings-tabs {
   display: flex;
   width: 220px;
@@ -1839,6 +1845,7 @@ kbd {
   background: var(--panel);
 }
 .model-card.active { border-color: var(--ok-line); box-shadow: inset 3px 0 0 var(--ok); }
+.model-card:not(.expanded) .badge.optional { display: none; }
 .model-active {
   display: flex;
   align-items: center;

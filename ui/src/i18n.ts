@@ -8,6 +8,8 @@
  * stay Chinese in the English UI.
  */
 
+import { useEffect, useState } from "react";
+
 export type Lang = "zh" | "zh-Hans" | "en";
 
 const KEY = "kumoswitch.lang";
@@ -699,6 +701,23 @@ const DICT: Record<string, string> = {
   "統計範圍": "Date range",
   "搜尋模型…": "Search models…",
   "天": "days",
+  "最近請求": "Recent requests",
+  "這個範圍內沒有符合條件的請求記錄": "No matching requests in this range",
+  "時間": "Time",
+  "ID": "ID",
+  "載入更多（尚餘": "Load more (",
+  "）": ")",
+  "個已知模型": "known models",
+  "搬家中心": "Migration centre",
+  "先備份現在的設定": "Back up your current setup",
+  "把 current providers 加密匯出成 .kumoswitch；換機或直接升級前都能還原。": "Export current providers as an encrypted .kumoswitch file so you can restore after a machine change or upgrade.",
+  "從官方設定檔帶入": "Import from official config files",
+  "只讀取各工具自己的設定檔（TOML / JSON / YAML），逐項預覽後再匯入。": "Read each tool's own config file (TOML / JSON / YAML), preview the items, then import.",
+  "第三方相容匯入（選用）": "Third-party compatibility import (optional)",
+  "前往相容匯入設定": "Open compatibility import settings",
+  "目前未開啟。": "Currently off.",
+  "目前已開啟。": "Currently on.",
+  "kumoSwitch 與任何第三方切換工具都沒有官方合作或背書關係。相容匯入使用前請自行確認第三方工具的條款。": "kumoSwitch has no partnership with or endorsement from any third-party switching tool. Check the third-party terms before using compatibility import.",
 };
 
 interface Rule {
@@ -767,6 +786,7 @@ const RULES: Rule[] = [
   { re: /^有計時請求 (.+) 筆；思考 tokens 只有 Pi／DSH 會分開回報$/, out: (m) => `Timed requests ${m[1]}; reasoning tokens are reported separately only by Pi/DSH` },
   { re: /^(\d+) 天$/, out: (m) => `${m[1]} days` },
   { re: /^(\d+) 個檔案$/, out: (m) => `${m[1]} files` },
+  { re: /^載入更多（尚餘 (\d+)）$/, out: (m) => `Load more (${m[1]} left)` },
   { re: /^調整 (.+) 的順序$/, out: (m) => `Reorder ${m[1]}` },
   { re: /^(.+) 快速切換模型$/, out: (m) => `Quick model switch for ${m[1]}` },
   { re: /^(\d+) 個$/, out: (m) => m[1] },
@@ -863,6 +883,24 @@ function simplify(input: string): string {
   for (const [from, to] of HANS_PHRASES) text = text.split(from).join(to);
   for (const [from, to] of HANS_CHARS) text = text.split(from).join(to);
   return text;
+}
+
+/** Translate a single UI string. Components can opt in instead of relying on the DOM walker. */
+export function t(key: string): string {
+  if (currentLang === "zh") return key;
+  if (currentLang === "zh-Hans") return simplify(key);
+  return translate(key) ?? key;
+}
+
+/** Subscribe to language changes so translated components re-render. */
+export function useLang(): Lang {
+  const [lang, setLang] = useState<Lang>(() => readLang());
+  useEffect(() => {
+    const onChange = (event: Event) => setLang((event as CustomEvent<Lang>).detail);
+    window.addEventListener("kumoswitch.lang", onChange);
+    return () => window.removeEventListener("kumoswitch.lang", onChange);
+  }, []);
+  return lang;
 }
 
 export function readLang(): Lang {
@@ -1012,6 +1050,7 @@ function paintWindowTitle(lang: Lang) {
 
 export function applyLang(lang: Lang) {
   currentLang = lang;
+  window.dispatchEvent(new CustomEvent<Lang>("kumoswitch.lang", { detail: lang }));
   paintWindowTitle(lang);
   document.documentElement.lang = lang === "en" ? "en" : lang === "zh-Hans" ? "zh-Hans" : "zh-Hant";
   if (observer) {

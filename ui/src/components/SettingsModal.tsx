@@ -41,6 +41,7 @@ interface SettingsModalProps {
   onImport: () => void;
   onRescan: () => void;
   onScanConfigs: () => void;
+  onOpenMigration: () => void;
   onToggleAutoHealth: () => void;
   onToggleAutoModelSync: () => void;
   onClose: () => void;
@@ -94,6 +95,7 @@ export function SettingsModal({
   onImport,
   onRescan,
   onScanConfigs,
+  onOpenMigration,
   onToggleAutoHealth,
   onToggleAutoModelSync,
   onClose,
@@ -325,6 +327,7 @@ export function SettingsModal({
             <h4>資料管理</h4>
           </div>
           <div className="settings-data-actions">
+            <button className="primary small" onClick={onOpenMigration}>搬家中心</button>
             <button className="ghost small" onClick={onExport}>匯出加密清單</button>
             <button className="ghost small" onClick={onImport}>匯入清單／遷移包</button>
             <button className="ghost small" onClick={onRescan}>重新掃描工具</button>

@@ -1212,9 +1212,9 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                           {model.favorite ? <span className="badge ok">★ 常用</span> : null}
                           {model.archived ? <span className="badge subtle">已封存</span> : null}
                           {stale ? <span className="badge warn">本次未回報</span> : null}
-                          <span className={`badge ${model.reasoning_level ? "reasoning-level-badge" : "subtle"}`}>{model.reasoning_level || (levels.length ? `${levels.length} 個思考等級` : "未設思考等級")}</span>
-                          {model.context_window ? <span className="badge subtle">{compactTokens(model.context_window)} ctx</span> : null}
-                          {model.max_output ? <span className="badge subtle">{compactTokens(model.max_output)} out</span> : null}
+                          <span className={`badge optional ${model.reasoning_level ? "reasoning-level-badge" : "subtle"}`}>{model.reasoning_level || (levels.length ? `${levels.length} 個思考等級` : "未設思考等級")}</span>
+                          {model.context_window ? <span className="badge subtle optional">{compactTokens(model.context_window)} ctx</span> : null}
+                          {model.max_output ? <span className="badge subtle optional">{compactTokens(model.max_output)} out</span> : null}
                           {compatibility ? <span className={`badge compatibility-${compatibility.status}`}>{compatibility.status === "compatible" ? "相容" : compatibility.status === "warning" ? `提醒 · ${compatibility.score}` : `不相容 · ${compatibility.score}`}</span> : null}
                         </span>
                         <span className="model-expand-cue">{expanded ? "收起" : "編輯"}</span>

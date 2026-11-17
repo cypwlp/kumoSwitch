@@ -15,6 +15,7 @@ const SOURCE_LABELS: Record<string, string> = {
 const SOURCE_ORDER = ["claude", "codex", "pi", "omp", "dsh"];
 
 const sourceLabel = (source: string) => SOURCE_LABELS[source] ?? source;
+const timeText = (ts: number) => new Date(ts).toLocaleString();
 const durationText = (ms: number | null) =>
   ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 const speedText = (speed: number | null) => (speed == null ? "—" : `${speed.toFixed(1)} tok/s`);
@@ -32,6 +33,7 @@ export function StatsView({ onError }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [sourceFilter, setSourceFilter] = useState("all");
   const [query, setQuery] = useState("");
+  const [requestLimit, setRequestLimit] = useState(20);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
@@ -86,6 +88,15 @@ export function StatsView({ onError }: Props) {
       (row) =>
         (sourceFilter === "all" || row.source === sourceFilter) &&
         (!q || row.model.toLowerCase().includes(q)),
+    );
+  }, [report, sourceFilter, query]);
+
+  const filteredRequests = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (report?.requests ?? []).filter(
+      (item) =>
+        (sourceFilter === "all" || item.source === sourceFilter) &&
+        (!q || `${item.model} ${item.id}`.toLowerCase().includes(q)),
     );
   }, [report, sourceFilter, query]);
 
@@ -356,6 +367,53 @@ export function StatsView({ onError }: Props) {
                   </table>
                 </div>
               )}
+              <h3 className="stats-sub">最近請求</h3>
+              {filteredRequests.length === 0 ? (
+                <div className="empty small">這個範圍內沒有符合條件的請求記錄</div>
+              ) : (
+                <>
+                <div className="table-wrap">
+                  <table className="grid request-grid">
+                    <thead>
+                      <tr>
+                        <th>時間</th>
+                        <th>來源</th>
+                        <th>模型</th>
+                        <th>狀態</th>
+                        <th>耗時</th>
+                        <th>輸入</th>
+                        <th>輸出</th>
+                        <th>快取</th>
+                        <th>成本</th>
+                        <th>ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredRequests.slice(0, requestLimit).map((item, index) => (
+                        <tr key={`${item.ts}-${item.id}-${index}`}>
+                          <td className="mono">{timeText(item.ts)}</td>
+                          <td><span className="badge subtle">{sourceLabel(item.source)}</span></td>
+                          <td className="mono">{item.model}</td>
+                          <td><span className={`badge ${item.status === "completed" || item.status === "200" ? "ok" : item.status === "failed" || item.status === "error" ? "err" : "subtle"}`}>{item.status}</span></td>
+                          <td className="mono">{item.duration_ms ? durationText(item.duration_ms) : "—"}</td>
+                          <td className="mono">{fmt(item.input)}</td>
+                          <td className="mono">{fmt(item.output)}{item.reasoning ? <small className="stat-subvalue">+{fmt(item.reasoning)}</small> : null}</td>
+                          <td className="mono">{fmt(item.cache)}</td>
+                          <td className="mono">{money(item.cost)}</td>
+                          <td className="mono muted" title={item.id}>{item.id ? item.id.slice(0, 8) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {filteredRequests.length > requestLimit ? (
+                  <button type="button" className="ghost small" onClick={() => setRequestLimit((value) => value + 20)}>
+                    載入更多（尚餘 {filteredRequests.length - requestLimit}）
+                  </button>
+                ) : null}
+                </>
+              )}
+
               <p className="fineprint">成本為公開單價估算（每百萬 token），非帳單金額；未列入價目表的模型顯示「未定價」。Pi／DSH 的思考 tokens 會另計並納入成本。表格的「解碼速度」是把每筆請求時間對輸出 tokens 做迴歸、扣掉固定等待後的估算；例如 Pi 的 deepseek-v4.1-flash 約 174 tok/s、固定等待約 13.2 秒。上方「有效吞吐」才是包含等待的總量÷總時間。Codex 目前沒有可用的時間戳。</p>
             </>
           ) : null}

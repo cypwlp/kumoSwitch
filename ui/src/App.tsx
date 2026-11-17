@@ -19,6 +19,7 @@ import type {
 import { Rail } from "./components/Rail";
 import { ToolPanel } from "./components/ToolPanel";
 import { QuickAddModal } from "./components/QuickAddModal";
+import { MigrationModal } from "./components/MigrationModal";
 import { HarnessIcon } from "./components/Marks";
 import { EditorModal } from "./components/EditorModal";
 import { DiffModal } from "./components/DiffModal";
@@ -49,6 +50,7 @@ type ModalState =
   | { kind: "encrypted"; mode: "export" | "import"; fileName?: string }
   | { kind: "import-preview"; candidates: ImportCandidate[] }
   | { kind: "quick-add" }
+  | { kind: "migration" }
   | null;
 
 interface ConfirmState {
@@ -1338,6 +1340,17 @@ export default function App() {
         />
       ) : null}
 
+      {modal?.kind === "migration" ? (
+        <MigrationModal
+          ccSwitchBridge={ccSwitchBridge}
+          onExport={() => { setModal(null); exportList(); }}
+          onImport={() => { setModal(null); fileRef.current?.click(); }}
+          onScanConfigs={() => { setModal(null); void scanConfig(); }}
+          onOpenCompatSettings={() => { setModal(null); setSettingsOpen(true); }}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+
       {modal?.kind === "quick-add" && selected ? (
         <QuickAddModal
           tool={selected}
@@ -1451,6 +1464,7 @@ export default function App() {
           onImport={() => { setSettingsOpen(false); fileRef.current?.click(); }}
           onRescan={() => { setSettingsOpen(false); void rescan(); }}
           onScanConfigs={() => { setSettingsOpen(false); void scanConfig(); }}
+          onOpenMigration={() => { setSettingsOpen(false); setModal({ kind: "migration" }); }}
           onToggleAutoHealth={() => void toggleAutoHealth()}
           onToggleAutoModelSync={() => void toggleAutoModelSync()}
           onClose={() => setSettingsOpen(false)}
