@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>kumoSwitch — 管理 AI Harness 供應商，不動其他一行設定</title>
-<meta name="description" content="Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH 等 15 種 AI Harness 的供應商切換器。只改寫該改的鍵，套用前先看 diff，每次寫入自動備份。" />
-<meta property="og:title" content="kumoSwitch — AI Harness 供應商切換器" />
-<meta property="og:description" content="非破壞性寫入。套用前逐行 diff，寫入前自動備份，隨時一鍵還原。" />
+<title>kumoSwitch — 管理 AI 工具供應商，不動其他一行設定</title>
+<meta name="description" content="Codex、Claude Code、Gemini CLI、OpenCode、Qoder、DSH 等 15 種 AI 工具的供應商切換器。只改寫該改的鍵，簡單模式一鍵切換可復原，進階模式先看變更預覽。" />
+<meta property="og:title" content="kumoSwitch — AI 工具供應商切換器" />
+<meta property="og:description" content="非破壞性寫入。進階模式逐行變更預覽，寫入前自動備份，任何切換都能一鍵復原。" />
 <meta property="og:image" content="assets/screenshot-panel.png" />
 <link rel="icon" href="assets/icon.png" />
 <link rel="stylesheet" href="styles.css" />
@@ -39,7 +39,7 @@
   <section class="hero wrap">
     <div class="hero-copy">
       <span class="pill"><i></i> Windows · macOS · Linux · 未簽章 Beta</span>
-      <h1>管理 AI Harness 供應商<br/><em>不動其他一行設定</em></h1>
+      <h1>管理 AI 工具供應商<br/><em>不動其他一行設定</em></h1>
       <p>
         Codex、Claude Code、Gemini CLI、OpenCode、Qoder、Crush⋯⋯15 種工具的供應商設定，
         集中一個視窗管理。kumoSwitch 只定點改寫供應商相關的那幾個鍵，
@@ -53,9 +53,11 @@
       <p class="fineprint" id="releaseNote">正在取得最新版本…</p>
       <p class="fineprint">v0.8.0 起由 SwitchTower 更名為 kumoSwitch；更早版本名為 SwitchYard。</p>
       <ul class="bullets">
-        <li>套用前逐行 diff 預覽</li>
+        <li>快速切換＋一鍵復原</li>
         <li>寫入前自動時間戳備份</li>
         <li>金鑰只留在本機</li>
+        <li>六種主題色、三種語言</li>
+        <li>統計儀表板與回饋精靈</li>
       </ul>
     </div>
     <div class="hero-shot">
@@ -76,15 +78,14 @@
         <h3>非破壞性寫入</h3>
         <p>
           不用序列化器重寫整份檔案。JSON 用語法樹定位位元組區間、TOML 用 <code>toml_edit</code> 保留格式，
-          只把目標值那段文字換掉。沒被列進 diff 的內容，一個位元組都不會變。
+          只把目標值那段文字換掉。沒被列進變更預覽的內容，一個位元組都不會變。
         </p>
       </article>
       <article class="card">
         <div class="ico">±</div>
-        <h3>套用前先看 diff</h3>
+        <h3>可選的變更預覽</h3>
         <p>
-          按下套用不會立刻寫檔，而是先算出「目前 → 套用後」的逐行差異，標出新增與刪除行數。
-          看清楚再確認，不確定就取消。
+          簡單模式按下套用直接寫入並建立備份，通知可一鍵復原；進階模式先算出「目前 → 套用後」的逐行差異，看清楚再確認。
         </p>
       </article>
       <article class="card">
@@ -108,7 +109,7 @@
         <h3>Ctrl+K 直接跳到</h3>
         <p>
           一個搜尋框橫跨 15 個工具的全部供應商。輸入名稱、模型或工具名，
-          Enter 就看 diff，確認後套用。
+          Enter 就看變更預覽或直接切換，並可隨時復原。
         </p>
       </article>
       <article class="card">
@@ -131,7 +132,7 @@
         <div class="ico">◇</div>
         <h3>匯入前先解決衝突</h3>
         <p>
-          掃描所有 Harness 後先預覽新增與衝突項目，再選保留本機、覆蓋、合併模型或建立副本；
+          掃描所有工具後先預覽新增與衝突項目，再選保留本機、覆蓋、合併模型或建立副本；
           漂移中心也會持續比對真實設定與 kumoSwitch 清單，支援待處理篩選、批次重新套用與批次匯入。
         </p>
       </article>
@@ -164,7 +165,7 @@
 
   <section class="section wrap" id="tools">
     <h2 class="section-title">支援的 15 種工具</h2>
-    <p class="section-sub">自動偵測安裝位置，開啟即知道哪些工具已就緒。格式未實測的會標記提醒先看 diff。</p>
+    <p class="section-sub">自動偵測安裝位置，開啟即知道哪些工具已就緒。格式未實測的會標記提醒；簡單模式快速切換仍會先建立備份。</p>
     <div class="tools-grid">
       <div class="tool"><b>Codex</b><span>~/.codex/config.toml</span><em class="ok">已驗證</em></div>
       <div class="tool"><b>Claude Code</b><span>~/.claude/settings.json</span><em class="ok">已驗證</em></div>
@@ -183,7 +184,7 @@
       <div class="tool"><b>Oh My Pi</b><span>~/.omp/agent/models.yml</span><em class="ok">已驗證</em></div>
     </div>
     <div class="shot-row">
-      <img src="assets/screenshot-diff.png" alt="套用前的逐行 diff 預覽" />
+      <img src="assets/screenshot-diff.png" alt="進階模式的逐行變更預覽" />
       <div class="shot-copy">
         <h3>每個工具各懂各的格式</h3>
         <p>
@@ -210,8 +211,8 @@
       </article>
       <article class="card">
         <div class="ico">02</div>
-        <h3>逐行 diff 後才寫入</h3>
-        <p>套用前先顯示「目前 → 套用後」的差異。沒有出現在 diff 裡的內容，不應該被你的手動確認意外改掉。</p>
+        <h3>按需展開變更預覽</h3>
+        <p>需要確認時可展開「目前 → 套用後」的差異。沒有出現在變更預覽裡的內容，不會被你的手動確認意外改掉。</p>
       </article>
       <article class="card">
         <div class="ico">03</div>
@@ -245,7 +246,7 @@
         <li><b>Windows</b><span>執行安裝檔，或直接開啟可攜版。若出現 SmartScreen，確認來源後選擇「仍要執行」。</span></li>
         <li><b>macOS</b><span>開啟 DMG，把 App 拖進「應用程式」。若被 Gatekeeper 攔下，右鍵「打開」或到系統設定允許。</span></li>
         <li><b>Linux</b><span>AppImage 加執行權限後直接執行；deb 用套件管理器安裝。</span></li>
-        <li><b>開始使用</b><span>新增供應商，按「套用」前先看 diff；完成後重開該工具終端。</span></li>
+        <li><b>開始使用</b><span>可從供應商目錄快速新增；套用前可先看變更預覽，完成後重開該工具終端。</span></li>
       </ol>
     </div>
   </section>
@@ -253,7 +254,7 @@
   <section class="section wrap" id="faq">
     <h2 class="section-title">常見問題</h2>
     <details><summary>會不會把我的設定改壞？</summary>
-      <p>寫入是定點替換：只改供應商相關的鍵。套用前你會看到逐行 diff，寫入前會自動備份，壞了也能一鍵還原。專案內也附了直接對真實設定檔執行的唯讀測試，驗證其他區塊零改動。</p>
+      <p>寫入是定點替換：只改供應商相關的鍵。簡單模式一鍵切換後可從通知復原；進階模式會先顯示逐行變更預覽，寫入前自動備份。專案內也附了直接對真實設定檔執行的唯讀測試，驗證其他區塊零改動。</p>
     </details>
     <details><summary>API Key 存在哪裡？</summary>
       <p>Windows 在 <code>%APPDATA%\kumoSwitch\providers.json</code>，macOS／Linux 在 <code>~/.config/kumoSwitch/providers.json</code>，以及各工具原本就該存金鑰的位置。Windows 使用 DPAPI；macOS／Linux 以 Keychain／Secret Service 保存主金鑰，供應商金鑰再以 AES-256-GCM 加密。沒有雲端、沒有上傳、沒有遙測。</p>

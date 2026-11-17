@@ -59,6 +59,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。簡
 - **Harness 安裝與管理** —— 設定頁可查看是否偵測到 CLI／設定目錄、執行白名單內的固定 npm 安裝命令，或前往桌面版官方下載頁。安裝前會顯示完整命令，不經 shell、不執行任意下載腳本。
 - **智慧代理／故障轉移** —— 本地反向代理支援固定順序、優先級、加權與健康優先路由；每個供應商可設定 timeout、429 退避、熔斷、最大併發、允許模型與模型映射，並提供成功率、TTFB、換手、脫敏失敗原因與每請求決策軌跡（候選順序、跳過原因、逾時與熔斷狀態）。共用連線池、32 MiB body 上限與真正即時 flush 的 SSE 串流。
 - **跨平台** —— Windows／Linux／macOS 皆由 CI 建置，main 每次推送跑三平台測試。
+- **第三方授權與簽章流程** —— `THIRD-PARTY-NOTICES.md` 列出 npm／Rust 依賴授權；`RELEASING.md` 記錄 Windows Authenticode、macOS 公證與 Tauri updater secrets 的設定方式。
 - **跨平台自動更新** —— Windows 安裝版、macOS Apple Silicon／Intel 與 Linux AppImage 共用一份簽章驗證的 `latest.json`；可攜版與 Linux deb 仍建議手動替換。
 
 ## 支援的工具
