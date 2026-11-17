@@ -20,6 +20,7 @@ import { Rail } from "./components/Rail";
 import { ToolPanel } from "./components/ToolPanel";
 import { QuickAddModal } from "./components/QuickAddModal";
 import { MigrationModal } from "./components/MigrationModal";
+import { FeedbackModal } from "./components/FeedbackModal";
 import { HarnessIcon } from "./components/Marks";
 import { EditorModal } from "./components/EditorModal";
 import { DiffModal } from "./components/DiffModal";
@@ -51,6 +52,7 @@ type ModalState =
   | { kind: "import-preview"; candidates: ImportCandidate[] }
   | { kind: "quick-add" }
   | { kind: "migration" }
+  | { kind: "feedback" }
   | null;
 
 interface ConfirmState {
@@ -141,6 +143,7 @@ export default function App() {
   const [updateChannel, setUpdateChannel] = useState("stable");
   const [preUpdateBackup, setPreUpdateBackup] = useState(true);
   const [ccSwitchBridge, setCcSwitchBridge] = useState(false);
+  const [feedbackReport, setFeedbackReport] = useState<import("./types").UsageReport | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
   const [pendingImport, setPendingImport] = useState<{ text: string; name: string; info?: EncryptedBackupInfo } | null>(null);
   const [palette, setPalette] = useState(false);
@@ -1340,6 +1343,17 @@ export default function App() {
         />
       ) : null}
 
+      {modal?.kind === "feedback" ? (
+        <FeedbackModal
+          info={info}
+          tools={tools}
+          report={feedbackReport}
+          busy={busy}
+          onCancel={() => setModal(null)}
+          onToast={(message, kind) => push(message, kind === "err" ? "err" : "ok")}
+        />
+      ) : null}
+
       {modal?.kind === "migration" ? (
         <MigrationModal
           ccSwitchBridge={ccSwitchBridge}
@@ -1465,6 +1479,11 @@ export default function App() {
           onRescan={() => { setSettingsOpen(false); void rescan(); }}
           onScanConfigs={() => { setSettingsOpen(false); void scanConfig(); }}
           onOpenMigration={() => { setSettingsOpen(false); setModal({ kind: "migration" }); }}
+          onOpenFeedback={() => {
+            setSettingsOpen(false);
+            void api.usageReport(30).then(setFeedbackReport).catch(() => setFeedbackReport(null));
+            setModal({ kind: "feedback" });
+          }}
           onToggleAutoHealth={() => void toggleAutoHealth()}
           onToggleAutoModelSync={() => void toggleAutoModelSync()}
           onClose={() => setSettingsOpen(false)}

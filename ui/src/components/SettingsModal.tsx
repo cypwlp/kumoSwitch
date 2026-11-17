@@ -5,6 +5,7 @@ import type { UpdateCheck } from "../updater";
 import type { Density, TextScale, UiMode, UiPreferences } from "../preferences";
 import { AutoIcon, MoonIcon, SunIcon } from "./Icons";
 import { LangToggle } from "./LangToggle";
+import { t } from "../i18n";
 import { Modal } from "./Modal";
 
 interface SettingsModalProps {
@@ -42,6 +43,7 @@ interface SettingsModalProps {
   onRescan: () => void;
   onScanConfigs: () => void;
   onOpenMigration: () => void;
+  onOpenFeedback: () => void;
   onToggleAutoHealth: () => void;
   onToggleAutoModelSync: () => void;
   onClose: () => void;
@@ -96,6 +98,7 @@ export function SettingsModal({
   onRescan,
   onScanConfigs,
   onOpenMigration,
+  onOpenFeedback,
   onToggleAutoHealth,
   onToggleAutoModelSync,
   onClose,
@@ -109,9 +112,10 @@ export function SettingsModal({
       title="設定與更新"
       onClose={onClose}
       footer={
-        <button className="ghost" onClick={onClose}>
-          關閉
-        </button>
+        <>
+          <button className="ghost" onClick={onOpenFeedback}>{t("提供回饋")}</button>
+          <button className="ghost" onClick={onClose}>{t("關閉")}</button>
+        </>
       }
     >
       <div className="settings-tabs segmented compact" role="tablist" aria-label="設定分類">

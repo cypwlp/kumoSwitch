@@ -706,6 +706,23 @@ button .cnt { opacity: 0.7; margin-left: 4px; font-size: 11px; }
 .field .hint { font-size: 11px; color: var(--muted); margin-top: 5px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .settings-basic-grid { grid-template-columns: minmax(0, 1fr); }
+.feedback-form { display: flex; flex-direction: column; gap: 8px; }
+.feedback-form textarea { min-height: 110px; resize: vertical; }
+.feedback-preview {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--diff-bg);
+  color: var(--code-fg);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .migration-steps { display: flex; flex-direction: column; gap: 12px; }
 .migration-step { display: flex; gap: 12px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
 .migration-num { display: grid; place-items: center; width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%; background: var(--note-tint); border: 1px solid var(--note-line); color: var(--accent); font-size: 12px; font-weight: 700; }

@@ -955,6 +955,22 @@ test("model ID combobox filters live without closing", async ({ page }) => {
   await expect(card.getByLabel("Context window")).toHaveValue("262144");
 });
 
+test("feedback modal builds a local-only report", async ({ page }) => {
+  const dialog = await openSettings(page);
+  await dialog.getByRole("button", { name: "提供回饋" }).click();
+  const feedback = page.getByRole("dialog").last();
+  await expect(feedback.getByRole("heading", { name: "提供回饋" })).toBeVisible();
+  await feedback.getByRole("button", { name: "功能想法" }).click();
+  await feedback.getByLabel("你想說什麼？").fill("希望統計頁能篩選供應商");
+  await feedback.getByRole("button", { name: "預覽內容" }).click();
+  const preview = feedback.locator(".feedback-preview");
+  await expect(preview).toContainText("【kumoSwitch 回饋 · 功能想法】");
+  await expect(preview).toContainText("希望統計頁能篩選供應商");
+  await expect(preview).toContainText("診斷摘要");
+  await expect(preview).not.toContainText("sk-zen-8f31c0d9f2a");
+  await expect(feedback.getByRole("button", { name: "開啟 GitHub Issue" })).toBeVisible();
+});
+
 test("migration centre groups backup, config scan and compatibility import", async ({ page }) => {
   await openAdvancedSettings(page);
   await page.getByRole("button", { name: "搬家中心" }).click();

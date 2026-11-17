@@ -52,7 +52,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。簡
 - **系統托盤常駐** —— 托盤右鍵可直接切換任一工具的任何供應商，並列出最近使用的 5 個；關窗不退出，單一實例。
 - **Ctrl+K 命令面板** —— 跨 15 個工具搜尋供應商，Enter 直接看 diff。
 - **首次啟動引導** —— 自動偵測既有設定並一鍵導入，不必從零輸入。
-- **診斷匯出** —— 一鍵產生環境與設定摘要（金鑰只留末四碼）。
+- **診斷匯出與回饋精靈** —— 一鍵產生環境與設定摘要（金鑰只留末四碼）；回饋精靈可在預覽後複製或開啟 GitHub Issue，绝不自動上傳。
 - **自動健康檢查** —— 可開啟每 10 分鐘重測已有歷史的供應商，健康度欄不用手動按。
 - **統計儀表板** —— 串流讀取 Claude Code、Codex、Pi、Oh My Pi、DSH 的本機用量記錄，計算 token、每日趨勢與成本估算；可依來源與模型篩選，並在 log 有時間欄位時顯示平均回應時間、P50 有效吞吐、慢請求數與首字延遲估算。速度以迴歸估算解碼速率並分離固定等待，不再把首字等待誤算成模型變慢。掃描在背景執行，並顯示實際檢查路徑、讀取檔案數、跳過數與錯誤診斷。其他工具目前沒有穩定的本機 token 格式，會明確標示而不會憑空估算。
 - **供應商目錄** —— 28 個供應商 endpoint 與模型起點，支援名稱／網址／模型搜尋、帳號登入／模型廠商／第三方／雲服務／本機／跨應用分類、雙欄卡片與自訂配置。
@@ -85,7 +85,7 @@ kumoSwitch 專注在一件事：切換供應商時只改必要的設定鍵。簡
 
 ## 下載
 
-使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.25.6) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
+使用 [專屬安裝向導](https://cypwlp.github.io/kumoSwitch/install.html?v=0.26.0) 自動選擇平台，或直接到 [Releases](https://github.com/cypwlp/kumoSwitch/releases) 取得：
 
 - Windows 10／11 x64：NSIS 安裝檔，或免安裝的 `kumoSwitch-portable.exe`
 - macOS Apple Silicon／Intel：`.dmg`
