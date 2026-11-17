@@ -1435,8 +1435,6 @@ kbd {
 }
 .provider-card {
   position: relative;
-  content-visibility: auto;
-  contain-intrinsic-size: 150px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 172px;
   border: 1px solid var(--line);
@@ -1831,8 +1829,6 @@ kbd {
 .model-live-pick input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent-2); }
 .model-list { display: flex; flex-direction: column; gap: 10px; }
 .model-card {
-  content-visibility: auto;
-  contain-intrinsic-size: 310px;
   display: grid;
   grid-template-columns: 132px minmax(0, 1fr);
   gap: 12px;
@@ -2634,7 +2630,6 @@ html[data-text-scale="xlarge"] .app { zoom: 1.16; width: 86.2%; min-height: 86.2
 .proxy-alert time { color: var(--muted); font-size: 9px; }
 .proxy-trace-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .proxy-failure-reasons { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 7px; color: var(--muted); font-size: 9.5px; }
-.provider-card { content-visibility: auto; contain-intrinsic-size: 270px; }
 .provider-load-more { width: 100%; margin-top: 8px; padding: 10px; }
 .ccswitch-batch-bar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 10px 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 
@@ -3045,7 +3040,6 @@ html[data-text-scale="xlarge"] .app { zoom: 1.16; width: 86.2%; min-height: 86.2
   padding: 0;
   gap: 0;
   overflow: visible;
-  contain-intrinsic-size: 90px;
 }
 .model-card-summary {
   display: flex;

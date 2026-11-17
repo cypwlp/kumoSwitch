@@ -795,6 +795,20 @@ test("API key lifecycle supports a new encrypted rotation key", async ({ page })
   await expect(dialog.getByText("新金鑰已加密保存並切換為使用中。")).toBeVisible();
 });
 
+test("collapsed model card leaves no empty placeholder row", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /^模型/ }).click();
+  await dialog.locator(".model-summary-main").first().click();
+  const gap = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>(".model-card");
+    const summary = card?.querySelector<HTMLElement>(".model-card-summary");
+    return card && summary ? card.getBoundingClientRect().height - summary.getBoundingClientRect().height : -1;
+  });
+  expect(gap).toBeGreaterThanOrEqual(0);
+  expect(gap).toBeLessThanOrEqual(3);
+});
+
 test("theme accent palette can be switched and persists", async ({ page }) => {
   const dialog = await openSettings(page);
   await dialog.getByRole("button", { name: "極光", exact: true }).click();
