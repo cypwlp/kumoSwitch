@@ -18,6 +18,7 @@ import type {
 import { Modal } from "./Modal";
 import { ConfirmModal } from "./ConfirmModal";
 import { ModelSyncModal } from "./ModelSyncModal";
+import { ModelPickerModal } from "./ModelPickerModal";
 import { ProviderChooserModal } from "./ProviderChooserModal";
 
 interface EditorProps {
@@ -224,6 +225,10 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const [syncingModels, setSyncingModels] = useState(false);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [catalogModels, setCatalogModels] = useState<ModelProfile[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [oauthNotice, setOauthNotice] = useState<Preset | null>(null);
   const [modelQuery, setModelQuery] = useState("");
   const [showArchivedModels, setShowArchivedModels] = useState(false);
@@ -272,6 +277,26 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     setModelQuery("");
     setReasoningNotices({});
   }, [provider?.id, tool.id]);
+
+  useEffect(() => {
+    if (tab !== "models" || !provider) return;
+    let alive = true;
+    setCatalogLoading(true);
+    setCatalogError("");
+    void api.discoverModels(tool.id, provider.id)
+      .then((discovery) => {
+        if (alive) setCatalogModels(discovery.models);
+      })
+      .catch((error) => {
+        if (alive) setCatalogError(errorText(error));
+      })
+      .finally(() => {
+        if (alive) setCatalogLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [tab, provider?.id, tool.id]);
 
   useEffect(() => {
     let alive = true;
@@ -401,6 +426,36 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     setExpandedModelIndex(nextIndex);
   };
 
+  const addCatalogModel = (model: ModelProfile) => {
+    const nextIndex = form.models?.length ?? 0;
+    setForm((previous) => ({
+      ...previous,
+      models: [...(previous.models ?? []), {
+        ...model,
+        name: model.name || model.id,
+        reasoning_level: model.reasoning_level ?? model.reasoning_levels?.[0] ?? "",
+      }],
+      model: previous.model || model.id,
+    }));
+    setExpandedModelIndex(nextIndex);
+    setModelPickerOpen(false);
+  };
+
+  const changeModelId = (index: number, value: string) => {
+    const match = catalogModels.find((model) => model.id === value.trim());
+    if (!match) {
+      updateModel(index, { id: value });
+      return;
+    }
+    setForm((previous) => ({
+      ...previous,
+      models: (previous.models ?? []).map((model, at) => at === index
+        ? { ...model, ...match, name: match.name || match.id, id: match.id, reasoning_level: match.reasoning_level ?? match.reasoning_levels?.[0] ?? model.reasoning_level }
+        : model),
+    }));
+    setModelError("");
+  };
+
   const removeModel = (index: number) => {
     setForm((previous) => {
       const models = (previous.models ?? []).filter((_, at) => at !== index);
@@ -452,6 +507,34 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
         setReasoningNotices((previous) => ({
           ...previous,
           [modelId]: `${tool.reasoning_target ? `使用 ${tool.name} 支援的 ${levels.length} 個等級 · 寫入 ${tool.reasoning_target}` : `使用 ${tool.name} 支援的 ${levels.length} 個等級（此工具尚未支援寫入設定）`} · 儲存供應商後可查詢 context／max output`,
+        }));
+        return;
+      }
+      const savedModel = (provider.models ?? []).some((item) => item.id === modelId);
+      if (!savedModel) {
+        const discovery = await api.discoverModels(tool.id, provider.id);
+        const remote = discovery.models.find((item) => item.id === modelId);
+        if (!remote) throw new Error("供應商目錄沒有回報這個模型；請確認 Model ID 或先儲存供應商");
+        const catalogLevels = remote.reasoning_levels ?? [];
+        const levels = catalogLevels.length ? catalogLevels : tool.reasoning_levels.filter(Boolean);
+        const preferred = levels.includes(model.reasoning_level ?? "")
+          ? model.reasoning_level!
+          : remote.reasoning_level ?? (levels.includes("medium") ? "medium" : levels[0]) ?? "";
+        updateModel(index, {
+          name: remote.name || model.name || remote.id,
+          context_window: remote.context_window ?? model.context_window,
+          max_output: remote.max_output ?? model.max_output,
+          reasoning: remote.reasoning ?? model.reasoning,
+          reasoning_levels: levels.length ? levels : model.reasoning_levels,
+          reasoning_level: preferred,
+          vision: remote.vision ?? model.vision,
+          tools: remote.tools ?? model.tools,
+          metadata: remote.metadata ?? model.metadata,
+          last_seen_at: remote.last_seen_at,
+        });
+        setReasoningNotices((previous) => ({
+          ...previous,
+          [modelId]: "已從供應商目錄填入 context／max output 與思考等級；儲存後才會寫入工具設定。",
         }));
         return;
       }
@@ -1015,6 +1098,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 >
                   實測選取 {selectedLiveModels.length || ""}
                 </button>
+                <button type="button" className="ghost" disabled={!provider || catalogLoading} onClick={() => setModelPickerOpen(true)} title="搜尋供應商 /models 回報的所有模型">⌕ 從目錄新增</button>
                 <button type="button" className="ghost" onClick={() => addModel()}>＋ 新增模型</button>
               </div>
             </div>
@@ -1152,7 +1236,12 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                     {expanded ? (
                       <div className="model-fields" id={`model-editor-${index}`}>
                         <div className="field-row">
-                          <div className="field"><label>Model ID</label><input aria-label="Model ID" list="model-suggestions" value={model.id} placeholder="glm-5.3-flash" onChange={(event) => updateModel(index, { id: event.target.value })} /></div>
+                          <div className="field">
+                            <label>Model ID</label>
+                            <input aria-label="Model ID" list="model-suggestions" value={model.id} placeholder="glm-5.3-flash" onChange={(event) => changeModelId(index, event.target.value)} />
+                            {!model.id && catalogLoading ? <span className="hint">正在讀取供應商模型目錄…</span> : null}
+                            {!model.id && !catalogLoading && catalogModels.length ? <span className="hint">已載入 {catalogModels.length} 個供應商模型；輸入或選取後會自動填入 context／max output。</span> : null}
+                          </div>
                           <div className="field"><label>顯示名稱</label><input aria-label="模型顯示名稱" value={model.name} placeholder="選填" onChange={(event) => updateModel(index, { name: event.target.value })} /></div>
                         </div>
                         <div className="model-number-row model-core-row">
@@ -1201,7 +1290,9 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
               {visibleModelRows.length === 0 ? <div className="empty small">{(form.models?.length ?? 0) === 0 ? "還沒有模型。新增模型，或從供應商預設加入。" : "沒有符合搜尋條件的模型。"}</div> : null}
             </div>
             <datalist id="model-suggestions">
-              {Array.from(new Set(presets.flatMap((preset) => preset.models))).sort((left, right) => left.localeCompare(right)).map((model) => <option key={model} value={model} />)}
+              {Array.from(new Set([...presets.flatMap((preset) => preset.models), ...catalogModels.map((model) => model.id)]))
+                .sort((left, right) => left.localeCompare(right))
+                .map((model) => <option key={model} value={model} />)}
             </datalist>
             {modelError ? <div className="note error">{modelError}</div> : null}
           </div>
@@ -1367,6 +1458,18 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
           </div>
         ) : null}
       </Modal>
+
+      {modelPickerOpen ? (
+        <ModelPickerModal
+          providerName={form.name || provider?.name || "供應商"}
+          models={catalogModels.filter((catalog) => !(form.models ?? []).some((model) => model.id === catalog.id))}
+          loading={catalogLoading}
+          error={catalogError}
+          onPick={addCatalogModel}
+          onManual={() => { setModelPickerOpen(false); addModel(); }}
+          onClose={() => setModelPickerOpen(false)}
+        />
+      ) : null}
 
       {modelDiscovery ? (
         <ModelSyncModal

@@ -3035,6 +3035,31 @@ html[data-text-scale="xlarge"] .app { zoom: 1.16; width: 86.2%; min-height: 86.2
   font-size: 12px;
 }
 .model-result-count { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.model-picker { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.model-picker .model-search { flex: 0 0 auto; width: 100%; }
+.model-picker-meta { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10.5px; }
+.model-picker-list { display: flex; flex-direction: column; gap: 6px; max-height: min(48vh, 440px); overflow-y: auto; padding-right: 2px; }
+.model-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.model-picker-item:hover { border-color: var(--accent); background: var(--hover-tint); }
+.model-picker-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.model-picker-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.model-picker-title code { overflow: hidden; color: var(--muted); font-family: "Cascadia Code", Consolas, monospace; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker-badges { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.model-picker-badges .badge { font-size: 8.5px; padding: 2px 5px; }
 .model-card {
   display: block;
   padding: 0;

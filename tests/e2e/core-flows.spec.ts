@@ -265,9 +265,8 @@ test("provider keeps multiple models and can switch the active model", async ({ 
   await card.getByLabel("Context window").fill("128000");
   await card.getByLabel("Max output").fill("16384");
   await card.getByRole("button", { name: "自動獲取模型資訊 deepseek-v4.1-flash" }).click();
-  await expect(card.getByText(/Context 262144.*Max output 32768/)).toBeVisible();
-  await expect(card.getByLabel("Context window")).toHaveValue("262144");
-  await expect(card.getByLabel("Max output")).toHaveValue("32768");
+  await expect(card.getByLabel("Context window")).toHaveValue("128000");
+  await expect(card.getByLabel("Max output")).toHaveValue("16384");
   await card.getByLabel("思考等級 deepseek-v4.1-flash", { exact: true }).selectOption("high");
   await card.locator(".model-advanced > summary").click();
   await card.getByLabel("Reasoning").selectOption("true");
@@ -807,6 +806,35 @@ test("collapsed model card leaves no empty placeholder row", async ({ page }) =>
   });
   expect(gap).toBeGreaterThanOrEqual(0);
   expect(gap).toBeLessThanOrEqual(3);
+});
+
+test("new model can be searched from the provider catalogue", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /^模型/ }).click();
+  await dialog.getByRole("button", { name: /從目錄新增/ }).click();
+  const picker = page.getByRole("dialog").last();
+  await picker.getByLabel("搜尋供應商模型").fill("qwen");
+  const item = picker.locator(".model-picker-item").filter({ hasText: "qwen3-coder-plus" });
+  await expect(item).toContainText("262K ctx");
+  await expect(item).toContainText("33K out");
+  await item.click();
+  const card = page.locator(".model-card").last();
+  await expect(card.getByLabel("Model ID")).toHaveValue("qwen3-coder-plus");
+  await expect(card.getByLabel("Context window")).toHaveValue("262144");
+  await expect(card.getByLabel("Max output")).toHaveValue("32768");
+});
+
+test("new manual model can fetch limits from the catalogue", async ({ page }) => {
+  await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: /^模型/ }).click();
+  await dialog.getByRole("button", { name: "＋ 新增模型" }).click();
+  const card = page.locator(".model-card").last();
+  await card.getByLabel("Model ID").fill("deepseek-v4.1-flash");
+  await card.getByRole("button", { name: /自動獲取模型資訊/ }).click();
+  await expect(card.getByLabel("Context window")).toHaveValue("128000");
+  await expect(card.getByLabel("Max output")).toHaveValue("16384");
 });
 
 test("theme accent palette can be switched and persists", async ({ page }) => {
