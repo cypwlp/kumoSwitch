@@ -1,7 +1,7 @@
 {
   "name": "kumoswitch",
   "private": true,
-  "version": "0.24.1",
+  "version": "0.25.0",
   "description": "Manage AI harness providers and desktop apps without rewriting your config",
   "scripts": {
     "dev": "tauri dev",
