@@ -582,6 +582,123 @@ const DICT: Record<string, string> = {
   "森林": "Forest",
   "玫瑰": "Rose",
   "琥珀": "Amber",
+  "設定": "Settings",
+  "語言、主題、導覽、資料與更新": "Language, theme, navigation, data and updates",
+  "新增供應商 · 點擊供應商查看模型與設定 · 套用前先看變更預覽": "Add provider · click a provider to view models and settings · review the change preview before applying",
+  "由工具決定": "Determined by tool",
+  "尚未設定模型": "No model configured",
+  "詳細": "Details",
+  "支援桌面版": "Desktop app supported",
+  "拖曳調整供應商順序；也可用上下鍵移動": "Drag to reorder providers; arrow keys also work",
+  "先看變更預覽再套用": "Review the change preview before applying",
+  "直接切換模型並預覽變更": "Switch model and preview the change",
+  "主力": "Primary",
+  "工具": "Tool",
+  "金鑰": "Key",
+  "詳情": "Details",
+  "手動向 GitHub Releases 查詢簽章更新。若自動更新不可用，也可以直接開啟安裝向導下載最新版。": "Check GitHub Releases for a signed update. If automatic updates are unavailable, open the install guide to download the latest build.",
+  "Stable（自動更新）": "Stable (automatic updates)",
+  "Beta（向導手動下載）": "Beta (manual download via guide)",
+  "先為所有偵測到的工具建立設定快照": "Snapshot every detected tool before updating",
+  "自動更新一律使用 Stable 的簽章清單；Beta 通道會開啟對應的預覽版安裝向導，避免預覽版誤推送給一般使用者。": "Automatic updates always use the Stable signed manifest. The Beta channel opens the matching preview install guide so preview builds are not pushed to regular users.",
+  "更新檔案由 GitHub Releases 提供；安裝前會驗證簽章。設定與 API Key 不會上傳。": "Update files come from GitHub Releases and are signature-checked before install. Settings and API keys are never uploaded.",
+  "提高文字、邊框與焦點環的對比": "Increase contrast for text, borders and focus rings",
+  "停用非必要的過場與脈動動畫": "Disable non-essential transitions and pulsing animations",
+  "安裝、桌面版與設定位置": "Installation, desktop apps and config locations",
+  "Token、成本與掃描診斷": "Tokens, cost and scan diagnostics",
+  "故障轉移、路由與即時觀測": "Failover, routing and live observability",
+  "漂移、時間線與自動修復": "Drift, timeline and auto-repair",
+  "跨工具重用供應商": "Reuse providers across tools",
+  "版本、排程與遷移": "Versions, schedules and migration",
+  "本機資料位置": "Local data location",
+  "模型與連線": "Models & connection",
+  "金鑰生命週期": "API key lifecycle",
+  "最近套用": "Last applied",
+  "尚未套用": "Not applied yet",
+  "目前位置": "Current location",
+  "供應商詳情分類": "Provider detail sections",
+  "設定這個供應商可用的模型。圓點代表下次套用時要寫入工具的模型。": "Models available to this provider. The dot marks the model written to the tool on the next apply.",
+  "尚未同步模型目錄。": "The model catalogue has not been synced yet.",
+  "↻ 同步模型": "↻ Sync models",
+  "⌕ 從目錄新增": "⌕ Add from catalogue",
+  "＋ 新增模型": "+ Add model",
+  "自動同步與實測成本保護": "Auto-sync and live-test cost guard",
+  "同步排程、失敗退避與真實模型實測配額": "Sync schedule, failure backoff and live-test budget",
+  "展開": "Expand",
+  "收起": "Collapse",
+  "智譜 GLM": "Zhipu GLM",
+  "封存": "Archive",
+  "取消封存": "Unarchive",
+  "實測": "Live test",
+  "★ 常用": "★ Favourite",
+  "★ 取消常用": "★ Remove favourite",
+  "☆ 設為常用": "☆ Add favourite",
+  "套用後寫入 config.toml → model_reasoning_effort": "Written to config.toml → model_reasoning_effort after applying",
+  "符合": "Compatible",
+  "工具能力符合": "Tool calling supported",
+  "支援": "Supported",
+  "不支援": "Not supported",
+  "尚未測試這個模型": "This model has not been tested yet",
+  "切換並預覽": "Switch & preview",
+  "讀取供應商的 /models，先預覽再合併；不會刪除既有模型": "Read the provider /models catalogue, preview and merge; existing models are never deleted",
+  "一次實測勾選的模型；送出前會顯示配額與費用估算": "Live-test the selected models; quota and estimated cost are shown before sending",
+  "搜尋供應商 /models 回報的所有模型": "Search every model reported by the provider /models endpoint",
+  "搜尋模型名稱、ID、思考等級…": "Search model name, ID or reasoning level…",
+  "選取此模型進行批次實測": "Select this model for batch live testing",
+  "把這個模型設為供應商預設": "Set this model as the provider default",
+  "只更新模型欄位，開啟變更預覽後再確認": "Update only the model fields, then review the change preview",
+  "同一供應商可保存多把輪替金鑰；只有使用中的金鑰會寫入工具。其他金鑰保持加密待命，可隨時測試或切回。": "A provider can keep multiple rotating keys. Only the active key is written to the tool; other keys stay encrypted and ready to test or reactivate.",
+  "建立": "Created",
+  "無到期日": "No expiry",
+  "新增後預設切換為使用中；舊金鑰會保留為待命版本。": "The new key becomes active by default; the old key stays as a standby version.",
+  "到期日（選填）": "Expiry date (optional)",
+  "不同工具的供應商各自保存金鑰版本；共用 Profile 同步時才會複製金鑰到對應工具。所有輪替、切換、測試與刪除都會寫入本機稽核紀錄。": "Each tool keeps its own key versions; only shared Profile sync copies keys to another tool. Rotations, switches, tests and deletions are recorded in the local audit log.",
+  "例：2026 Q4 輪替": "e.g. 2026 Q4 rotation",
+  "輪替原因、負責人或用途": "Reason, owner or purpose",
+  "到期日": "Expiry date",
+  "Mock 預覽資料": "Mock preview data",
+  "搜尋模型廠商、第三方平台、雲服務、本機服務與帳號登入": "Search model vendors, third-party platforms, cloud services, local services and account logins",
+  "複製": "Copy",
+  "留空會保留現有金鑰；按「查看」才會載入完整金鑰，顯示 30 秒後會自動隱藏。": "Leave blank to keep the current key. Press “View” to load the full key; it hides automatically after 30 seconds.",
+  "套用時只會寫入": "Applying writes only",
+  "的供應商相關鍵位，其他設定與註解不會被動到。": "provider-related keys; other settings and comments are untouched.",
+  "模型顯示名稱": "Model display name",
+  "候選思考等級": "Candidate reasoning levels",
+  "模型 metadata": "Model metadata",
+  "個模型": "models",
+  "個版本": "versions",
+  "類型（": "Type (",
+  "更多效能指標": "More performance metrics",
+  "供應商連線測試": "Provider connectivity tests",
+  "每日用量（近": "Daily usage (last",
+  "天）": " days)",
+  "輸入": "Input",
+  "輸出": "Output",
+  "快取": "Cache",
+  "思考": "Reasoning",
+  "耗時": "Elapsed",
+  "ms · 已掃描": "ms · scanned",
+  "個檔案 · 跳過": "files · skipped",
+  "個": "",
+  "已找到用量": "Usage found",
+  "已找到": "Found",
+  "個檔案 · 實際讀取": "files · read",
+  "路徑不存在": "Path not found",
+  "成本為公開單價估算（每百萬 token），非帳單金額；未列入價目表的模型顯示「未定價」。Pi／DSH 的思考 tokens 會另計並納入成本。表格的「解碼速度」是把每筆請求時間對輸出 tokens 做迴歸、扣掉固定等待後的估算；例如 Pi 的 deepseek-v4.1-flash 約 174 tok/s、固定等待約 13.2 秒。上方「有效吞吐」才是包含等待的總量÷總時間。Codex 目前沒有可用的時間戳。": "Cost is an estimate from public per-million-token prices, not a bill. Models without a price show “Unpriced”. Pi/DSH reasoning tokens are counted separately and included in cost. The decode speed regresses request time against output tokens and subtracts fixed wait; for example, Pi deepseek-v4.1-flash is about 174 tok/s with about 13.2s fixed wait. The effective throughput above is total tokens ÷ total time, including waiting. Codex has no usable timestamps.",
+  "目前可讀取這五種工具的本機用量。Gemini CLI、OpenCode、Qwen Code、Kilo Code、Crush、Qoder、Grok Build 等工具的 session 檔沒有穩定的 token 欄位，因此不會被估算；等實際格式可解析時會自動納入。": "Local usage is available for these five tools. Session files from Gemini CLI, OpenCode, Qwen Code, Kilo Code, Crush, Qoder and Grok Build do not expose stable token fields, so they are not estimated; they will be added automatically when a parseable format exists.",
+  "有計時資料的請求平均花費時間；不是連線測試延遲": "Average time for timed requests; this is not connectivity test latency",
+  "輸出 tokens ÷ 有計時請求的總時間；包含首字等待、思考、網路與重試": "Output tokens ÷ total time for timed requests, including first-token wait, reasoning, network and retries",
+  "將每筆 duration 對輸出 tokens 迴歸，估出的解碼速度；已扣掉固定等待": "Decode speed estimated by regressing each request duration against output tokens; fixed wait is removed",
+  "每筆請求的固定等待：首字、排隊、重試與網路；由迴歸截距估算": "Fixed wait per request: first token, queue, retries and network; estimated from the regression intercept",
+  "Claude Code session log 的使用者訊息→首個 assistant 區塊時間差，僅為估算": "Claude Code user message → first assistant block time gap; estimate only",
+  "超過 60 秒的請求，通常是逾時、重試或排隊；速度統計會保留這些樣本": "Requests over 60 seconds, usually timeouts, retries or queueing; speed statistics keep these samples",
+  "每日 token 用量": "Daily token usage",
+  "有計時資料的請求平均花費時間": "Average time for timed requests",
+  "duration 對輸出 tokens 迴歸估算的解碼速度；已扣掉固定等待，滑過儲存格可看 P50": "Decode speed from regressing duration against output tokens, fixed wait removed; hover for P50",
+  "首字延遲估算（目前只有 Claude Code 時間戳可推算）": "Estimated first-token latency (currently only derivable from Claude Code timestamps)",
+  "統計範圍": "Date range",
+  "搜尋模型…": "Search models…",
+  "天": "days",
 };
 
 interface Rule {
@@ -600,6 +717,7 @@ const RULES: Rule[] = [
   { re: /^這裡列出 (.+) 工具的供應商。點擊供應商即可查看它的模型、Base URL 與金鑰設定。$/, out: (m) => `Providers configured for the ${m[1]} tool. Click one to view its model, base URL and key settings.` },
   { re: /^查看供應商 (.+) 的模型與設定$/, out: (m) => `View model and settings for provider ${m[1]}` },
   { re: /^供應商 (.+) 的操作$/, out: (m) => `Actions for provider ${m[1]}` },
+  { re: /^(.+) 的操作$/, out: (m) => `Actions for ${m[1]}` },
   { re: /^已建立完整副本「(.+)」$/, out: (m) => `Created a complete copy of “${m[1]}”` },
   { re: /^已匯入舊明文格式 (\d+) 筆，略過 (\d+) 筆$/, out: (m) => `Imported ${m[1]} legacy plaintext entries; skipped ${m[2]}` },
   { re: /^已解密匯入 (\d+) 筆，略過 (\d+) 筆$/, out: (m) => `Decrypted and imported ${m[1]} entries; skipped ${m[2]}` },
@@ -629,6 +747,29 @@ const RULES: Rule[] = [
   { re: /^主題：(.+)$/, out: (m) => `Theme: ${m[1]}` },
   { re: /^備份紀錄 · (.+)$/, out: (m) => `Backups · ${m[1]}` },
   { re: /^供應商 (.+)$/, out: (m) => `Provider ${m[1]}` },
+  { re: /^供應商詳情 · (.+)$/, out: (m) => `Provider details · ${m[1]}` },
+  { re: /^(\d+) 個已知模型$/, out: (m) => `${m[1]} known models` },
+  { re: /^(\d+) 個模型$/, out: (m) => `${m[1]} models` },
+  { re: /^(\d+) 個可用等級$/, out: (m) => `${m[1]} reasoning levels` },
+  { re: /^(\d+) 個思考等級$/, out: (m) => `${m[1]} reasoning levels` },
+  { re: /^(\d+) 個版本$/, out: (m) => `${m[1]} versions` },
+  { re: /^上次測試 (.+) · (.+)$/, out: (m) => `Last tested ${m[1]} · ${m[2]}` },
+  { re: /^取消常用模型 (.+)$/, out: (m) => `Remove favourite ${m[1]}` },
+  { re: /^測試模型 (.+)$/, out: (m) => `Test model ${m[1]}` },
+  { re: /^實測模型 (.+)$/, out: (m) => `Live test model ${m[1]}` },
+  { re: /^自動獲取模型資訊 (.+)$/, out: (m) => `Fetch model info for ${m[1]}` },
+  { re: /^思考等級 (.+)$/, out: (m) => `Reasoning level ${m[1]}` },
+  { re: /^模型 (.+)$/, out: (m) => `Model ${m[1]}` },
+  { re: /^選取實測模型 (.+)$/, out: (m) => `Select ${m[1]} for live test` },
+  { re: /^設為常用模型 (.+)$/, out: (m) => `Add favourite ${m[1]}` },
+  { re: /^類型（(.+)）$/, out: (m) => `Type (${m[1]})` },
+  { re: /^P50 有效吞吐 (.+)；總量 (.+)；慢請求 (.+) 筆$/, out: (m) => `P50 ${m[1]}; total ${m[2]}; slow ${m[3]}` },
+  { re: /^有計時請求 (.+) 筆；思考 tokens 只有 Pi／DSH 會分開回報$/, out: (m) => `Timed requests ${m[1]}; reasoning tokens are reported separately only by Pi/DSH` },
+  { re: /^(\d+) 天$/, out: (m) => `${m[1]} days` },
+  { re: /^(\d+) 個檔案$/, out: (m) => `${m[1]} files` },
+  { re: /^調整 (.+) 的順序$/, out: (m) => `Reorder ${m[1]}` },
+  { re: /^(.+) 快速切換模型$/, out: (m) => `Quick model switch for ${m[1]}` },
+  { re: /^(\d+) 個$/, out: (m) => m[1] },
   { re: /^最近 (\d+) 筆 · 平均 (\d+)ms · (.+)$/, out: (m) => `Last ${m[1]} tests · avg ${m[2]}ms · ${m[3]}` },
   { re: /^· 下載中 (\d+)%$/, out: (m) => `· downloading ${m[1]}%` },
   { re: /^還原會用 (.+) 這份備份覆蓋目前的設定檔，確定嗎？$/, out: (m) => `Restore the backup from ${m[1]}? This overwrites the current config file.` },
@@ -762,7 +903,7 @@ function translate(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const direct = DICT[trimmed];
-  if (direct) return value.replace(trimmed, direct);
+  if (direct !== undefined) return value.replace(trimmed, direct);
   for (const rule of RULES) {
     const m = trimmed.match(rule.re);
     if (m) return value.replace(trimmed, rule.out(m));
@@ -836,7 +977,6 @@ function walk(root: Node, lang: Lang) {
   }
   if (root.nodeType !== Node.ELEMENT_NODE) return;
   const el = root as HTMLElement;
-  if (SKIP.has(el.tagName)) return;
   for (const attr of ATTRS) {
     const value = el.getAttribute(attr);
     if (!value) continue;
@@ -845,14 +985,34 @@ function walk(root: Node, lang: Lang) {
     const next = translateFor(lang, source);
     if (next && next !== value) el.setAttribute(attr, next);
   }
+  if (SKIP.has(el.tagName)) return;
   el.childNodes.forEach((child) => walk(child, lang));
 }
 
 let observer: MutationObserver | null = null;
 let currentLang: Lang = "zh";
 
+const WINDOW_TITLES: Record<Lang, string> = {
+  en: "kumoSwitch — AI tool provider switcher",
+  "zh-Hans": "kumoSwitch — AI 工具供应商切换器",
+  zh: "kumoSwitch — AI 工具供應商切換器",
+};
+
+function paintWindowTitle(lang: Lang) {
+  const title = WINDOW_TITLES[lang];
+  document.title = title;
+  if ((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
+    void import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => getCurrentWindow().setTitle(title))
+      .catch(() => {
+        /* browser preview */
+      });
+  }
+}
+
 export function applyLang(lang: Lang) {
   currentLang = lang;
+  paintWindowTitle(lang);
   document.documentElement.lang = lang === "en" ? "en" : lang === "zh-Hans" ? "zh-Hans" : "zh-Hant";
   if (observer) {
     observer.disconnect();

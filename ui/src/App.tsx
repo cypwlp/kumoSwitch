@@ -37,6 +37,7 @@ import { BackupCenterView } from "./components/BackupCenterView";
 import { HarnessManagerView } from "./components/HarnessManagerView";
 import { Toasts, useToasts } from "./components/Toasts";
 import { useUiPreferences } from "./preferences";
+import { applyLang, readLang } from "./i18n";
 import { SettingsModal } from "./components/SettingsModal";
 import type { TestState } from "./components/ProviderTable";
 
@@ -111,6 +112,10 @@ export default function App() {
   const { mode, setMode, accent, setAccent } = useTheme();
   const { preferences, update: updatePreferences } = useUiPreferences();
   const { items: toasts, push, dismiss: dismissToast } = useToasts();
+
+  useEffect(() => {
+    applyLang(readLang());
+  }, []);
   const [recent, setRecent] = useState<RecentSwitch[]>(readRecent);
   const [pins, setPins] = useState<PinMap>(readPins);
 
