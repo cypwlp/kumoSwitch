@@ -39,6 +39,10 @@ pub struct UsageRow {
     pub output_per_sec: Option<f64>,
     /// Median per-request output tokens per second (robust to slow requests).
     pub median_output_per_sec: Option<f64>,
+    /// Decode rate estimated by regressing duration on output tokens.
+    pub decode_output_per_sec: Option<f64>,
+    /// Estimated fixed wait per request (TTFT + queue + retries).
+    pub fixed_overhead_ms: Option<u64>,
     /// Requests that took longer than 60 seconds (likely timeouts or retries).
     pub slow_records: u64,
     /// Estimated first-output latency (Claude Code timestamps only).
@@ -80,6 +84,8 @@ pub struct UsageReport {
     pub timed_output: u64,
     pub avg_duration_ms: Option<u64>,
     pub output_per_sec: Option<f64>,
+    pub decode_output_per_sec: Option<f64>,
+    pub fixed_overhead_ms: Option<u64>,
     pub slow_records: u64,
     pub ttft_ms: Option<u64>,
     pub days_scanned: u32,
@@ -136,6 +142,7 @@ struct Acc {
     ttft_ms: u64,
     ttft_records: u64,
     request_speeds: Vec<f64>,
+    samples: Vec<(u64, u64)>,
     slow_records: u64,
 }
 
@@ -160,6 +167,7 @@ impl Acc {
         if output > 0 {
             self.request_speeds
                 .push(output as f64 / (duration_ms as f64 / 1_000.0));
+            self.samples.push((output, duration_ms));
         }
         if duration_ms > 60_000 {
             self.slow_records += 1;
@@ -638,6 +646,34 @@ fn root_report(source: &str, path: &Path) -> UsageRoot {
     }
 }
 
+/// Estimate decode speed and fixed per-request overhead from 
+/// `duration_ms = overhead + output / decode_speed`.
+fn decode_estimate(samples: &[(u64, u64)]) -> Option<(f64, u64)> {
+    if samples.len() < 8 {
+        return None;
+    }
+    let n = samples.len() as f64;
+    let mean_x = samples.iter().map(|(x, _)| *x as f64).sum::<f64>() / n;
+    let mean_y = samples.iter().map(|(_, y)| *y as f64).sum::<f64>() / n;
+    let cov = samples
+        .iter()
+        .map(|(x, y)| (*x as f64 - mean_x) * (*y as f64 - mean_y))
+        .sum::<f64>();
+    let var = samples
+        .iter()
+        .map(|(x, _)| (*x as f64 - mean_x).powi(2))
+        .sum::<f64>();
+    if var <= f64::EPSILON {
+        return None;
+    }
+    let slope = cov / var; // milliseconds per output token
+    if !slope.is_finite() || slope <= 0.0 {
+        return None;
+    }
+    let intercept = (mean_y - slope * mean_x).max(0.0);
+    Some((1_000.0 / slope, intercept.round() as u64))
+}
+
 fn median(values: &[f64]) -> Option<f64> {
     if values.is_empty() {
         return None;
@@ -718,6 +754,11 @@ pub fn report(days_back: u32) -> UsageReport {
 
     let files = roots.iter().map(|root| root.scanned_files).sum();
 
+    let all_samples: Vec<(u64, u64)> = models
+        .values()
+        .flat_map(|acc| acc.samples.iter().copied())
+        .collect();
+
     let mut rows: Vec<UsageRow> = models
         .into_iter()
         .map(|((source, model), acc)| {
@@ -753,6 +794,8 @@ pub fn report(days_back: u32) -> UsageReport {
                 avg_duration_ms: avg_duration,
                 output_per_sec,
                 median_output_per_sec: median(&acc.request_speeds),
+                decode_output_per_sec: decode_estimate(&acc.samples).map(|(speed, _)| speed),
+                fixed_overhead_ms: decode_estimate(&acc.samples).map(|(_, overhead)| overhead),
                 slow_records: acc.slow_records,
                 ttft_ms: if acc.ttft_records > 0 {
                     Some(acc.ttft_ms / acc.ttft_records)
@@ -775,6 +818,10 @@ pub fn report(days_back: u32) -> UsageReport {
     let total_cache: u64 = rows.iter().map(|r| r.cache_read + r.cache_write).sum();
     let total_reasoning: u64 = rows.iter().map(|r| r.reasoning).sum();
     let slow_records: u64 = rows.iter().map(|r| r.slow_records).sum();
+    let (decode_output_per_sec, fixed_overhead_ms) = match decode_estimate(&all_samples) {
+        Some((speed, overhead)) => (Some(speed), Some(overhead)),
+        None => (None, None),
+    };
     let priced: Vec<f64> = rows.iter().filter_map(|r| r.cost).collect();
     let total_cost = if priced.is_empty() { None } else { Some(priced.iter().sum()) };
     let total_duration_ms: u64 = rows.iter().map(|r| r.duration_ms).sum();
@@ -802,6 +849,8 @@ pub fn report(days_back: u32) -> UsageReport {
         avg_duration_ms: (timed_records > 0).then(|| total_duration_ms / timed_records),
         output_per_sec: (total_duration_ms > 0)
             .then(|| timed_output as f64 / (total_duration_ms as f64 / 1_000.0)),
+        decode_output_per_sec,
+        fixed_overhead_ms,
         slow_records,
         ttft_ms: (ttft_records > 0).then(|| ttft_sum / ttft_records),
         days_scanned: days_back,
@@ -848,6 +897,14 @@ mod tests {
         assert!(report.records > 0, "有檔案卻沒解析到任何用量");
         assert!(report.total_input + report.total_output > 0);
         assert!(!report.rows.is_empty());
+    }
+
+    #[test]
+    fn decode_estimate_removes_fixed_overhead() {
+        let samples = [(100, 5_500), (200, 6_000), (400, 7_000), (600, 8_000), (1_000, 10_000), (1_500, 12_500), (2_000, 15_000), (3_000, 20_000)];
+        let (speed, overhead) = decode_estimate(&samples).expect("estimate");
+        assert!((speed - 200.0).abs() < 1.0, "speed={speed}");
+        assert!((overhead as i64 - 5_000).abs() <= 1, "overhead={overhead}");
     }
 
     #[test]

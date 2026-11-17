@@ -102,6 +102,10 @@ export function StatsView({ onError }: Props) {
     let ttftRecords = 0;
     let reasoning = 0;
     let slowRecords = 0;
+    let decodeWeighted = 0;
+    let decodeWeight = 0;
+    let fixedWeighted = 0;
+    let fixedWeight = 0;
     for (const row of filteredRows) {
       input += row.input;
       output += row.output;
@@ -113,6 +117,16 @@ export function StatsView({ onError }: Props) {
       timedRecords += row.timed_records ?? 0;
       reasoning += row.reasoning ?? 0;
       slowRecords += row.slow_records ?? 0;
+      if (row.decode_output_per_sec != null) {
+        const weight = Math.max(1, row.timed_output);
+        decodeWeighted += row.decode_output_per_sec * weight;
+        decodeWeight += weight;
+      }
+      if (row.fixed_overhead_ms != null) {
+        const weight = Math.max(1, row.timed_records);
+        fixedWeighted += row.fixed_overhead_ms * weight;
+        fixedWeight += weight;
+      }
       if (row.ttft_ms != null) {
         ttftSum += row.ttft_ms * row.ttft_records;
         ttftRecords += row.ttft_records;
@@ -130,6 +144,8 @@ export function StatsView({ onError }: Props) {
       timedRecords,
       reasoning,
       slowRecords,
+      decodeSpeed: decodeWeight ? decodeWeighted / decodeWeight : null,
+      fixedOverhead: fixedWeight ? Math.round(fixedWeighted / fixedWeight) : null,
     };
   }, [filteredRows]);
 
@@ -232,6 +248,12 @@ export function StatsView({ onError }: Props) {
                 <div className="stat-card" title="輸出 tokens ÷ 有計時請求的總時間；包含首字等待、思考、網路與重試，不是純解碼速度">
                   <span className="k">有效吞吐（總量）</span><span className="v">{speedText(totals.speed)}</span>
                 </div>
+                <div className="stat-card" title="將每筆 duration 對輸出 tokens 迴歸，估出的解碼速度；已扣掉固定等待">
+                  <span className="k">解碼速度（估算）</span><span className="v">{speedText(totals.decodeSpeed)}</span>
+                </div>
+                <div className="stat-card" title="每筆請求的固定等待：首字、排隊、重試與網路；由迴歸截距估算">
+                  <span className="k">固定等待（估算）</span><span className="v">{durationText(totals.fixedOverhead)}</span>
+                </div>
                 <div className="stat-card" title="Claude Code session log 的使用者訊息→首個 assistant 區塊時間差，僅為估算">
                   <span className="k">首字延遲（估算）</span><span className="v">{totals.ttft == null ? "—" : `${fmt(totals.ttft)}ms`}</span>
                 </div>
@@ -297,7 +319,7 @@ export function StatsView({ onError }: Props) {
                         <th>快取</th>
                         <th>筆數</th>
                         <th title="有計時資料的請求平均花費時間">平均</th>
-                        <th title="每筆請求輸出÷總時間的中位數；比總量平均更不容易被單一慢請求拉低">P50 速度</th>
+                        <th title="duration 對輸出 tokens 迴歸估算的解碼速度；已扣掉固定等待，滑過儲存格可看 P50">解碼速度</th>
                         <th title="首字延遲估算（目前只有 Claude Code 時間戳可推算）">首字</th>
                         <th>估算成本</th>
                       </tr>
@@ -315,8 +337,8 @@ export function StatsView({ onError }: Props) {
                           <td className="mono">{fmt(row.cache_read + row.cache_write)}</td>
                           <td className="mono">{fmt(row.records)}</td>
                           <td className="mono">{durationText(row.avg_duration_ms)}</td>
-                          <td className="mono" title={`總量吞吐 ${speedText(row.output_per_sec)}；慢請求 ${row.slow_records} 筆`}>
-                            {speedText(row.median_output_per_sec ?? row.output_per_sec)}
+                          <td className="mono" title={`P50 有效吞吐 ${speedText(row.median_output_per_sec)}；總量 ${speedText(row.output_per_sec)}；慢請求 ${row.slow_records} 筆`}>
+                            {speedText(row.decode_output_per_sec)}
                           </td>
                           <td className="mono">{row.ttft_ms == null ? "—" : `${fmt(row.ttft_ms)}ms`}</td>
                           <td className="mono">{money(row.cost)}</td>
@@ -326,7 +348,7 @@ export function StatsView({ onError }: Props) {
                   </table>
                 </div>
               )}
-              <p className="fineprint">成本為公開單價估算（每百萬 token），非帳單金額；未列入價目表的模型顯示「未定價」。Pi／DSH 的思考 tokens 會另計並納入成本。速度是「輸出 tokens ÷ 請求總時間」的每筆中位數，包含首字等待、思考、網路與重試，不是模型純解碼速度；Codex 目前沒有可用的串流時間戳。</p>
+              <p className="fineprint">成本為公開單價估算（每百萬 token），非帳單金額；未列入價目表的模型顯示「未定價」。Pi／DSH 的思考 tokens 會另計並納入成本。表格的「解碼速度」是把每筆請求時間對輸出 tokens 做迴歸、扣掉固定等待後的估算；例如 Pi 的 deepseek-v4.1-flash 約 174 tok/s、固定等待約 13.2 秒。上方「有效吞吐」才是包含等待的總量÷總時間。Codex 目前沒有可用的時間戳。</p>
             </>
           ) : null}
 

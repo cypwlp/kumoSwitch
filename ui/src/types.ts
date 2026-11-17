@@ -429,6 +429,8 @@ export interface UsageRow {
   avg_duration_ms: number | null;
   output_per_sec: number | null;
   median_output_per_sec: number | null;
+  decode_output_per_sec: number | null;
+  fixed_overhead_ms: number | null;
   slow_records: number;
   ttft_ms: number | null;
   ttft_records: number;
@@ -459,6 +461,8 @@ export interface UsageReport {
   timed_output: number;
   avg_duration_ms: number | null;
   output_per_sec: number | null;
+  decode_output_per_sec: number | null;
+  fixed_overhead_ms: number | null;
   slow_records: number;
   ttft_ms: number | null;
   days_scanned: number;

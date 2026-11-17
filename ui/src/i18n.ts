@@ -572,6 +572,9 @@ const DICT: Record<string, string> = {
   "慢請求（>60 秒）": "Slow requests (>60s)",
   "思考 tokens": "Reasoning tokens",
   "P50 速度": "P50 speed",
+  "解碼速度（估算）": "Decode speed (est.)",
+  "固定等待（估算）": "Fixed overhead (est.)",
+  "解碼速度": "Decode speed",
 };
 
 interface Rule {

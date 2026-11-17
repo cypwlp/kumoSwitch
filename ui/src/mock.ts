@@ -1429,11 +1429,11 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "usage_report": {
       const days = Number(args.days ?? 30);
       const rows = [
-        { source: "claude", model: "deepseek-v4.1-flash", input: 4_200_000, output: 310_000, cache_read: 3_600_000, cache_write: 120_000, records: 980, cost: 2.6, duration_ms: 690_000, timed_output: 310_000, timed_records: 980, avg_duration_ms: 704, output_per_sec: 449.3, median_output_per_sec: 412.0, slow_records: 3, ttft_ms: 1_240, ttft_records: 980, reasoning: 0 },
-        { source: "claude", model: "muse-spark-1.3-contributor", input: 1_800_000, output: 150_000, cache_read: 1_500_000, cache_write: 60_000, records: 420, cost: null, duration_ms: 355_000, timed_output: 150_000, timed_records: 420, avg_duration_ms: 845, output_per_sec: 422.5, median_output_per_sec: 388.0, slow_records: 1, ttft_ms: 1_510, ttft_records: 420, reasoning: 0 },
-        { source: "codex", model: "codex-session", input: 2_600_000, output: 220_000, cache_read: 2_300_000, cache_write: 0, records: 620, cost: null, duration_ms: 0, timed_output: 0, timed_records: 0, avg_duration_ms: null, output_per_sec: null, median_output_per_sec: null, slow_records: 0, ttft_ms: null, ttft_records: 0, reasoning: 0 },
-        { source: "pi", model: "deepseek-v4.1-flash", input: 780_000, output: 64_000, cache_read: 610_000, cache_write: 0, records: 310, cost: 0.26, duration_ms: 248_000, timed_output: 64_000, timed_records: 310, avg_duration_ms: 800, output_per_sec: 258.1, median_output_per_sec: 241.0, slow_records: 2, ttft_ms: null, ttft_records: 0, reasoning: 38_000 },
-        { source: "dsh", model: "glm-5.3-flash", input: 1_240_000, output: 96_000, cache_read: 980_000, cache_write: 0, records: 260, cost: 0.38, duration_ms: 201_000, timed_output: 96_000, timed_records: 260, avg_duration_ms: 773, output_per_sec: 477.6, median_output_per_sec: 452.0, slow_records: 2, ttft_ms: null, ttft_records: 0, reasoning: 55_000 },
+        { source: "claude", model: "deepseek-v4.1-flash", input: 4_200_000, output: 310_000, cache_read: 3_600_000, cache_write: 120_000, records: 980, cost: 2.6, duration_ms: 690_000, timed_output: 310_000, timed_records: 980, avg_duration_ms: 704, output_per_sec: 449.3, median_output_per_sec: 412.0, decode_output_per_sec: 465.0, fixed_overhead_ms: 520, slow_records: 3, ttft_ms: 1_240, ttft_records: 980, reasoning: 0 },
+        { source: "claude", model: "muse-spark-1.3-contributor", input: 1_800_000, output: 150_000, cache_read: 1_500_000, cache_write: 60_000, records: 420, cost: null, duration_ms: 355_000, timed_output: 150_000, timed_records: 420, avg_duration_ms: 845, output_per_sec: 422.5, median_output_per_sec: 388.0, decode_output_per_sec: 438.0, fixed_overhead_ms: 610, slow_records: 1, ttft_ms: 1_510, ttft_records: 420, reasoning: 0 },
+        { source: "codex", model: "codex-session", input: 2_600_000, output: 220_000, cache_read: 2_300_000, cache_write: 0, records: 620, cost: null, duration_ms: 0, timed_output: 0, timed_records: 0, avg_duration_ms: null, output_per_sec: null, median_output_per_sec: null, decode_output_per_sec: null, fixed_overhead_ms: null, slow_records: 0, ttft_ms: null, ttft_records: 0, reasoning: 0 },
+        { source: "pi", model: "deepseek-v4.1-flash", input: 780_000, output: 64_000, cache_read: 610_000, cache_write: 0, records: 310, cost: 0.26, duration_ms: 248_000, timed_output: 64_000, timed_records: 310, avg_duration_ms: 800, output_per_sec: 258.1, median_output_per_sec: 241.0, decode_output_per_sec: 174.0, fixed_overhead_ms: 13_210, slow_records: 2, ttft_ms: null, ttft_records: 0, reasoning: 38_000 },
+        { source: "dsh", model: "glm-5.3-flash", input: 1_240_000, output: 96_000, cache_read: 980_000, cache_write: 0, records: 260, cost: 0.38, duration_ms: 201_000, timed_output: 96_000, timed_records: 260, avg_duration_ms: 773, output_per_sec: 477.6, median_output_per_sec: 452.0, decode_output_per_sec: 254.0, fixed_overhead_ms: 2_185, slow_records: 2, ttft_ms: null, ttft_records: 0, reasoning: 55_000 },
       ];
       const dayRows = [];
       const now = Date.now();
@@ -1452,7 +1452,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         total_cost: 3.28,
         total_reasoning: 93_000,
         total_duration_ms: 1_494_000, timed_records: 1970, timed_output: 620_000,
-        avg_duration_ms: 758, output_per_sec: 414.9, slow_records: 8, ttft_ms: 1_321,
+        avg_duration_ms: 758, output_per_sec: 414.9, decode_output_per_sec: 149.0, fixed_overhead_ms: 5_488, slow_records: 8, ttft_ms: 1_321,
         days_scanned: days,
         roots: [
           { source: "claude", path: `${HOME}\.claude\projects`, exists: true, files: 74, scanned_files: 62 },
