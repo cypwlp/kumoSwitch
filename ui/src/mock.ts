@@ -1181,6 +1181,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "apply_provider": {
       const id = String(args.providerId ?? "");
       const target = findProvider(tool, id);
+      target.last_used = Date.now();
       const seed = seedOf(tool);
       const preview = buildPreview(tool, id);
       if (ACTIVE[tool] && ACTIVE[tool] !== id) PREVIOUS[tool] = ACTIVE[tool] ?? null;

@@ -216,27 +216,27 @@ export function ToolPanel({
         </span>
         <div className="spacer" />
         {simple ? null : (
-          <>
-            <select
-              className="mini-select"
-              value={sort}
-              aria-label="排序方式"
-              onChange={(event) => onSort(event.target.value as "manual" | "name" | "recent")}
-            >
-              <option value="manual">原始順序</option>
-              <option value="name">依名稱</option>
-              <option value="recent">最近使用</option>
-            </select>
-            <button
-              className="ghost"
-              onClick={onImportConfig}
-              disabled={busy}
-              title="讀取這個工具現有的設定檔，把裡面的供應商收進 kumoSwitch"
-            >
-              從設定檔導入
-              {tool.importable > 0 ? <span className="cnt">{tool.importable}</span> : null}
-            </button>
-          </>
+          <select
+            className="mini-select"
+            value={sort}
+            aria-label="排序方式"
+            onChange={(event) => onSort(event.target.value as "manual" | "name" | "recent")}
+          >
+            <option value="manual">原始順序</option>
+            <option value="name">依名稱</option>
+            <option value="recent">最近使用</option>
+          </select>
+        )}
+        {simple && total > 0 ? null : (
+          <button
+            className="ghost"
+            onClick={onImportConfig}
+            disabled={busy}
+            title="讀取這個工具現有的設定檔，把裡面的供應商收進 kumoSwitch"
+          >
+            從設定檔導入
+            {tool.importable > 0 ? <span className="cnt">{tool.importable}</span> : null}
+          </button>
         )}
         <div className="segmented compact view-mode" role="group" aria-label="介面模式">
           <button type="button" className={simple ? "on" : ""} aria-pressed={simple} onClick={() => onSimple(true)}>簡單</button>

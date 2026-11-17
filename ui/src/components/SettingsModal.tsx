@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { AppInfo } from "../types";
 import type { ThemeMode } from "../theme";
 import type { UpdateCheck } from "../updater";
@@ -37,6 +38,7 @@ interface SettingsModalProps {
   onExport: () => void;
   onImport: () => void;
   onRescan: () => void;
+  onScanConfigs: () => void;
   onToggleAutoHealth: () => void;
   onToggleAutoModelSync: () => void;
   onClose: () => void;
@@ -87,12 +89,14 @@ export function SettingsModal({
   onExport,
   onImport,
   onRescan,
+  onScanConfigs,
   onToggleAutoHealth,
   onToggleAutoModelSync,
   onClose,
 }: SettingsModalProps) {
   const available = update.kind === "available";
   const status = updateStatus(update, checking);
+  const [tab, setTab] = useState<"basic" | "advanced">("basic");
 
   return (
     <Modal
@@ -104,7 +108,13 @@ export function SettingsModal({
         </button>
       }
     >
-      <div className="settings-grid">
+      <div className="settings-tabs segmented compact" role="tablist" aria-label="設定分類">
+        <button role="tab" aria-selected={tab === "basic"} className={tab === "basic" ? "on" : ""} onClick={() => setTab("basic")}>基本</button>
+        <button role="tab" aria-selected={tab === "advanced"} className={tab === "advanced" ? "on" : ""} onClick={() => setTab("advanced")}>進階</button>
+      </div>
+      <div className={`settings-grid${tab === "basic" ? " settings-basic-grid" : ""}`}>
+      {tab === "basic" ? (
+        <>
         <section className="settings-card settings-update-card">
           <div className="settings-card-title">
             <span className="kicker">Application</span>
@@ -196,8 +206,14 @@ export function SettingsModal({
             <span>語言</span>
             <LangToggle />
           </div>
+          <button className={`settings-toggle${preferences.quickApply ? " on" : ""}`} onClick={() => onPreferences({ quickApply: !preferences.quickApply })} aria-pressed={preferences.quickApply}>
+            <span><strong>快速切換</strong><small>簡單模式略過變更預覽，直接備份並套用；可從通知復原</small></span>
+            <i aria-hidden="true" />
+          </button>
         </section>
-
+        </>
+      ) : (
+        <>
         <section className="settings-card settings-accessibility-card">
           <div className="settings-card-title">
             <span className="kicker">Accessibility</span>
@@ -256,10 +272,6 @@ export function SettingsModal({
             <span className="kicker">Automation</span>
             <h4>自動化</h4>
           </div>
-          <button className={`settings-toggle${preferences.quickApply ? " on" : ""}`} onClick={() => onPreferences({ quickApply: !preferences.quickApply })} aria-pressed={preferences.quickApply}>
-            <span><strong>快速切換</strong><small>簡單模式略過變更預覽，直接備份並套用；可從通知復原</small></span>
-            <i aria-hidden="true" />
-          </button>
           <button className={`settings-toggle${autoHealth ? " on" : ""}`} onClick={onToggleAutoHealth} aria-pressed={autoHealth}>
             <span><strong>自動健康檢查</strong><small>每 10 分鐘檢查供應商可用性</small></span>
             <i aria-hidden="true" />
@@ -293,6 +305,7 @@ export function SettingsModal({
             <button className="ghost small" onClick={onExport}>匯出加密清單</button>
             <button className="ghost small" onClick={onImport}>匯入清單／遷移包</button>
             <button className="ghost small" onClick={onRescan}>重新掃描工具</button>
+            <button className="ghost small" onClick={onScanConfigs}>掃描所有工具設定</button>
           </div>
           <span className="settings-label">本機資料位置</span>
           <code className="settings-path">{info?.dataDir ?? ""}</code>
@@ -300,6 +313,8 @@ export function SettingsModal({
             開啟資料夾
           </button>
         </section>
+        </>
+      )}
       </div>
       <p className="settings-footer-note">更新檔案由 GitHub Releases 提供；安裝前會驗證簽章。設定與 API Key 不會上傳。</p>
     </Modal>

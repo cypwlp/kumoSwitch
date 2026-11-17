@@ -1,6 +1,8 @@
-import { useState } from "react";
-import type { Provider, ToolView } from "../types";
+import { useEffect, useState } from "react";
+import { api } from "../api";
+import type { Preset, Provider, ToolView } from "../types";
 import { Modal } from "./Modal";
+import { ProviderChooserModal } from "./ProviderChooserModal";
 
 interface QuickAddProps {
   tool: ToolView;
@@ -25,6 +27,33 @@ export function QuickAddModal({ tool, busy, onCancel, onAdvanced, onSave }: Quic
   const [model, setModel] = useState("");
   const [fetchModels, setFetchModels] = useState(true);
   const [error, setError] = useState("");
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [preset, setPreset] = useState<Preset | null>(null);
+  const [kind, setKind] = useState(tool.kind_choices[0] || "");
+
+  useEffect(() => {
+    let alive = true;
+    void api.providerPresets()
+      .then((list) => {
+        if (alive) setPresets(list);
+      })
+      .catch(() => {
+        /* the catalogue is optional; manual entry still works */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const pickPreset = (selected: Preset) => {
+    setPreset(selected);
+    setName(selected.name);
+    setBaseUrl(selected.base_url);
+    setModel(selected.models[0] || "");
+    setKind(selected.kind || tool.kind_choices[0] || "");
+    setPickerOpen(false);
+  };
 
   const submit = async (switchNow: boolean) => {
     setError("");
@@ -38,6 +67,8 @@ export function QuickAddModal({ tool, busy, onCancel, onAdvanced, onSave }: Quic
       setError("請填寫供應商名稱，或貼上完整 URL 讓 kumoSwitch 自動命名");
       return;
     }
+    const models = (preset?.models.length ? preset.models : model.trim() ? [model.trim()] : [])
+      .map((id) => ({ id, name: id }));
     const payload: Provider = {
       id: "",
       config_id: "",
@@ -45,9 +76,9 @@ export function QuickAddModal({ tool, busy, onCancel, onAdvanced, onSave }: Quic
       base_url: url,
       api_key: apiKey.trim(),
       model: model.trim(),
-      models: model.trim() ? [{ id: model.trim(), name: model.trim() }] : [],
-      kind: tool.kind_choices[0] || "",
-      note: "快速新增",
+      models,
+      kind,
+      note: preset ? `快速新增 · ${preset.name}` : "快速新增",
     };
     try {
       await onSave(payload, { fetchModels, switchNow });
@@ -57,6 +88,7 @@ export function QuickAddModal({ tool, busy, onCancel, onAdvanced, onSave }: Quic
   };
 
   return (
+    <>
     <Modal
       title={`快速新增 · ${tool.name}`}
       onClose={onCancel}
@@ -74,6 +106,23 @@ export function QuickAddModal({ tool, busy, onCancel, onAdvanced, onSave }: Quic
       }
     >
       <div className="quick-add">
+        <button type="button" className="quick-add-catalog" onClick={() => setPickerOpen(true)}>
+          <span className="quick-add-catalog-icon" aria-hidden="true">⌕</span>
+          <span>
+            <strong>從供應商目錄選擇</strong>
+            <small>已內建 28 個預設，會自動填入 Base URL、模型與協議</small>
+          </span>
+          <span aria-hidden="true">→</span>
+        </button>
+        {preset ? (
+          <div className="quick-add-preset">
+            <strong>{preset.name}</strong>
+            <span>{preset.note || preset.category}</span>
+            {preset.auth_type !== "api_key" ? (
+              <small>此預設需要先在官方 CLI 完成登入；快速新增只建立供應商資料。</small>
+            ) : null}
+          </div>
+        ) : null}
         <label className="field">
           <span>Base URL</span>
           <input
@@ -130,5 +179,15 @@ export function QuickAddModal({ tool, busy, onCancel, onAdvanced, onSave }: Quic
         {error ? <div className="note error" role="alert">{error}</div> : null}
       </div>
     </Modal>
+    {pickerOpen ? (
+      <ProviderChooserModal
+        tool={tool}
+        presets={presets}
+        onPick={pickPreset}
+        onCustom={() => setPickerOpen(false)}
+        onClose={() => setPickerOpen(false)}
+      />
+    ) : null}
+    </>
   );
 }

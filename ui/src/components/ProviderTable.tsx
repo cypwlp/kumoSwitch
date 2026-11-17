@@ -207,7 +207,7 @@ export function ProviderTable({
               >
                 {active ? "重新套用" : "套用"}
               </button>
-              {!simple && (provider.models?.filter((model) => !model.archived).length ?? 0) > 1 ? (
+              {(provider.models?.filter((model) => !model.archived).length ?? 0) > 1 ? (
                 <select
                   className="provider-model-quick"
                   aria-label={`${provider.name} 快速切換模型`}
@@ -274,7 +274,7 @@ export function ProviderTable({
             <>
               還沒有供應商
               <br />
-              <span className="small">點右上「＋ 新增供應商」，填入 Base URL 與 API Key 即可</span>
+              <span className="small">按「＋ 新增供應商」快速建立，或按「從設定檔導入」讀取這個工具現有的供應商</span>
             </>
           )}
         </div>

@@ -7,13 +7,20 @@ async function openSettings(page: import("@playwright/test").Page) {
   return page.getByRole("dialog").last();
 }
 
-async function openWorkspace(page: import("@playwright/test").Page, name: string | RegExp) {
+async function openAdvancedSettings(page: import("@playwright/test").Page) {
   const dialog = await openSettings(page);
+  const tab = dialog.getByRole("tab", { name: /^(進階|进阶|高级|Advanced)$/ });
+  if (await tab.count()) await tab.click();
+  return dialog;
+}
+
+async function openWorkspace(page: import("@playwright/test").Page, name: string | RegExp) {
+  const dialog = await openAdvancedSettings(page);
   await dialog.getByRole("button", { name }).click();
 }
 
 async function enableCompatibilityBridge(page: import("@playwright/test").Page) {
-  const dialog = await openSettings(page);
+  const dialog = await openAdvancedSettings(page);
   await dialog.getByRole("button", { name: /讀取其他切換工具的本機資料/ }).click();
   await dialog.locator(".sheet-foot").getByRole("button", { name: "關閉" }).click();
 }
@@ -67,7 +74,7 @@ test("API Key can be explicitly cleared without rewriting other fields", async (
 
 test("compatibility bridge is opt-in and off by default", async ({ page }) => {
   await expect(page.getByText("其他切換工具管理的供應商", { exact: true })).toHaveCount(0);
-  const dialog = await openSettings(page);
+  const dialog = await openAdvancedSettings(page);
   await expect(dialog.getByText("相容匯入", { exact: true })).toBeVisible();
   const toggle = dialog.getByRole("button", { name: /讀取其他切換工具的本機資料/ });
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -422,7 +429,7 @@ test("settings navigation stays contained at desktop and narrow widths", async (
   for (const width of [1222, 760, 480]) {
     await page.setViewportSize({ width, height: 784 });
     await page.reload();
-    const dialog = await openSettings(page);
+    const dialog = await openAdvancedSettings(page);
     const nav = dialog.locator(".settings-nav-grid");
     await expect(nav).toBeVisible();
     await expect(nav.getByRole("button")).toHaveCount(6);
@@ -638,6 +645,26 @@ test("quick add saves and switches a new provider", async ({ page }) => {
   await expect(page.getByRole("article", { name: "供應商 api.quick.test" })).toBeVisible();
 });
 
+test("quick add can start from the provider catalogue", async ({ page }) => {
+  await page.getByRole("button", { name: /新增供應商/ }).click();
+  await page.getByRole("button", { name: /從供應商目錄選擇/ }).click();
+  const chooser = page.getByRole("dialog").last();
+  await chooser.getByLabel("搜尋供應商").fill("OpenRouter");
+  await chooser.getByRole("button", { name: /OpenRouter/ }).first().click();
+  await expect(page.getByLabel("Base URL")).toHaveValue("https://openrouter.ai/api/v1");
+  await page.getByLabel("API Key").fill("sk-or-quick-test");
+  await page.getByRole("button", { name: /儲存並切換/ }).click();
+  await expect(page.locator(".toast").filter({ hasText: "已切換到" })).toBeVisible();
+});
+
+test("Ctrl+Z undoes the last quick switch", async ({ page }) => {
+  const provider = page.getByRole("article", { name: "供應商 Command Code" });
+  await provider.getByRole("button", { name: "套用", exact: true }).click();
+  await expect(page.locator(".toast").filter({ hasText: "已切換到「Command Code」" })).toBeVisible();
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".toast").filter({ hasText: "已復原切換前的設定" })).toBeVisible();
+});
+
 test("providers can be pinned to the top", async ({ page }) => {
   const command = page.getByRole("article", { name: "供應商 Command Code" });
   await command.getByRole("button", { name: "☆ 釘選" }).click();
@@ -658,7 +685,7 @@ test("configuration import previews conflicts and applies a bulk policy", async 
 });
 
 test("encrypted export requires a confirmed password", async ({ page }) => {
-  const settings = await openSettings(page);
+  const settings = await openAdvancedSettings(page);
   await settings.getByRole("button", { name: "匯出加密清單" }).click();
 
   let dialog = page.getByRole("dialog");
@@ -775,7 +802,7 @@ test("compatibility matrix and accessibility preferences are visible", async ({ 
   await expect(dialog.getByText("工具相容性矩陣", { exact: false }).first()).toBeVisible();
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
 
-  dialog = await openSettings(page);
+  dialog = await openAdvancedSettings(page);
   await dialog.getByRole("button", { name: /高對比模式/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-contrast", "high");
   await dialog.locator(".settings-choice-row").filter({ hasText: "文字大小" }).getByRole("button", { name: "大", exact: true }).click();
@@ -786,6 +813,7 @@ test("Simplified Chinese locale applies to the full interface", async ({ page })
   let dialog = await openSettings(page);
   await dialog.getByRole("button", { name: "简中" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-Hans");
+  await dialog.getByRole("tab", { name: /^(进阶|進階|高级|Advanced)$/ }).click();
   await expect(dialog.getByRole("heading", { name: "无障碍与阅读" })).toBeVisible();
   await dialog.locator(".sheet-foot").getByRole("button", { name: /^(关闭|關閉)/ }).click();
   await openWorkspace(page, "工具管理");

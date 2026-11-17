@@ -518,6 +518,7 @@ const DICT: Record<string, string> = {
   "語言、外觀、工具與資料": "Language, appearance, tools and data",
   "先選供應商，再進入它的模型。模型是供應商底下的子項目。": "Pick a provider first, then open its models.",
   "簡單": "Simple",
+  "基本": "Basic",
   "進階": "Advanced",
   "介面模式": "Interface mode",
   "簡單模式只保留切換供應商需要的資訊；進階模式顯示健康度、協議、模型與批次工具。": "Simple mode keeps only what you need to switch providers. Advanced mode also shows health, protocol, models and batch tools.",
@@ -561,6 +562,12 @@ const DICT: Record<string, string> = {
   "逐項選取後可批次匯入或鏡像路由順序": "Select individual providers to bulk import or mirror the route order",
   "鏡像路由堆疊": "Mirror route stack",
   "相容供應商目錄已重新讀取": "Compatibility provider catalogue reloaded",
+  "設定分類": "Settings sections",
+  "從供應商目錄選擇": "Choose from the provider catalogue",
+  "已內建 28 個預設，會自動填入 Base URL、模型與協議": "28 presets with Base URL, model and protocol filled in",
+  "此預設需要先在官方 CLI 完成登入；快速新增只建立供應商資料。": "This preset needs an official CLI login first; quick add only creates the provider record.",
+  "掃描所有工具設定": "Scan all tool configs",
+  "按「＋ 新增供應商」快速建立，或按「從設定檔導入」讀取這個工具現有的供應商": "Use “+ Add provider” for a quick setup, or “Import from config” to read this tool's existing providers",
 };
 
 interface Rule {

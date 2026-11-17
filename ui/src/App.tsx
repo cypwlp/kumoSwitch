@@ -169,6 +169,7 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const undoRef = useRef<null | (() => Promise<void>)>(null);
 
   const selected = useMemo(
     () => tools.find((t) => t.id === selectedId) ?? null,
@@ -250,6 +251,37 @@ export default function App() {
     [push, tools],
   );
 
+  const refreshRecentFromBackend = useCallback(async () => {
+    try {
+      const rows = await api.providerSearchIndex();
+      const used = rows
+        .filter((row) => (row.provider.last_used ?? 0) > 0)
+        .sort((a, b) => (b.provider.last_used ?? 0) - (a.provider.last_used ?? 0))
+        .slice(0, 8)
+        .map((row) => ({
+          tool: row.tool,
+          provider: row.provider.id,
+          name: row.provider.name,
+          model: row.provider.model,
+          ts: row.provider.last_used ?? 0,
+        }));
+      if (used.length) {
+        setRecent(used);
+        try {
+          window.localStorage.setItem(RECENT_KEY, JSON.stringify(used));
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* recent list is optional */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRecentFromBackend();
+  }, [refreshRecentFromBackend]);
+
   const recordRecent = useCallback((tool: ToolView, provider: Provider) => {
     setRecent(rememberRecent({
       tool: tool.id,
@@ -285,17 +317,23 @@ export default function App() {
         return;
       }
       const backupId = result.backup_id;
-      push(`已切換到「${provider.name}」${tool.verified ? "" : "（格式未實測，已備份）"}`, "ok", backupId ? {
-        label: "復原",
-        run: async () => {
-          try {
-            await api.backupRestore(tool.id, backupId);
-            await reload(tool.id);
-            push("已復原切換前的設定", "ok");
-          } catch (error) {
-            push(errorText(error), "err");
+      undoRef.current = null;
+      const undo = backupId
+        ? async () => {
+            undoRef.current = null;
+            try {
+              await api.backupRestore(tool.id, backupId);
+              await reload(tool.id);
+              push("已復原切換前的設定", "ok");
+            } catch (error) {
+              push(errorText(error), "err");
+            }
           }
-        },
+        : null;
+      undoRef.current = undo;
+      push(`已切換到「${provider.name}」${tool.verified ? "" : "（格式未實測，已備份）"}`, "ok", undo ? {
+        label: "復原",
+        run: undo,
       } : undefined);
     } catch (error) {
       push(errorText(error), "err");
@@ -486,6 +524,20 @@ export default function App() {
         return;
       }
       if (hasLayer()) return;
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && (event.key === "z" || event.key === "Z")) {
+        const target = event.target as HTMLElement | null;
+        const typing =
+          !!target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT" ||
+            target.isContentEditable);
+        const undo = undoRef.current;
+        if (typing || !undo) return;
+        event.preventDefault();
+        void undo();
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && (event.key === "n" || event.key === "N")) {
         if (!selectedId) return;
         event.preventDefault();
@@ -552,6 +604,7 @@ export default function App() {
         });
         const offChanged = await listen("kumoswitch://changed", () => {
           void refreshTools();
+          void refreshRecentFromBackend();
           if (selectedId) void loadProviders(selectedId);
         });
         const offGuardian = await listen<Array<{ tool: string; event: { message: string; actor: string } }>>("kumoswitch://guardian", (event) => {
@@ -576,7 +629,7 @@ export default function App() {
       }
     })();
     return () => dispose?.();
-  }, [push, refreshTools, loadProviders, selectedId]);
+  }, [push, refreshTools, loadProviders, refreshRecentFromBackend, selectedId]);
 
   /* ------------------------------------------------------------ actions */
 
@@ -633,8 +686,12 @@ export default function App() {
     try {
       const updated = await api.providerSelectModel(toolId, provider.id, modelId);
       await loadProviders(toolId);
-      push(`${provider.name} → ${modelId}，請確認變更預覽`, "ok");
-      await openDiff(toolId, updated);
+      if (preferences.quickApply && preferences.uiMode !== "advanced") {
+        await applyNow(selected, updated);
+      } else {
+        push(`${provider.name} → ${modelId}，請確認變更預覽`, "ok");
+        await openDiff(toolId, updated);
+      }
     } catch (err) {
       push(errorText(err), "err");
     } finally {
@@ -676,7 +733,22 @@ export default function App() {
       const tool = tools.find((item) => item.id === toolId);
       if (tool) recordRecent(tool, modal.provider);
       setModal(null);
-      push(result.message, "ok");
+      const backupId = result.backup_id;
+      undoRef.current = null;
+      const undo = backupId
+        ? async () => {
+            undoRef.current = null;
+            try {
+              await api.backupRestore(toolId, backupId);
+              await reload(toolId);
+              push("已復原切換前的設定", "ok");
+            } catch (error) {
+              push(errorText(error), "err");
+            }
+          }
+        : null;
+      undoRef.current = undo;
+      push(result.message, "ok", undo ? { label: "復原", run: undo } : undefined);
       await reload(toolId);
     } catch (err) {
       push(errorText(err), "err");
@@ -1371,6 +1443,7 @@ export default function App() {
           onExport={() => { setSettingsOpen(false); void exportList(); }}
           onImport={() => { setSettingsOpen(false); fileRef.current?.click(); }}
           onRescan={() => { setSettingsOpen(false); void rescan(); }}
+          onScanConfigs={() => { setSettingsOpen(false); void scanConfig(); }}
           onToggleAutoHealth={() => void toggleAutoHealth()}
           onToggleAutoModelSync={() => void toggleAutoModelSync()}
           onClose={() => setSettingsOpen(false)}

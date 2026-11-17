@@ -163,7 +163,9 @@ test("real Tauri WebView loads providers through Tauri IPC", async () => {
   await reasoningDiff.getByRole("button", { name: "取消" }).click();
 
   await page.getByRole("button", { name: /^設定/ }).first().click();
-  await page.getByRole("dialog").last().getByRole("button", { name: /工具管理/ }).click();
+  const settings = page.getByRole("dialog").last();
+  await settings.getByRole("tab", { name: /^(進階|Advanced)$/ }).click();
+  await settings.getByRole("button", { name: /工具管理/ }).click();
   await expect(page.getByRole("heading", { name: "工具安裝與管理" })).toBeVisible();
   await page.getByRole("button", { name: /其他工具/ }).click();
   await expect(page.locator(".rail .harness-icon")).toHaveCount(15);
