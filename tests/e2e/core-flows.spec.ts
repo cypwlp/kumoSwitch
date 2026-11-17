@@ -601,6 +601,17 @@ test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
   await expect(page.getByText("掃描診斷")).toBeVisible();
 });
 
+test("usage dashboard auto refresh preference persists", async ({ page }) => {
+  await openWorkspace(page, "用量統計");
+  const select = page.getByLabel("自動重新整理");
+  await expect(select).toHaveValue("15");
+  await select.selectOption("5");
+  await expect(page.locator(".stats-live")).toBeVisible();
+  await page.reload();
+  await openWorkspace(page, "用量統計");
+  await expect(page.getByLabel("自動重新整理")).toHaveValue("5");
+});
+
 test("usage dashboard shows per-request history", async ({ page }) => {
   await openWorkspace(page, "用量統計");
   await expect(page.getByRole("heading", { name: "最近請求" })).toBeVisible();

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorText } from "../api";
 import type { HealthOverview, UsageReport } from "../types";
 
@@ -20,6 +20,19 @@ const durationText = (ms: number | null) =>
   ms == null ? "—" : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 const speedText = (speed: number | null) => (speed == null ? "—" : `${speed.toFixed(1)} tok/s`);
 
+const AUTO_REFRESH_KEY = "kumoswitch.statsAutoRefresh";
+const AUTO_REFRESH_OPTIONS = [0, 5, 15, 30, 60];
+function readAutoRefresh(): number {
+  try {
+    const raw = window.localStorage.getItem(AUTO_REFRESH_KEY);
+    if (raw === null) return 15;
+    const value = Number(raw);
+    return AUTO_REFRESH_OPTIONS.includes(value) ? value : 15;
+  } catch {
+    return 15;
+  }
+}
+
 interface Props {
   onError: (message: string) => void;
 }
@@ -29,6 +42,9 @@ export function StatsView({ onError }: Props) {
   const [report, setReport] = useState<UsageReport | null>(null);
   const [health, setHealth] = useState<HealthOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [autoRefresh, setAutoRefreshState] = useState(readAutoRefresh);
   const [scanError, setScanError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [sourceFilter, setSourceFilter] = useState("all");
@@ -39,29 +55,52 @@ export function StatsView({ onError }: Props) {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
+  const reload = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
+    else setRefreshing(true);
     setScanError("");
-    (async () => {
-      try {
-        const [nextReport, nextHealth] = await Promise.all([api.usageReport(days), api.healthOverview()]);
-        if (!alive) return;
-        setReport(nextReport);
-        setHealth(nextHealth);
-      } catch (error) {
-        const message = errorText(error);
-        if (!alive) return;
-        setScanError(message);
-        onErrorRef.current(message);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
+    try {
+      const [nextReport, nextHealth] = await Promise.all([api.usageReport(days), api.healthOverview()]);
+      setReport(nextReport);
+      setHealth(nextHealth);
+      setLastUpdated(Date.now());
+    } catch (error) {
+      const message = errorText(error);
+      setScanError(message);
+      onErrorRef.current(message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [days]);
+
+  useEffect(() => {
+    void reload(true);
+  }, [reload, refreshKey]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void reload(false);
+    }, autoRefresh * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void reload(false);
     };
-  }, [days, refreshKey]);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [autoRefresh, reload]);
+
+  const setAutoRefresh = (value: number) => {
+    setAutoRefreshState(value);
+    try {
+      window.localStorage.setItem(AUTO_REFRESH_KEY, String(value));
+    } catch {
+      /* storage may be disabled */
+    }
+  };
 
   const sourceOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -209,9 +248,28 @@ export function StatsView({ onError }: Props) {
             </button>
           ))}
         </div>
-        <button className="ghost small" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading}>
-          {loading ? <span className="spin" /> : null} 重新掃描
+        <select
+          className="mini-select"
+          aria-label="自動重新整理"
+          value={autoRefresh}
+          onChange={(event) => setAutoRefresh(Number(event.target.value))}
+          title="本機定時重新掃描；不上传任何資料"
+        >
+          <option value={0}>自動：關</option>
+          <option value={5}>每 5 秒</option>
+          <option value={15}>每 15 秒</option>
+          <option value={30}>每 30 秒</option>
+          <option value={60}>每 60 秒</option>
+        </select>
+        <button className="ghost small" onClick={() => void reload(true)} disabled={loading || refreshing}>
+          {loading || refreshing ? <span className="spin" /> : null} 重新掃描
         </button>
+        {lastUpdated ? (
+          <span className="stats-live muted small" title={timeText(lastUpdated)}>
+            {refreshing ? <span className="spin" /> : <i className="live-dot" />}
+            {new Date(lastUpdated).toLocaleTimeString()}
+          </span>
+        ) : null}
       </header>
 
       {loading ? (

@@ -746,6 +746,13 @@ const DICT: Record<string, string> = {
   "複製失敗，請改用預覽手動複製": "Copy failed; use the preview to copy manually",
   "已開啟 GitHub，送出前請再檢查內容": "GitHub opened; review the content before submitting",
   "無法開啟 GitHub，請改用複製": "Could not open GitHub; use copy instead",
+  "自動重新整理": "Auto refresh",
+  "自動：關": "Auto: off",
+  "每 5 秒": "Every 5s",
+  "每 15 秒": "Every 15s",
+  "每 30 秒": "Every 30s",
+  "每 60 秒": "Every 60s",
+  "本機定時重新掃描；不上传任何資料": "Periodic local rescan; nothing is uploaded",
 };
 
 interface Rule {

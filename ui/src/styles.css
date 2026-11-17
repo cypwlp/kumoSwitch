@@ -1221,6 +1221,8 @@ kbd {
 /* ---------- stats dashboard ---------- */
 .stats { padding: 22px 26px 40px; max-width: 1180px; }
 .stats-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.stats-live { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; font-size: 10px; }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 7px var(--ok); }
 .stats-head h2 { margin: 0; font-size: 20px; }
 .stats-request-filters { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 18px; }
 .stats-request-filters .stats-sub { margin: 0; }
