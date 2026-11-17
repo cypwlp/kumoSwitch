@@ -27,6 +27,8 @@ pub struct UsageRow {
     pub cache_write: u64,
     pub records: u64,
     pub cost: Option<f64>,
+    /// Reasoning tokens reported separately by Pi/DSH.
+    pub reasoning: u64,
     /// Total request duration for rows that expose timings.
     pub duration_ms: u64,
     /// Output tokens covered by `duration_ms`.
@@ -35,6 +37,10 @@ pub struct UsageRow {
     pub timed_records: u64,
     pub avg_duration_ms: Option<u64>,
     pub output_per_sec: Option<f64>,
+    /// Median per-request output tokens per second (robust to slow requests).
+    pub median_output_per_sec: Option<f64>,
+    /// Requests that took longer than 60 seconds (likely timeouts or retries).
+    pub slow_records: u64,
     /// Estimated first-output latency (Claude Code timestamps only).
     pub ttft_ms: Option<u64>,
     pub ttft_records: u64,
@@ -68,11 +74,13 @@ pub struct UsageReport {
     pub total_output: u64,
     pub total_cache: u64,
     pub total_cost: Option<f64>,
+    pub total_reasoning: u64,
     pub total_duration_ms: u64,
     pub timed_records: u64,
     pub timed_output: u64,
     pub avg_duration_ms: Option<u64>,
     pub output_per_sec: Option<f64>,
+    pub slow_records: u64,
     pub ttft_ms: Option<u64>,
     pub days_scanned: u32,
     pub roots: Vec<UsageRoot>,
@@ -121,11 +129,14 @@ struct Acc {
     cache_read: u64,
     cache_write: u64,
     records: u64,
+    reasoning: u64,
     duration_ms: u64,
     timed_output: u64,
     timed_records: u64,
     ttft_ms: u64,
     ttft_records: u64,
+    request_speeds: Vec<f64>,
+    slow_records: u64,
 }
 
 impl Acc {
@@ -146,6 +157,13 @@ impl Acc {
         self.duration_ms += duration_ms;
         self.timed_output += output;
         self.timed_records += 1;
+        if output > 0 {
+            self.request_speeds
+                .push(output as f64 / (duration_ms as f64 / 1_000.0));
+        }
+        if duration_ms > 60_000 {
+            self.slow_records += 1;
+        }
         if let Some(ttft) = ttft {
             self.ttft_ms += ttft;
             self.ttft_records += 1;
@@ -485,6 +503,7 @@ fn scan_agent_session(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), Stri
             .entry((scanner.source.to_string(), model))
             .or_default();
         acc.add_usage(i, o, cr, cw, true);
+        acc.reasoning += num(&usage, "reasoning");
         if let Some(duration) = message.get("durationMs").and_then(|v| v.as_u64()) {
             acc.add_timing(duration, o, None);
         }
@@ -539,6 +558,7 @@ fn scan_dsh(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
             .entry((scanner.source.to_string(), model))
             .or_default();
         acc.add_usage(i, o, cr, cw, true);
+        acc.reasoning += num(&d, "rsn");
         if let Some(duration) = d.get("dur").and_then(|v| v.as_u64()) {
             acc.add_timing(duration, o, None);
         }
@@ -618,6 +638,20 @@ fn root_report(source: &str, path: &Path) -> UsageRoot {
     }
 }
 
+fn median(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let middle = sorted.len() / 2;
+    if sorted.len() % 2 == 0 {
+        Some((sorted[middle - 1] + sorted[middle]) / 2.0)
+    } else {
+        Some(sorted[middle])
+    }
+}
+
 pub fn report(days_back: u32) -> UsageReport {
     let started = Instant::now();
     let home = crate::adapters::home();
@@ -688,7 +722,10 @@ pub fn report(days_back: u32) -> UsageReport {
         .into_iter()
         .map(|((source, model), acc)| {
             let cost = price_for(&model).map(|(i, o, c)| {
-                (acc.input as f64 * i + acc.output as f64 * o + acc.cache_read as f64 * c) / 1_000_000.0
+                (acc.input as f64 * i
+                    + (acc.output + acc.reasoning) as f64 * o
+                    + acc.cache_read as f64 * c)
+                    / 1_000_000.0
             });
             let avg_duration = if acc.timed_records > 0 {
                 Some(acc.duration_ms / acc.timed_records)
@@ -709,11 +746,14 @@ pub fn report(days_back: u32) -> UsageReport {
                 cache_write: acc.cache_write,
                 records: acc.records,
                 cost,
+                reasoning: acc.reasoning,
                 duration_ms: acc.duration_ms,
                 timed_output: acc.timed_output,
                 timed_records: acc.timed_records,
                 avg_duration_ms: avg_duration,
                 output_per_sec,
+                median_output_per_sec: median(&acc.request_speeds),
+                slow_records: acc.slow_records,
                 ttft_ms: if acc.ttft_records > 0 {
                     Some(acc.ttft_ms / acc.ttft_records)
                 } else {
@@ -733,6 +773,8 @@ pub fn report(days_back: u32) -> UsageReport {
     let total_input: u64 = rows.iter().map(|r| r.input).sum();
     let total_output: u64 = rows.iter().map(|r| r.output).sum();
     let total_cache: u64 = rows.iter().map(|r| r.cache_read + r.cache_write).sum();
+    let total_reasoning: u64 = rows.iter().map(|r| r.reasoning).sum();
+    let slow_records: u64 = rows.iter().map(|r| r.slow_records).sum();
     let priced: Vec<f64> = rows.iter().filter_map(|r| r.cost).collect();
     let total_cost = if priced.is_empty() { None } else { Some(priced.iter().sum()) };
     let total_duration_ms: u64 = rows.iter().map(|r| r.duration_ms).sum();
@@ -753,12 +795,14 @@ pub fn report(days_back: u32) -> UsageReport {
         total_output,
         total_cache,
         total_cost,
+        total_reasoning,
         total_duration_ms,
         timed_records,
         timed_output,
         avg_duration_ms: (timed_records > 0).then(|| total_duration_ms / timed_records),
         output_per_sec: (total_duration_ms > 0)
             .then(|| timed_output as f64 / (total_duration_ms as f64 / 1_000.0)),
+        slow_records,
         ttft_ms: (ttft_records > 0).then(|| ttft_sum / ttft_records),
         days_scanned: days_back,
         roots,

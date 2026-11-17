@@ -100,6 +100,8 @@ export function StatsView({ onError }: Props) {
     let timedRecords = 0;
     let ttftSum = 0;
     let ttftRecords = 0;
+    let reasoning = 0;
+    let slowRecords = 0;
     for (const row of filteredRows) {
       input += row.input;
       output += row.output;
@@ -109,6 +111,8 @@ export function StatsView({ onError }: Props) {
       duration += row.duration_ms ?? 0;
       timedOutput += row.timed_output ?? 0;
       timedRecords += row.timed_records ?? 0;
+      reasoning += row.reasoning ?? 0;
+      slowRecords += row.slow_records ?? 0;
       if (row.ttft_ms != null) {
         ttftSum += row.ttft_ms * row.ttft_records;
         ttftRecords += row.ttft_records;
@@ -124,6 +128,8 @@ export function StatsView({ onError }: Props) {
       speed: duration ? timedOutput / (duration / 1000) : null,
       ttft: ttftRecords ? Math.round(ttftSum / ttftRecords) : null,
       timedRecords,
+      reasoning,
+      slowRecords,
     };
   }, [filteredRows]);
 
@@ -223,13 +229,18 @@ export function StatsView({ onError }: Props) {
                 <div className="stat-card" title="有計時資料的請求平均花費時間；不是連線測試延遲">
                   <span className="k">平均回應時間</span><span className="v">{durationText(totals.avgDuration)}</span>
                 </div>
-                <div className="stat-card" title="輸出 tokens ÷ 有計時請求的總時間；只有 session log 提供 duration 時才計算">
-                  <span className="k">平均輸出速度</span><span className="v">{speedText(totals.speed)}</span>
+                <div className="stat-card" title="輸出 tokens ÷ 有計時請求的總時間；包含首字等待、思考、網路與重試，不是純解碼速度">
+                  <span className="k">有效吞吐（總量）</span><span className="v">{speedText(totals.speed)}</span>
                 </div>
                 <div className="stat-card" title="Claude Code session log 的使用者訊息→首個 assistant 區塊時間差，僅為估算">
                   <span className="k">首字延遲（估算）</span><span className="v">{totals.ttft == null ? "—" : `${fmt(totals.ttft)}ms`}</span>
                 </div>
-                <div className="stat-card"><span className="k">有計時請求</span><span className="v">{fmt(totals.timedRecords)}</span></div>
+                <div className="stat-card" title="超過 60 秒的請求，通常是逾時、重試或排隊；速度統計會保留這些樣本">
+                  <span className="k">慢請求（&gt;60 秒）</span><span className="v">{fmt(totals.slowRecords)}</span>
+                </div>
+                <div className="stat-card" title={`有計時請求 ${fmt(totals.timedRecords)} 筆；思考 tokens 只有 Pi／DSH 會分開回報`}>
+                  <span className="k">思考 tokens</span><span className="v">{fmt(totals.reasoning)}</span>
+                </div>
               </div>
             </>
           ) : (
@@ -286,7 +297,7 @@ export function StatsView({ onError }: Props) {
                         <th>快取</th>
                         <th>筆數</th>
                         <th title="有計時資料的請求平均花費時間">平均</th>
-                        <th title="輸出 tokens ÷ 有計時請求的總時間">速度</th>
+                        <th title="每筆請求輸出÷總時間的中位數；比總量平均更不容易被單一慢請求拉低">P50 速度</th>
                         <th title="首字延遲估算（目前只有 Claude Code 時間戳可推算）">首字</th>
                         <th>估算成本</th>
                       </tr>
@@ -297,11 +308,16 @@ export function StatsView({ onError }: Props) {
                           <td><span className="badge subtle">{sourceLabel(row.source)}</span></td>
                           <td className="mono">{row.model}</td>
                           <td className="mono">{fmt(row.input)}</td>
-                          <td className="mono">{fmt(row.output)}</td>
+                          <td className="mono">
+                            {fmt(row.output)}
+                            {row.reasoning ? <small className="stat-subvalue">+{fmt(row.reasoning)} 思考</small> : null}
+                          </td>
                           <td className="mono">{fmt(row.cache_read + row.cache_write)}</td>
                           <td className="mono">{fmt(row.records)}</td>
                           <td className="mono">{durationText(row.avg_duration_ms)}</td>
-                          <td className="mono">{speedText(row.output_per_sec)}</td>
+                          <td className="mono" title={`總量吞吐 ${speedText(row.output_per_sec)}；慢請求 ${row.slow_records} 筆`}>
+                            {speedText(row.median_output_per_sec ?? row.output_per_sec)}
+                          </td>
                           <td className="mono">{row.ttft_ms == null ? "—" : `${fmt(row.ttft_ms)}ms`}</td>
                           <td className="mono">{money(row.cost)}</td>
                         </tr>
@@ -310,7 +326,7 @@ export function StatsView({ onError }: Props) {
                   </table>
                 </div>
               )}
-              <p className="fineprint">成本為公開單價估算（每百萬 token），非帳單金額；未列入價目表的模型顯示「未定價」。速度與首字延遲只在 session log 有對應時間欄位時計算，Codex 目前沒有可用的串流時間戳。</p>
+              <p className="fineprint">成本為公開單價估算（每百萬 token），非帳單金額；未列入價目表的模型顯示「未定價」。Pi／DSH 的思考 tokens 會另計並納入成本。速度是「輸出 tokens ÷ 請求總時間」的每筆中位數，包含首字等待、思考、網路與重試，不是模型純解碼速度；Codex 目前沒有可用的串流時間戳。</p>
             </>
           ) : null}
 

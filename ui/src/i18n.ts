@@ -568,6 +568,10 @@ const DICT: Record<string, string> = {
   "此預設需要先在官方 CLI 完成登入；快速新增只建立供應商資料。": "This preset needs an official CLI login first; quick add only creates the provider record.",
   "掃描所有工具設定": "Scan all tool configs",
   "按「＋ 新增供應商」快速建立，或按「從設定檔導入」讀取這個工具現有的供應商": "Use “+ Add provider” for a quick setup, or “Import from config” to read this tool's existing providers",
+  "有效吞吐（總量）": "Effective throughput (total)",
+  "慢請求（>60 秒）": "Slow requests (>60s)",
+  "思考 tokens": "Reasoning tokens",
+  "P50 速度": "P50 speed",
 };
 
 interface Rule {

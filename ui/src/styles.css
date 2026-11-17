@@ -1224,7 +1224,8 @@ kbd {
 .scan-errors code { display: block; margin-top: 6px; color: var(--muted); font-size: 10px; white-space: normal; overflow-wrap: anywhere; }
 .stats-sub { font-size: 14px; margin: 22px 0 10px; color: var(--text); }
 .stat-cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
-.stat-cards.slim { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
+.stat-cards.slim { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 10px; }
+.stat-subvalue { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
 .stat-card { background: var(--panel); padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; }
 .stat-card .k { font-size: 10.5px; color: var(--muted); letter-spacing: .4px; }
 .stat-card .v { font-size: 17px; font-weight: 600; font-family: "Cascadia Code", Consolas, monospace; }
