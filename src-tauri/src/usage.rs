@@ -54,6 +54,7 @@ pub struct UsageRow {
 pub struct UsageSample {
     pub ts: u64,
     pub source: String,
+    pub provider: String,
     pub model: String,
     pub status: String,
     pub input: u64,
@@ -280,6 +281,7 @@ impl Scanner<'_> {
     fn push_sample(
         &mut self,
         ts: u64,
+        provider: &str,
         model: &str,
         status: &str,
         input: u64,
@@ -293,6 +295,7 @@ impl Scanner<'_> {
         self.samples.push(UsageSample {
             ts,
             source: self.source.to_string(),
+            provider: provider.to_string(),
             model: model.to_string(),
             status: status.to_string(),
             input,
@@ -461,7 +464,7 @@ fn scan_claude(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
                 .add_timing(duration, output, ttft);
         }
         if (first as u64) > 0 {
-            scanner.push_sample(first as u64, &model, "completed", input, output, cache, reasoning, duration, &id);
+            scanner.push_sample(first as u64, "", &model, "completed", input, output, cache, reasoning, duration, &id);
         }
     }
     Ok(())
@@ -516,7 +519,7 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         *scanner.records += 1;
         if let Some(ts) = parse_iso_ms(&ts) {
             let id = payload.get("response_id").and_then(|v| v.as_str()).unwrap_or("");
-            scanner.push_sample(ts as u64, &model, "completed", i, o, cr + cw, num(&usage, "reasoning_output_tokens"), 0, id);
+            scanner.push_sample(ts as u64, payload.get("model_provider_id").and_then(|v| v.as_str()).unwrap_or(""), &model, "completed", i, o, cr + cw, num(&usage, "reasoning_output_tokens"), 0, id);
         }
     }
     Ok(())
@@ -590,7 +593,7 @@ fn scan_agent_session(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), Stri
         *scanner.records += 1;
         if let Some(ts) = parse_iso_ms(ts) {
             let status = message.get("stopReason").and_then(|v| v.as_str()).unwrap_or("completed");
-            scanner.push_sample(ts as u64, &model, status, i, o, cr + cw, reasoning, message.get("durationMs").and_then(|v| v.as_u64()).unwrap_or(0), id);
+            scanner.push_sample(ts as u64, message.get("provider").and_then(|v| v.as_str()).unwrap_or(""), &model, status, i, o, cr + cw, reasoning, message.get("durationMs").and_then(|v| v.as_u64()).unwrap_or(0), id);
         }
     }
     Ok(())
@@ -650,7 +653,7 @@ fn scan_dsh(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         *scanner.records += 1;
         let status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
         let id = d.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        scanner.push_sample(ts_ms, &model, status, i, o, cr + cw, reasoning, d.get("dur").and_then(|v| v.as_u64()).unwrap_or(0), id);
+        scanner.push_sample(ts_ms, d.get("provider").and_then(|v| v.as_str()).unwrap_or(""), &model, status, i, o, cr + cw, reasoning, d.get("dur").and_then(|v| v.as_u64()).unwrap_or(0), id);
     }
     Ok(())
 }

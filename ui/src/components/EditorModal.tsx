@@ -226,6 +226,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [catalogModels, setCatalogModels] = useState<ModelProfile[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState("");
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -277,26 +278,6 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     setModelQuery("");
     setReasoningNotices({});
   }, [provider?.id, tool.id]);
-
-  useEffect(() => {
-    if (tab !== "models" || !provider) return;
-    let alive = true;
-    setCatalogLoading(true);
-    setCatalogError("");
-    void api.discoverModels(tool.id, provider.id)
-      .then((discovery) => {
-        if (alive) setCatalogModels(discovery.models);
-      })
-      .catch((error) => {
-        if (alive) setCatalogError(errorText(error));
-      })
-      .finally(() => {
-        if (alive) setCatalogLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [tab, provider?.id, tool.id]);
 
   useEffect(() => {
     let alive = true;
@@ -426,6 +407,23 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
     setExpandedModelIndex(nextIndex);
   };
 
+  const ensureCatalog = async (): Promise<ModelProfile[]> => {
+    if (catalogLoaded || !provider) return catalogModels;
+    setCatalogLoading(true);
+    setCatalogError("");
+    try {
+      const discovery = await api.discoverModels(tool.id, provider.id);
+      setCatalogModels(discovery.models);
+      setCatalogLoaded(true);
+      return discovery.models;
+    } catch (error) {
+      setCatalogError(errorText(error));
+      return [];
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+
   const addCatalogModel = (model: ModelProfile) => {
     const nextIndex = form.models?.length ?? 0;
     setForm((previous) => ({
@@ -512,8 +510,8 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
       }
       const savedModel = (provider.models ?? []).some((item) => item.id === modelId);
       if (!savedModel) {
-        const discovery = await api.discoverModels(tool.id, provider.id);
-        const remote = discovery.models.find((item) => item.id === modelId);
+        const models = await ensureCatalog();
+        const remote = models.find((item) => item.id === modelId);
         if (!remote) throw new Error("供應商目錄沒有回報這個模型；請確認 Model ID 或先儲存供應商");
         const catalogLevels = remote.reasoning_levels ?? [];
         const levels = catalogLevels.length ? catalogLevels : tool.reasoning_levels.filter(Boolean);
@@ -1098,7 +1096,7 @@ export function EditorModal({ tool, provider, history, busy, onCancel, onSave, o
                 >
                   實測選取 {selectedLiveModels.length || ""}
                 </button>
-                <button type="button" className="ghost" disabled={!provider || catalogLoading} onClick={() => setModelPickerOpen(true)} title="搜尋供應商 /models 回報的所有模型">⌕ 從目錄新增</button>
+                <button type="button" className="ghost" disabled={!provider || catalogLoading} onClick={() => { void ensureCatalog().then(() => setModelPickerOpen(true)); }} title="搜尋供應商 /models 回報的所有模型">⌕ 從目錄新增</button>
                 <button type="button" className="ghost" onClick={() => addModel()}>＋ 新增模型</button>
               </div>
             </div>

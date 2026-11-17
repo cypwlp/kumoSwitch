@@ -1205,6 +1205,8 @@ kbd {
 .stats { padding: 22px 26px 40px; max-width: 1180px; }
 .stats-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .stats-head h2 { margin: 0; font-size: 20px; }
+.stats-request-filters { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 18px; }
+.stats-request-filters .stats-sub { margin: 0; }
 .stats-filters {
   display: flex;
   align-items: center;

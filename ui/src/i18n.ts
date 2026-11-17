@@ -718,6 +718,11 @@ const DICT: Record<string, string> = {
   "目前未開啟。": "Currently off.",
   "目前已開啟。": "Currently on.",
   "kumoSwitch 與任何第三方切換工具都沒有官方合作或背書關係。相容匯入使用前請自行確認第三方工具的條款。": "kumoSwitch has no partnership with or endorsement from any third-party switching tool. Check the third-party terms before using compatibility import.",
+  "供應商篩選": "Provider filter",
+  "模型篩選": "Model filter",
+  "全部工具（": "All tools (",
+  "全部供應商": "All providers",
+  "全部模型": "All models",
 };
 
 interface Rule {

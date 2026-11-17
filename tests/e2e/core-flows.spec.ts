@@ -590,10 +590,10 @@ test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
   await expect(page.locator(".scan-root").getByText("Claude Code")).toBeVisible();
   await expect(page.locator(".scan-root").getByText("Codex", { exact: true })).toBeVisible();
   await expect(page.locator(".scan-root").getByText("DSH", { exact: true })).toBeVisible();
-  await page.locator(".stats").getByRole("button", { name: /^Pi/ }).click();
+  await page.getByLabel("來源篩選").selectOption("pi");
   await expect(page.locator(".stats .grid:not(.request-grid) tbody tr")).toHaveCount(1);
   await expect(page.locator(".stats .grid:not(.request-grid) tbody")).toContainText("deepseek-v4.1-flash");
-  await page.locator(".stats").getByRole("button", { name: "全部", exact: true }).first().click();
+  await page.getByLabel("來源篩選").selectOption("all");
   await page.getByLabel("搜尋模型").fill("glm");
   await expect(page.locator(".stats .grid:not(.request-grid) tbody tr")).toHaveCount(1);
   await page.getByLabel("搜尋模型").fill("");
@@ -608,7 +608,7 @@ test("usage dashboard shows per-request history", async ({ page }) => {
   await expect(rows).toHaveCount(4);
   await expect(rows.first()).toContainText("7f3c5fc0");
   await expect(rows.first()).toContainText("$0.00");
-  await page.locator(".stats").getByRole("button", { name: /^Pi/ }).click();
+  await page.getByLabel("來源篩選").selectOption("pi");
   await expect(rows).toHaveCount(2);
 });
 

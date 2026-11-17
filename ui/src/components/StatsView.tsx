@@ -32,6 +32,8 @@ export function StatsView({ onError }: Props) {
   const [scanError, setScanError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [sourceFilter, setSourceFilter] = useState("all");
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [modelFilter, setModelFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [requestLimit, setRequestLimit] = useState(20);
   const onErrorRef = useRef(onError);
@@ -91,14 +93,29 @@ export function StatsView({ onError }: Props) {
     );
   }, [report, sourceFilter, query]);
 
+  const requestScope = useMemo(
+    () => (report?.requests ?? []).filter((item) => sourceFilter === "all" || item.source === sourceFilter),
+    [report, sourceFilter],
+  );
+
+  const providerOptions = useMemo(
+    () => [...new Set(requestScope.map((item) => item.provider).filter(Boolean))].sort(),
+    [requestScope],
+  );
+  const modelOptions = useMemo(
+    () => [...new Set(requestScope.map((item) => item.model).filter(Boolean))].sort(),
+    [requestScope],
+  );
+
   const filteredRequests = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (report?.requests ?? []).filter(
+    return requestScope.filter(
       (item) =>
-        (sourceFilter === "all" || item.source === sourceFilter) &&
-        (!q || `${item.model} ${item.id}`.toLowerCase().includes(q)),
+        (providerFilter === "all" || item.provider === providerFilter) &&
+        (modelFilter === "all" || item.model === modelFilter) &&
+        (!q || `${item.model} ${item.provider} ${item.id}`.toLowerCase().includes(q)),
     );
-  }, [report, sourceFilter, query]);
+  }, [requestScope, providerFilter, modelFilter, query]);
 
   const totals = useMemo(() => {
     let input = 0;
@@ -216,22 +233,23 @@ export function StatsView({ onError }: Props) {
           {hasUsage ? (
             <>
               <div className="stats-filters">
-                <div className="segmented compact" role="group" aria-label="來源篩選">
-                  <button className={sourceFilter === "all" ? "on" : ""} aria-pressed={sourceFilter === "all"} onClick={() => setSourceFilter("all")}>
-                    全部
-                  </button>
+                <select
+                  className="mini-select"
+                  aria-label="來源篩選"
+                  value={sourceFilter}
+                  onChange={(event) => {
+                    setSourceFilter(event.target.value);
+                    setProviderFilter("all");
+                    setModelFilter("all");
+                  }}
+                >
+                  <option value="all">全部工具（{report.rows.length}）</option>
                   {sourceOptions.map((source) => (
-                    <button
-                      key={source}
-                      className={sourceFilter === source ? "on" : ""}
-                      aria-pressed={sourceFilter === source}
-                      onClick={() => setSourceFilter(source)}
-                    >
-                      {sourceLabel(source)}
-                      <span className="count">{counts[source] ?? 0}</span>
-                    </button>
+                    <option key={source} value={source}>
+                      {sourceLabel(source)}（{counts[source] ?? 0}）
+                    </option>
                   ))}
-                </div>
+                </select>
                 <input
                   className="search stats-search"
                   type="search"
@@ -367,7 +385,17 @@ export function StatsView({ onError }: Props) {
                   </table>
                 </div>
               )}
-              <h3 className="stats-sub">最近請求</h3>
+              <div className="stats-request-filters">
+                <h3 className="stats-sub">最近請求</h3>
+                <select className="mini-select" aria-label="供應商篩選" value={providerFilter} onChange={(event) => setProviderFilter(event.target.value)}>
+                  <option value="all">全部供應商</option>
+                  {providerOptions.map((provider) => <option key={provider} value={provider}>{provider}</option>)}
+                </select>
+                <select className="mini-select" aria-label="模型篩選" value={modelFilter} onChange={(event) => setModelFilter(event.target.value)}>
+                  <option value="all">全部模型</option>
+                  {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
+              </div>
               {filteredRequests.length === 0 ? (
                 <div className="empty small">這個範圍內沒有符合條件的請求記錄</div>
               ) : (
@@ -377,7 +405,8 @@ export function StatsView({ onError }: Props) {
                     <thead>
                       <tr>
                         <th>時間</th>
-                        <th>來源</th>
+                        <th>工具</th>
+                        <th>供應商</th>
                         <th>模型</th>
                         <th>狀態</th>
                         <th>耗時</th>
@@ -393,6 +422,7 @@ export function StatsView({ onError }: Props) {
                         <tr key={`${item.ts}-${item.id}-${index}`}>
                           <td className="mono">{timeText(item.ts)}</td>
                           <td><span className="badge subtle">{sourceLabel(item.source)}</span></td>
+                          <td className="mono">{item.provider || "—"}</td>
                           <td className="mono">{item.model}</td>
                           <td><span className={`badge ${item.status === "completed" || item.status === "200" ? "ok" : item.status === "failed" || item.status === "error" ? "err" : "subtle"}`}>{item.status}</span></td>
                           <td className="mono">{item.duration_ms ? durationText(item.duration_ms) : "—"}</td>

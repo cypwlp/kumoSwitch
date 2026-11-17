@@ -439,6 +439,7 @@ export interface UsageRow {
 export interface UsageSample {
   ts: number;
   source: string;
+  provider: string;
   model: string;
   status: string;
   input: number;
