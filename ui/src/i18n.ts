@@ -575,6 +575,13 @@ const DICT: Record<string, string> = {
   "解碼速度（估算）": "Decode speed (est.)",
   "固定等待（估算）": "Fixed overhead (est.)",
   "解碼速度": "Decode speed",
+  "主題色": "Accent colour",
+  "海洋": "Ocean",
+  "極光": "Aurora",
+  "日落": "Sunset",
+  "森林": "Forest",
+  "玫瑰": "Rose",
+  "琥珀": "Amber",
 };
 
 interface Rule {

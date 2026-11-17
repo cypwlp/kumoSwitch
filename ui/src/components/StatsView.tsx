@@ -245,7 +245,7 @@ export function StatsView({ onError }: Props) {
                 <div className="stat-card" title="有計時資料的請求平均花費時間；不是連線測試延遲">
                   <span className="k">平均回應時間</span><span className="v">{durationText(totals.avgDuration)}</span>
                 </div>
-                <div className="stat-card" title="輸出 tokens ÷ 有計時請求的總時間；包含首字等待、思考、網路與重試，不是純解碼速度">
+                <div className="stat-card" title="輸出 tokens ÷ 有計時請求的總時間；包含首字等待、思考、網路與重試">
                   <span className="k">有效吞吐（總量）</span><span className="v">{speedText(totals.speed)}</span>
                 </div>
                 <div className="stat-card" title="將每筆 duration 對輸出 tokens 迴歸，估出的解碼速度；已扣掉固定等待">
@@ -254,16 +254,21 @@ export function StatsView({ onError }: Props) {
                 <div className="stat-card" title="每筆請求的固定等待：首字、排隊、重試與網路；由迴歸截距估算">
                   <span className="k">固定等待（估算）</span><span className="v">{durationText(totals.fixedOverhead)}</span>
                 </div>
-                <div className="stat-card" title="Claude Code session log 的使用者訊息→首個 assistant 區塊時間差，僅為估算">
-                  <span className="k">首字延遲（估算）</span><span className="v">{totals.ttft == null ? "—" : `${fmt(totals.ttft)}ms`}</span>
-                </div>
-                <div className="stat-card" title="超過 60 秒的請求，通常是逾時、重試或排隊；速度統計會保留這些樣本">
-                  <span className="k">慢請求（&gt;60 秒）</span><span className="v">{fmt(totals.slowRecords)}</span>
-                </div>
-                <div className="stat-card" title={`有計時請求 ${fmt(totals.timedRecords)} 筆；思考 tokens 只有 Pi／DSH 會分開回報`}>
-                  <span className="k">思考 tokens</span><span className="v">{fmt(totals.reasoning)}</span>
-                </div>
               </div>
+              <details className="stats-more">
+                <summary>更多效能指標</summary>
+                <div className="stat-cards slim">
+                  <div className="stat-card" title="Claude Code session log 的使用者訊息→首個 assistant 區塊時間差，僅為估算">
+                    <span className="k">首字延遲（估算）</span><span className="v">{totals.ttft == null ? "—" : `${fmt(totals.ttft)}ms`}</span>
+                  </div>
+                  <div className="stat-card" title="超過 60 秒的請求，通常是逾時、重試或排隊；速度統計會保留這些樣本">
+                    <span className="k">慢請求（&gt;60 秒）</span><span className="v">{fmt(totals.slowRecords)}</span>
+                  </div>
+                  <div className="stat-card" title={`有計時請求 ${fmt(totals.timedRecords)} 筆；思考 tokens 只有 Pi／DSH 會分開回報`}>
+                    <span className="k">思考 tokens</span><span className="v">{fmt(totals.reasoning)}</span>
+                  </div>
+                </div>
+              </details>
             </>
           ) : (
             <div className="stats-empty-panel">
@@ -280,12 +285,15 @@ export function StatsView({ onError }: Props) {
           )}
 
           {health ? (
+            <>
+            <h3 className="stats-sub">供應商連線測試</h3>
             <div className="stat-cards slim">
               <div className="stat-card"><span className="k">連線測試次數</span><span className="v">{fmt(health.tests)}</span></div>
               <div className="stat-card"><span className="k">測試成功率</span><span className="v">{health.tests ? Math.round((health.ok / health.tests) * 100) : 0}%</span></div>
               <div className="stat-card"><span className="k">平均延遲</span><span className="v">{health.avg_ms}ms</span></div>
               <div className="stat-card"><span className="k">已測供應商</span><span className="v">{health.providers_tested}</span></div>
             </div>
+            </>
           ) : null}
 
           {hasUsage ? (
@@ -316,11 +324,11 @@ export function StatsView({ onError }: Props) {
                         <th>模型</th>
                         <th>輸入</th>
                         <th>輸出</th>
-                        <th>快取</th>
-                        <th>筆數</th>
-                        <th title="有計時資料的請求平均花費時間">平均</th>
+                        <th className="col-cache">快取</th>
+                        <th className="col-records">筆數</th>
+                        <th className="col-avg" title="有計時資料的請求平均花費時間">平均</th>
                         <th title="duration 對輸出 tokens 迴歸估算的解碼速度；已扣掉固定等待，滑過儲存格可看 P50">解碼速度</th>
-                        <th title="首字延遲估算（目前只有 Claude Code 時間戳可推算）">首字</th>
+                        <th className="col-ttft" title="首字延遲估算（目前只有 Claude Code 時間戳可推算）">首字</th>
                         <th>估算成本</th>
                       </tr>
                     </thead>
@@ -334,13 +342,13 @@ export function StatsView({ onError }: Props) {
                             {fmt(row.output)}
                             {row.reasoning ? <small className="stat-subvalue">+{fmt(row.reasoning)} 思考</small> : null}
                           </td>
-                          <td className="mono">{fmt(row.cache_read + row.cache_write)}</td>
-                          <td className="mono">{fmt(row.records)}</td>
-                          <td className="mono">{durationText(row.avg_duration_ms)}</td>
+                          <td className="mono col-cache">{fmt(row.cache_read + row.cache_write)}</td>
+                          <td className="mono col-records">{fmt(row.records)}</td>
+                          <td className="mono col-avg">{durationText(row.avg_duration_ms)}</td>
                           <td className="mono" title={`P50 有效吞吐 ${speedText(row.median_output_per_sec)}；總量 ${speedText(row.output_per_sec)}；慢請求 ${row.slow_records} 筆`}>
                             {speedText(row.decode_output_per_sec)}
                           </td>
-                          <td className="mono">{row.ttft_ms == null ? "—" : `${fmt(row.ttft_ms)}ms`}</td>
+                          <td className="mono col-ttft">{row.ttft_ms == null ? "—" : `${fmt(row.ttft_ms)}ms`}</td>
                           <td className="mono">{money(row.cost)}</td>
                         </tr>
                       ))}

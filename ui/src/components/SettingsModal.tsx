@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AppInfo } from "../types";
-import type { ThemeMode } from "../theme";
+import { ACCENTS, type Accent, type ThemeMode } from "../theme";
 import type { UpdateCheck } from "../updater";
 import type { Density, TextScale, UiMode, UiPreferences } from "../preferences";
 import { AutoIcon, MoonIcon, SunIcon } from "./Icons";
@@ -14,6 +14,7 @@ interface SettingsModalProps {
   updating: boolean;
   progress: number;
   theme: ThemeMode;
+  accent: Accent;
   autoHealth: boolean;
   autoModelSync: boolean;
   preferences: UiPreferences;
@@ -22,6 +23,7 @@ interface SettingsModalProps {
   ccSwitchBridge: boolean;
   onToggleCcSwitchBridge: (enabled: boolean) => void;
   onTheme: (mode: ThemeMode) => void;
+  onAccent: (accent: Accent) => void;
   onPreferences: (patch: Partial<UiPreferences>) => void;
   onUpdateChannel: (channel: string) => void;
   onTogglePreUpdateBackup: () => void;
@@ -65,6 +67,7 @@ export function SettingsModal({
   updating,
   progress,
   theme,
+  accent,
   autoHealth,
   autoModelSync,
   preferences,
@@ -73,6 +76,7 @@ export function SettingsModal({
   ccSwitchBridge,
   onToggleCcSwitchBridge,
   onTheme,
+  onAccent,
   onPreferences,
   onUpdateChannel,
   onTogglePreUpdateBackup,
@@ -189,6 +193,25 @@ export function SettingsModal({
                 {label}
               </button>
             ))}
+          </div>
+          <div className="settings-choice-row theme-accent-row">
+            <span>主題色</span>
+            <div className="accent-swatches" role="group" aria-label="主題色">
+              {ACCENTS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`accent-swatch${accent === item.id ? " on" : ""}`}
+                  aria-pressed={accent === item.id}
+                  aria-label={item.label}
+                  title={item.label}
+                  onClick={() => onAccent(item.id)}
+                >
+                  <i style={{ background: item.color }} aria-hidden="true" />
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="settings-choice-row">
             <span>介面模式</span>

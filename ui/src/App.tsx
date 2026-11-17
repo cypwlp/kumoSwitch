@@ -108,7 +108,7 @@ function hashTokens(): string[] {
 }
 
 export default function App() {
-  const { mode, setMode } = useTheme();
+  const { mode, setMode, accent, setAccent } = useTheme();
   const { preferences, update: updatePreferences } = useUiPreferences();
   const { items: toasts, push, dismiss: dismissToast } = useToasts();
   const [recent, setRecent] = useState<RecentSwitch[]>(readRecent);
@@ -1417,6 +1417,7 @@ export default function App() {
           updating={updating}
           progress={progress}
           theme={mode}
+          accent={accent}
           autoHealth={autoHealth}
           autoModelSync={autoModelSync}
           preferences={preferences}
@@ -1425,6 +1426,7 @@ export default function App() {
           ccSwitchBridge={ccSwitchBridge}
           onToggleCcSwitchBridge={(enabled) => void toggleCcSwitchBridge(enabled)}
           onTheme={setMode}
+          onAccent={setAccent}
           onPreferences={updatePreferences}
           onUpdateChannel={(channel) => void changeUpdateChannel(channel)}
           onTogglePreUpdateBackup={() => void togglePreUpdateBackup()}

@@ -795,6 +795,16 @@ test("API key lifecycle supports a new encrypted rotation key", async ({ page })
   await expect(dialog.getByText("新金鑰已加密保存並切換為使用中。")).toBeVisible();
 });
 
+test("theme accent palette can be switched and persists", async ({ page }) => {
+  const dialog = await openSettings(page);
+  await dialog.getByRole("button", { name: "極光", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "aurora");
+  await dialog.locator(".sheet-foot").getByRole("button", { name: "關閉" }).click();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-accent", "aurora");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", /^(dark|light)$/);
+});
+
 test("compatibility matrix and accessibility preferences are visible", async ({ page }) => {
   await page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" }).click();
   let dialog = page.getByRole("dialog");
