@@ -929,14 +929,14 @@ fn scan_into(
     scan_file(path, &mut scanner)
 }
 
-pub fn report(days_back: u32, force: bool) -> UsageReport {
-    let started = Instant::now();
-    if force {
-        USAGE_CACHE
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clear();
-    }
+pub fn report(days_back: u32, force: bool) -> UsageReport {
+    let started = Instant::now();
+    if force {
+        USAGE_CACHE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+    }
     let home = crate::adapters::home();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
