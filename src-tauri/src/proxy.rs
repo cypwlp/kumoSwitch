@@ -96,6 +96,10 @@ pub struct ProxyTargetPolicy {
     /// Rewrite a requested model ID to a provider-specific ID before forwarding.
     #[serde(default)]
     pub model_map: BTreeMap<String, String>,
+    /// Model selected for this route. When set, incoming model IDs are rewritten
+    /// to this provider's model before the request is forwarded.
+    #[serde(default)]
+    pub route_model: String,
 }
 
 fn default_weight() -> u32 { 100 }
@@ -117,6 +121,7 @@ impl Default for ProxyTargetPolicy {
             max_concurrency: default_max_concurrency(),
             allowed_models: Vec::new(),
             model_map: BTreeMap::new(),
+            route_model: String::new(),
         }
     }
 }
@@ -425,6 +430,18 @@ fn model_body_for_target(
         && !policy.allowed_models.iter().any(|model| model == requested)
     {
         return Err(format!("model {requested} not allowed; target skipped"));
+    }
+    if !policy.route_model.trim().is_empty() {
+        let mut value: serde_json::Value =
+            serde_json::from_slice(body).map_err(|_| "request body is not valid JSON".to_string())?;
+        if let Some(object) = value.as_object_mut() {
+            object.insert(
+                "model".into(),
+                serde_json::Value::String(policy.route_model.clone()),
+            );
+            return serde_json::to_vec(&value).map_err(|error| format!("failed to rewrite model: {error}"));
+        }
+        return Ok(body.to_vec());
     }
     let Some(mapped) = policy.model_map.get(requested) else {
         return Ok(body.to_vec());

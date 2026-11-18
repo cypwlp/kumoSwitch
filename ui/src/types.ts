@@ -502,6 +502,7 @@ export interface ProxyTargetPolicy {
   max_concurrency: number;
   allowed_models: string[];
   model_map: Record<string, string>;
+  route_model: string;
 }
 
 export interface ProxyAlertRules {

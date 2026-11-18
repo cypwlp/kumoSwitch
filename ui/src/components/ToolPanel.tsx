@@ -28,8 +28,9 @@ interface PanelProps {
   onProxyMode: () => void;
   proxyAttached: boolean;
   upstreamProvider: Provider | null;
+  upstreamModel: string;
   upstreamOptions: Provider[];
-  onUpstream: (providerId: string) => void;
+  onUpstream: (providerId: string, modelId: string) => void;
   onApply: (provider: Provider) => void;
   onReorder: (ids: string[]) => void;
   onSwitchModel: (provider: Provider, modelId: string) => void;
@@ -75,6 +76,7 @@ export function ToolPanel({
   onProxyMode,
   proxyAttached,
   upstreamProvider,
+  upstreamModel,
   upstreamOptions,
   onUpstream,
   onApply,
@@ -131,6 +133,19 @@ export function ToolPanel({
     action();
   };
 
+  const upstreamModelOptions = upstreamOptions.flatMap((provider) => {
+    const models = (provider.models ?? [])
+      .filter((model) => !model.archived && model.id.trim())
+      .map((model) => ({ id: model.id, name: model.name || model.id }));
+    if (provider.model.trim() && !models.some((model) => model.id === provider.model)) {
+      models.unshift({ id: provider.model, name: provider.model });
+    }
+    if (provider.id === upstreamProvider?.id && upstreamModel && !models.some((model) => model.id === upstreamModel)) {
+      models.unshift({ id: upstreamModel, name: upstreamModel });
+    }
+    return models.map((model) => ({ provider, model }));
+  });
+
   return (
     <section className="panel" key={tool.id}>
       <header className="panel-head">
@@ -172,20 +187,43 @@ export function ToolPanel({
               ? upstreamProvider?.name || "本機代理"
               : activeProvider?.name || tool.current.model || "尚未選擇供應商"}
           </strong>
-          {tool.current.model ? <span className="current-model"><span>模型</span><code>{tool.current.model}</code></span> : null}
+          {(proxyAttached ? upstreamModel : tool.current.model) ? (
+            <span className="current-model">
+              <span>{proxyAttached ? "路由模型" : "模型"}</span>
+              <code>{proxyAttached ? upstreamModel : tool.current.model}</code>
+            </span>
+          ) : null}
           {proxyAttached ? (
             <div className="instant-controls">
               <span className="badge ok">連線方式：即時</span>
               <select
                 className="mini-select"
-                aria-label="即時切換上游"
-                value={upstreamProvider?.id ?? ""}
-                onChange={(event) => onUpstream(event.target.value)}
-                disabled={busy || upstreamOptions.length === 0}
+                aria-label="即時切換供應商與模型"
+                title="選擇已加入的供應商模型；只列出與目前 API 類型相容的模型"
+                value={upstreamProvider && upstreamModel ? JSON.stringify([upstreamProvider.id, upstreamModel]) : ""}
+                onChange={(event) => {
+                  try {
+                    const [providerId, modelId] = JSON.parse(event.target.value) as [string, string];
+                    if (providerId && modelId) onUpstream(providerId, modelId);
+                  } catch {
+                    // Ignore malformed option values.
+                  }
+                }}
+                disabled={busy || upstreamModelOptions.length === 0}
               >
-                {upstreamOptions.map((provider) => (
-                  <option key={provider.id} value={provider.id}>{provider.name}</option>
-                ))}
+                {upstreamOptions.map((provider) => {
+                  const models = upstreamModelOptions.filter((option) => option.provider.id === provider.id);
+                  if (models.length === 0) return null;
+                  return (
+                    <optgroup key={provider.id} label={provider.name}>
+                      {models.map(({ model }) => (
+                        <option key={model.id} value={JSON.stringify([provider.id, model.id])}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </select>
               <button type="button" className="ghost small" onClick={onProxyMode} disabled={busy}>
                 代理設定

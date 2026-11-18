@@ -1100,14 +1100,15 @@ export default function App() {
     }
   }, []);
 
-  const selectInstantUpstream = async (providerId: string) => {
+  const selectInstantUpstream = async (providerId: string, modelId: string) => {
     if (!selectedId) return;
     setBusy(true);
     try {
       const config = await api.proxyStatus();
       const prefix = `${selectedId}:`;
       const reference = `${prefix}${providerId}`;
-      config.stack = [reference, ...config.stack.filter((item) => !item.startsWith(prefix))];
+      config.stack = config.stack.filter((item) => !item.startsWith(prefix));
+      config.stack.push(reference);
       if (!config.policies[reference]) {
         config.policies[reference] = {
           weight: 100,
@@ -1119,13 +1120,17 @@ export default function App() {
           max_concurrency: 16,
           allowed_models: [],
           model_map: {},
+          route_model: "",
         };
       }
+      config.policies[reference].route_model = modelId;
+      config.policies[reference].allowed_models = [];
+      config.policies[reference].model_map = {};
       config.enabled = true;
       await api.proxySave(config);
       await refreshProxyConfig();
       const provider = providers.find((item) => item.id === providerId);
-      push(`即時切換上游已改為「${provider?.name ?? providerId}」`, "ok");
+      push(`即時路由已切換為「${provider?.name ?? providerId}」／${modelId}`, "ok");
     } catch (error) {
       push(errorText(error), "err");
     } finally {
@@ -1140,7 +1145,7 @@ export default function App() {
       await api.proxyQuickStart(selectedId);
       await reload(selectedId);
       await refreshProxyConfig();
-      push("已啟用即時切換。目前對話需重開一次；之後切換即時生效", "ok");
+      push("已啟用即時切換，保留目前供應商與模型作為初始路由。目前對話需重開一次；之後可隨時切換模型", "ok");
     } catch (error) {
       push(errorText(error), "err");
     } finally {
@@ -1197,7 +1202,19 @@ export default function App() {
     : undefined;
   const upstreamId = upstreamRef?.split(":")[1] ?? "";
   const upstreamProvider = providers.find((provider) => provider.id === upstreamId) ?? null;
-  const upstreamOptions = providers.filter((provider) => provider.config_id !== "kumoswitch-proxy");
+  const upstreamRoutePolicy = upstreamRef ? proxyConfig?.policies[upstreamRef] : undefined;
+  const upstreamModel = upstreamRoutePolicy?.route_model
+    || upstreamProvider?.model
+    || upstreamProvider?.models?.find((model) => !model.archived && model.id.trim())?.id
+    || "";
+  const activeProxyProvider = activeProviderForPanel?.config_id === "kumoswitch-proxy"
+    ? activeProviderForPanel
+    : null;
+  const routeKind = (activeProxyProvider?.kind || upstreamProvider?.kind || "").trim();
+  const upstreamOptions = providers.filter((provider) =>
+    provider.config_id !== "kumoswitch-proxy"
+    && (!routeKind || !provider.kind.trim() || provider.kind.toLowerCase() === routeKind.toLowerCase()),
+  );
 
   const showOnboarding =
     !onboarded && tools.length > 0 && tools.every((t) => t.provider_count === 0);
@@ -1346,8 +1363,9 @@ export default function App() {
                 /127\.0\.0\.1|localhost/.test(selected.current.base_url),
               )}
               upstreamProvider={upstreamProvider}
+              upstreamModel={upstreamModel}
               upstreamOptions={upstreamOptions}
-              onUpstream={(providerId) => void selectInstantUpstream(providerId)}
+              onUpstream={(providerId, modelId) => void selectInstantUpstream(providerId, modelId)}
               sort={sort}
               onSort={setSort}
               simple={preferences.uiMode !== "advanced"}

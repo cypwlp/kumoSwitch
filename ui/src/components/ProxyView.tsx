@@ -17,6 +17,7 @@ const DEFAULT_POLICY: ProxyTargetPolicy = {
   max_concurrency: 16,
   allowed_models: [],
   model_map: {},
+  route_model: "",
 };
 
 const EMPTY_CONFIG: ProxyConfig = {
