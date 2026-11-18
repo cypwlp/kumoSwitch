@@ -1710,19 +1710,114 @@ fn proxy_save(mut config: proxy::ProxyConfig) -> Result<proxy::ProxyConfig, Stri
     Ok(config)
 }
 
-fn proxy_provider(tool: &str, config: &proxy::ProxyConfig) -> Provider {
+fn is_proxy_provider(provider: &Provider) -> bool {
+    provider.config_id.starts_with("kumoswitch-proxy")
+}
+
+/// Pi validates the selected model and resolves its API before making a
+/// request. Keep those fields from the active provider when attaching Pi to
+/// the proxy, while the proxy itself supplies the real upstream credential.
+fn pi_proxy_model_template(
+    tool: &str,
+    providers: &[Provider],
+    original_base_url: Option<&str>,
+) -> Result<Option<Provider>, String> {
+    if tool != "pi" {
+        return Ok(None);
+    }
+
+    let current = adapters::read_current(spec(tool)?);
+    if current.model.trim().is_empty() {
+        return Err("Pi 尚未選定模型；請先在 Pi 選好模型，再啟用即時切換".into());
+    }
+
+    let active_config_id = current
+        .source
+        .strip_prefix("providers.")
+        .and_then(|source| source.strip_suffix(".baseUrl"));
+    let active_is_proxy = active_config_id.is_some_and(|id| id.starts_with("kumoswitch-proxy"));
+
+    let mut template = if !active_is_proxy {
+        active_config_id
+            .and_then(|id| providers.iter().find(|provider| provider.config_id == id))
+            .cloned()
+    } else {
+        active_config_id
+            .and_then(|id| providers.iter().find(|provider| provider.config_id == id))
+            .filter(|provider| !provider.kind.trim().is_empty())
+            .cloned()
+            .or_else(|| {
+                let original_base_url = original_base_url?;
+                providers
+                    .iter()
+                    .find(|provider| {
+                        !is_proxy_provider(provider)
+                            && provider.base_url.trim_end_matches('/') == original_base_url.trim_end_matches('/')
+                            && (provider.model == current.model
+                                || provider.models.iter().any(|model| model.id == current.model))
+                    })
+                    .cloned()
+            })
+            .or_else(|| {
+                providers
+                    .iter()
+                    .find(|provider| {
+                        !is_proxy_provider(provider)
+                            && (provider.model == current.model
+                                || provider.models.iter().any(|model| model.id == current.model))
+                    })
+                    .cloned()
+            })
+    }
+    .ok_or_else(|| {
+        "找不到 Pi 目前使用的供應商；請先在 kumoSwitch 匯入該 Pi 供應商，再啟用即時切換".to_string()
+    })?;
+
+    template.model = current.model.clone();
+    if !template.models.iter().any(|model| model.id == current.model) {
+        template.models.push(ModelProfile::new(current.model.clone()));
+    }
+    if template.kind.trim().is_empty() {
+        return Err("Pi 目前供應商沒有 API 類型；請重新匯入供應商設定後再啟用即時切換".into());
+    }
+    let kind = template.kind.to_ascii_lowercase();
+    if !matches!(
+        kind.as_str(),
+        "openai-completions" | "openai-responses" | "anthropic-messages"
+    ) {
+        return Err(format!(
+            "Pi 的 `{}` API 類型目前不能經 kumoSwitch 代理；請改用 OpenAI 或 Anthropic 相容 API",
+            template.kind
+        ));
+    }
+    Ok(Some(template))
+}
+
+fn proxy_provider(
+    tool: &str,
+    config: &proxy::ProxyConfig,
+    model_template: Option<&Provider>,
+) -> Provider {
     let existing = store::list(tool)
         .into_iter()
         .find(|provider| provider.config_id == "kumoswitch-proxy");
     let mut provider = existing.unwrap_or_default();
     provider.config_id = "kumoswitch-proxy".into();
     provider.name = "kumoSwitch 代理".into();
-    provider.base_url = format!("http://127.0.0.1:{}/v1", config.port);
+    provider.base_url = format!("http://127.0.0.1:{}/{tool}/v1", config.port);
     provider.api_key = "kumoswitch-proxy".into();
     provider.api_key_enc.clear();
-    provider.model.clear();
-    provider.models.clear();
-    provider.kind.clear();
+    if tool == "pi" {
+        if let Some(template) = model_template {
+            provider.model = template.model.clone();
+            provider.models = template.models.clone();
+            provider.kind = template.kind.clone();
+        }
+    } else {
+        provider.model.clear();
+        provider.models.clear();
+        provider.kind.clear();
+    }
     provider.note = "一鍵代理模式；上游切換即時生效".into();
     provider.profile_id.clear();
     provider.api_keys.clear();
@@ -1741,8 +1836,14 @@ fn proxy_provider(tool: &str, config: &proxy::ProxyConfig) -> Provider {
 /// Point a tool at the local proxy by applying a dedicated provider entry.
 #[tauri::command]
 fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, String> {
-    let config = store::load().proxy;
-    let provider = proxy_provider(&tool, &config);
+    let data = store::load();
+    let providers = data.providers.get(&tool).cloned().unwrap_or_default();
+    let model_template = pi_proxy_model_template(
+        &tool,
+        &providers,
+        data.proxy.attached.get(&tool).map(String::as_str),
+    )?;
+    let provider = proxy_provider(&tool, &data.proxy, model_template.as_ref());
     let saved = store::upsert(&tool, provider)?;
     let result = apply_core(&tool, &saved.id)?;
     tray::refresh(&app);
@@ -1757,8 +1858,22 @@ fn proxy_quick_start(tool: String, app: tauri::AppHandle) -> Result<ApplyResult,
     let _spec = spec(&tool)?;
     let mut data = store::load();
     let providers = data.providers.get(&tool).cloned().unwrap_or_default();
+    let model_template = pi_proxy_model_template(
+        &tool,
+        &providers,
+        data.proxy.attached.get(&tool).map(String::as_str),
+    )?;
     let mut targets = Vec::new();
-    for (index, provider) in providers.iter().enumerate() {
+    let compatible_providers = providers
+        .iter()
+        .filter(|provider| !is_proxy_provider(provider))
+        .filter(|provider| {
+            model_template
+                .as_ref()
+                .is_none_or(|template| provider.kind.eq_ignore_ascii_case(&template.kind))
+        })
+        .collect::<Vec<_>>();
+    for (index, provider) in compatible_providers.iter().enumerate() {
         let reference = format!("{tool}:{}", provider.id);
         if !targets.contains(&reference) {
             targets.push(reference.clone());
@@ -1776,7 +1891,11 @@ fn proxy_quick_start(tool: String, app: tauri::AppHandle) -> Result<ApplyResult,
         });
     }
     if targets.is_empty() {
-        return Err("這個工具還沒有供應商，請先新增或匯入".into());
+        return Err(if tool == "pi" {
+            "Pi 沒有可路由的同 API 類型供應商；請先匯入至少一個相同 API 類型的供應商".into()
+        } else {
+            "這個工具還沒有供應商，請先新增或匯入".into()
+        });
     }
     let current = adapters::read_current(&adapters::find(&tool).unwrap());
     if !current.base_url.is_empty()
@@ -1797,7 +1916,7 @@ fn proxy_quick_start(tool: String, app: tauri::AppHandle) -> Result<ApplyResult,
     drop(data);
 
     let config = store::load().proxy;
-    let provider = proxy_provider(&tool, &config);
+    let provider = proxy_provider(&tool, &config, model_template.as_ref());
     let saved = store::upsert(&tool, provider)?;
     let result = apply_core(&tool, &saved.id)?;
     audit::record("proxy.quick_start", format!("{tool}:targets={}", targets.len()));

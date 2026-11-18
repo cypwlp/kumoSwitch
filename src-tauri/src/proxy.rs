@@ -1,7 +1,7 @@
 //! Local reverse proxy with ordered failover ("aggregate mode").
 //!
-//! The CLI tools point at `http://127.0.0.1:<port>/v1`; we forward each request
-//! to the configured stack of providers in order, failing over on connection
+//! The CLI tools point at `http://127.0.0.1:<port>/<tool>/v1`; we forward each
+//! request to that tool's configured provider stack, failing over on connection
 //! errors, 429 and 5xx. Responses stream straight through.
 
 use std::collections::{BTreeMap, VecDeque};
@@ -349,11 +349,12 @@ fn resolve_stack(config: &ProxyConfig) -> Vec<Target> {
         let Some((tool, id)) = reference.split_once(':') else { continue };
         let Some(list) = store.providers.get(tool) else { continue };
         let Some(p) = list.iter().find(|p| p.id == id) else { continue };
+        let api_kind = p.kind.to_ascii_lowercase();
         out.push(Target {
             reference: reference.clone(),
             base_url: p.base_url.clone(),
             api_key: p.api_key.clone(),
-            anthropic: tool == "claude",
+            anthropic: tool == "claude" || api_kind.contains("anthropic"),
             policy: config.policies.get(reference).cloned().unwrap_or_default(),
         });
     }
@@ -889,7 +890,17 @@ fn handle_with_routing_limit(
     let method = request.method().as_str().to_string();
     let forwarded_headers = request_headers(request.headers());
     let url = request.url().to_string();
-    let path = url.split('?').next().unwrap_or("/").to_string();
+    let incoming_path = url.split('?').next().unwrap_or("/");
+    let (route_tool, path) = scoped_proxy_path(incoming_path);
+    let targets: Vec<_> = if let Some(tool) = route_tool {
+        let prefix = format!("{tool}:");
+        targets
+            .into_iter()
+            .filter(|target| target.reference.starts_with(&prefix))
+            .collect()
+    } else {
+        targets
+    };
     let query = url.split_once('?').map(|(_, q)| format!("?{q}")).unwrap_or_default();
 
     let reader = request.as_reader();
@@ -1120,6 +1131,23 @@ fn handle_with_routing_limit(
         .with_status_code(last_status)
         .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap());
     let _ = request.respond(resp);
+}
+
+/// New proxy attachments use `/<tool>/v1/...` so each harness gets only its
+/// own provider stack. Strip the scope before forwarding to the upstream API.
+/// Unscoped `/v1/...` requests remain compatible with older attachments.
+fn scoped_proxy_path(path: &str) -> (Option<String>, String) {
+    let Some(path) = path.strip_prefix('/') else {
+        return (None, path.to_string());
+    };
+    let Some((tool, api_path)) = path.split_once('/') else {
+        return (None, format!("/{path}"));
+    };
+    if crate::adapters::find(tool).is_some() && (api_path == "v1" || api_path.starts_with("v1/")) {
+        (Some(tool.to_string()), format!("/{api_path}"))
+    } else {
+        (None, format!("/{path}"))
+    }
 }
 
 /// Start or restart the proxy listener so a changed port takes effect immediately.

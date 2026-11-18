@@ -302,7 +302,7 @@ export function ProxyView({ onError, onToast }: Props) {
         {attachTool && config.attached?.[attachTool] ? (
           <span className="muted small">原網址 {config.attached[attachTool]}</span>
         ) : (
-          <span className="muted small">啟用後全部切換即時生效，工具仍指向 127.0.0.1:{config.port}/v1</span>
+          <span className="muted small">啟用後切換即時生效，代理依工具隔離路由</span>
         )}
       </div>
 

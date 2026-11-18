@@ -884,7 +884,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return undefined;
     case "app_info":
       return {
-        version: "0.27.2",
+        version: "0.27.3",
         dataDir: `${HOME}\\AppData\\Roaming\\kumoSwitch`,
         encrypted: true,
         autoModelSync: false,

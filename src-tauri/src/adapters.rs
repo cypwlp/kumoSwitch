@@ -3,7 +3,8 @@
 //! Every tool is described as a list of *targeted* edits: (file, format, key path,
 //! value). Steps are scalar wherever possible so that re-applying a provider never
 //! clobbers sibling keys the user customised. Whole objects/arrays are only ever
-//! written with `When::IfMissing`, i.e. created once and then left alone.
+//! written with `When::IfMissing`, except the app-owned Pi proxy model entry which
+//! is refreshed on reapply.
 
 use crate::{jsonc, yamlpatch};
 use serde_json::Value;
@@ -1233,7 +1234,17 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
             files[idx].after.clone()
         };
         let segs = path_segments(step.path, provider, index);
-        if step.when == When::IfMissing && key_exists(&current, step.fmt, &segs) {
+        let refresh_managed_pi_proxy_models = spec.id == "pi"
+            && provider.config_id == "kumoswitch-proxy"
+            && !provider.model.trim().is_empty()
+            && step.file == "models.json"
+            && step.path.len() == 3
+            && step.path[0] == "providers"
+            && step.path[2] == "models";
+        if step.when == When::IfMissing
+            && !refresh_managed_pi_proxy_models
+            && key_exists(&current, step.fmt, &segs)
+        {
             continue;
         }
         let updated = match step.fmt {
