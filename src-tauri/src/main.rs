@@ -1807,8 +1807,10 @@ fn proxy_quick_start(tool: String, app: tauri::AppHandle) -> Result<ApplyResult,
 }
 
 #[tauri::command]
-async fn usage_report(days: u32) -> Result<usage::UsageReport, String> {
-    tauri::async_runtime::spawn_blocking(move || usage::report(days.clamp(0, 365)))
+async fn usage_report(days: u32, force: Option<bool>) -> Result<usage::UsageReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        usage::report(days.clamp(0, 365), force.unwrap_or(false))
+    })
         .await
         .map_err(|error| format!("session log 掃描失敗：{error}"))
 }

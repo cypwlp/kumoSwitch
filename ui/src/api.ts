@@ -108,7 +108,7 @@ export const api = {
   testHistory: (tool: string) => call<HistoryMap>("test_history", { tool }),
   setAutoHealth: (enabled: boolean) => call<boolean>("set_auto_health", { enabled }),
   setAutoModelSync: (enabled: boolean) => call<boolean>("set_auto_model_sync", { enabled }),
-  usageReport: (days: number) => call<UsageReport>("usage_report", { days }),
+  usageReport: (days: number, force = false) => call<UsageReport>("usage_report", { days, force }),
   providerPresets: () => call<Preset[]>("provider_presets"),
   harnessManager: () => call<HarnessManagerEntry[]>("harness_manager_list"),
   harnessInstall: (id: string) => call<HarnessInstallResult>("harness_install", { id }),

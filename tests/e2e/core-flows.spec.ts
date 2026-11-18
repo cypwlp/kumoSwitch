@@ -623,6 +623,16 @@ test("recent request status uses readable tones", async ({ page }) => {
   expect(tones.some((item) => item.cls?.includes("badge info"))).toBe(true);
 });
 
+test("manual rescan shows a fresh timestamp", async ({ page }) => {
+  await openWorkspace(page, "用量統計");
+  const updated = page.locator(".stats-updated");
+  await expect(updated).toBeVisible();
+  const before = await updated.textContent();
+  await page.waitForTimeout(1100);
+  await page.locator(".stats").getByRole("button", { name: "重新掃描" }).click();
+  await expect(updated).not.toHaveText(before ?? "");
+});
+
 test("usage dashboard auto refresh preference persists", async ({ page }) => {
   await openWorkspace(page, "用量統計");
   const select = page.getByLabel("自動重新整理");

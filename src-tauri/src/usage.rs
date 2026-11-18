@@ -929,8 +929,14 @@ fn scan_into(
     scan_file(path, &mut scanner)
 }
 
-pub fn report(days_back: u32) -> UsageReport {
-    let started = Instant::now();
+pub fn report(days_back: u32, force: bool) -> UsageReport {
+    let started = Instant::now();
+    if force {
+        USAGE_CACHE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+    }
     let home = crate::adapters::home();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1202,7 +1208,7 @@ mod tests {
 
     #[test]
     fn real_logs_aggregate_if_present() {
-        let report = report(365);
+        let report = report(365, false);
         if report.files == 0 {
             return; // machine without CLI logs
         }
@@ -1222,9 +1228,17 @@ mod tests {
     }
 
     #[test]
+    fn forced_report_matches_fresh_scan() {
+        let first = report(365, false);
+        let forced = report(365, true);
+        assert_eq!(first.records, forced.records);
+        assert_eq!(first.total_input, forced.total_input);
+    }
+
+    #[test]
     fn cached_report_matches_fresh_scan() {
-        let first = report(365);
-        let second = report(365);
+        let first = report(365, false);
+        let second = report(365, false);
         assert_eq!(first.records, second.records);
         assert_eq!(first.total_input, second.total_input);
         assert_eq!(first.requests.len(), second.requests.len());

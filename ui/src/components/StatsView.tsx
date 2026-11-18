@@ -51,9 +51,9 @@ export function StatsView({ onError, active = true }: Props) {
   const [report, setReport] = useState<UsageReport | null>(null);
   const [health, setHealth] = useState<HealthOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastRefreshAt, setLastRefreshAt] = useState<number | null>(null);
   const [autoRefresh, setAutoRefreshState] = useState(readAutoRefresh);
   const [scanError, setScanError] = useState("");
-  const [refreshKey, setRefreshKey] = useState(0);
   const [sourceFilter, setSourceFilter] = useState("all");
   const [providerFilter, setProviderFilter] = useState("all");
   const [modelFilter, setModelFilter] = useState("all");
@@ -62,13 +62,17 @@ export function StatsView({ onError, active = true }: Props) {
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
-  const reload = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setLoading(true);
+  const reload = useCallback(async (mode: "initial" | "auto" | "manual" = "initial") => {
+    if (mode !== "auto") setLoading(true);
     setScanError("");
     try {
-      const [nextReport, nextHealth] = await Promise.all([api.usageReport(days), api.healthOverview()]);
+      const [nextReport, nextHealth] = await Promise.all([
+        api.usageReport(days, mode === "manual"),
+        api.healthOverview(),
+      ]);
       setReport(nextReport);
       setHealth(nextHealth);
+      setLastRefreshAt(Date.now());
     } catch (error) {
       const message = errorText(error);
       setScanError(message);
@@ -79,13 +83,13 @@ export function StatsView({ onError, active = true }: Props) {
   }, [days]);
 
   useEffect(() => {
-    void reload(true);
-  }, [reload, refreshKey]);
+    void reload("initial");
+  }, [reload]);
 
   useEffect(() => {
     if (!autoRefresh || !active) return;
     const timer = window.setInterval(() => {
-      if (active && document.visibilityState === "visible") void reload(false);
+      void reload("auto");
     }, autoRefresh * 1000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, active, reload]);
@@ -273,9 +277,14 @@ export function StatsView({ onError, active = true }: Props) {
           <option value={30}>每 30 秒</option>
           <option value={60}>每 60 秒</option>
         </select>
-        <button className="ghost small" onClick={() => void reload(true)} disabled={loading}>
+        <button className="ghost small" onClick={() => void reload("manual")} disabled={loading}>
           {loading ? <span className="spin" /> : null} 重新掃描
         </button>
+        {lastRefreshAt ? (
+          <span className="stats-updated muted small" title={timeText(lastRefreshAt)}>
+            更新 {new Date(lastRefreshAt).toLocaleTimeString()}
+          </span>
+        ) : null}
       </header>
 
       {loading ? (
@@ -290,7 +299,7 @@ export function StatsView({ onError, active = true }: Props) {
         <div className="stats-scan-state error">
           <strong>掃描失敗</strong>
           <span>{scanError}</span>
-          <button className="ghost small" onClick={() => setRefreshKey((value) => value + 1)}>再試一次</button>
+          <button className="ghost small" onClick={() => void reload("manual")}>再試一次</button>
         </div>
       ) : report ? (
         <>
