@@ -33,11 +33,20 @@ function readAutoRefresh(): number {
   }
 }
 
-interface Props {
-  onError: (message: string) => void;
+function statusTone(status: string): string {
+  const value = status.toLowerCase();
+  if (["completed", "ok", "success", "200"].includes(value)) return "ok";
+  if (["failed", "error", "err"].includes(value)) return "err";
+  if (value === "429" || /^5\d\d$/.test(value) || value.includes("timeout")) return "warn";
+  return "info";
 }
 
-export function StatsView({ onError }: Props) {
+interface Props {
+  onError: (message: string) => void;
+  active?: boolean;
+}
+
+export function StatsView({ onError, active = true }: Props) {
   const [days, setDays] = useState(30);
   const [report, setReport] = useState<UsageReport | null>(null);
   const [health, setHealth] = useState<HealthOverview | null>(null);
@@ -74,19 +83,12 @@ export function StatsView({ onError }: Props) {
   }, [reload, refreshKey]);
 
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoRefresh || !active) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void reload(false);
+      if (active && document.visibilityState === "visible") void reload(false);
     }, autoRefresh * 1000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void reload(false);
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [autoRefresh, reload]);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, active, reload]);
 
   const setAutoRefresh = (value: number) => {
     setAutoRefreshState(value);
@@ -471,7 +473,7 @@ export function StatsView({ onError }: Props) {
                           <td><span className="badge subtle">{sourceLabel(item.source)}</span></td>
                           <td className="mono">{item.provider || "—"}</td>
                           <td className="mono">{item.model}</td>
-                          <td><span className={`badge ${item.status === "completed" || item.status === "200" ? "ok" : item.status === "failed" || item.status === "error" ? "err" : "subtle"}`}>{item.status}</span></td>
+                          <td><span className={`badge ${statusTone(item.status)}`} title={item.status}>{item.status}</span></td>
                           <td className="mono">{item.duration_ms ? durationText(item.duration_ms) : "—"}</td>
                           <td className="mono">{fmt(item.input)}</td>
                           <td className="mono">{fmt(item.output)}{item.reasoning ? <small className="stat-subvalue">+{fmt(item.reasoning)}</small> : null}</td>

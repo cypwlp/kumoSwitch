@@ -1447,7 +1447,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         dayRows.push({ day: d, source: "dsh", input: Math.round(input * 0.22), output: Math.round(output * 0.18), total: Math.round(input * 0.22) + Math.round(output * 0.18) });
       }
       const requests = [
-        { ts: Date.now() - 12 * 60_000, source: "pi", provider: "commandcode", model: "deepseek/deepseek-v4.1-flash", status: "completed", input: 603_544, output: 276, cache: 0, reasoning: 0, duration_ms: 6594, cost: 0.00419, id: "7f3c5fc0" },
+        { ts: Date.now() - 12 * 60_000, source: "pi", provider: "commandcode", model: "deepseek/deepseek-v4.1-flash", status: "toolUse", input: 603_544, output: 276, cache: 0, reasoning: 0, duration_ms: 6594, cost: 0.00419, id: "7f3c5fc0" },
         { ts: Date.now() - 13 * 60_000, source: "pi", provider: "commandcode", model: "deepseek/deepseek-v4.1-flash", status: "completed", input: 602_872, output: 61, cache: 0, reasoning: 0, duration_ms: 4657, cost: 0.00395, id: "ad47b067" },
         { ts: Date.now() - 18 * 60_000, source: "dsh", provider: "openConfig", model: "hy4-flash", status: "completed", input: 429_300, output: 0, cache: 0, reasoning: 0, duration_ms: 76_000, cost: null, id: "dsh-hy4-1" },
         { ts: Date.now() - 19 * 60_000, source: "dsh", provider: "deepseek-official", model: "DeepSeek V4.1 Flash 1017", status: "completed", input: 198_500, output: 0, cache: 0, reasoning: 0, duration_ms: 11_170, cost: 0.0034, id: "dsh-ds-1" },

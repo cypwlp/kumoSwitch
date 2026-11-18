@@ -1170,7 +1170,7 @@ export default function App() {
           ) : showProxy ? (
             <ProxyView onError={(m) => push(m, "err")} onToast={(m, k) => push(m, k ?? "ok")} />
           ) : showStats ? (
-            <StatsView onError={(m) => push(m, "err")} />
+            <StatsView onError={(m) => push(m, "err")} active={showStats} />
           ) : showProfiles ? (
             <ProfilesView
               onError={(message) => push(message, "err")}

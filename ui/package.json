@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "i18n:check": "node ../.github/scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.1.1",

@@ -490,6 +490,7 @@ html, body {
 .badge.warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-tint); }
 .badge.err { color: var(--danger); border-color: var(--danger-line); background: var(--danger-tint); }
 .badge.subtle { opacity: 0.75; }
+.badge.info { color: var(--link-fg); border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); background: var(--note-tint); }
 
 .banner {
   display: flex; gap: 8px; align-items: baseline;

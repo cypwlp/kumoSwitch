@@ -601,6 +601,20 @@ test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
   await expect(page.getByText("掃描診斷")).toBeVisible();
 });
 
+test("recent request status uses readable tones", async ({ page }) => {
+  await openWorkspace(page, "用量統計");
+  const rows = page.locator(".request-grid tbody tr");
+  const tones = await rows.evaluateAll((items) =>
+    items.map((row) => {
+      const badge = row.querySelector("td:nth-child(5) .badge");
+      return { text: badge?.textContent?.trim(), cls: badge?.className, title: badge?.getAttribute("title") };
+    }),
+  );
+  expect(tones.length).toBeGreaterThan(0);
+  expect(tones.every((item) => item.title === item.text)).toBe(true);
+  expect(tones.some((item) => item.cls?.includes("badge info"))).toBe(true);
+});
+
 test("usage dashboard auto refresh preference persists", async ({ page }) => {
   await openWorkspace(page, "用量統計");
   const select = page.getByLabel("自動重新整理");

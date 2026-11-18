@@ -38,6 +38,8 @@ jobs:
       - run: npm ci --prefix ui
       - name: Verify version consistency
         run: node .github/scripts/verify-version.mjs
+      - name: Report unlisted i18n strings
+        run: node .github/scripts/check-i18n.mjs
       - run: npm run build --prefix ui
       - name: Rust tests
         shell: pwsh

@@ -1,6 +1,9 @@
 # Changelog
 
 ## 未發布
+- **統計刷新更省資源**：只有統計儀表板正在顯示時才輪詢；離開視圖立即停 timer。
+- **請求狀態可讀性**：`stop`／`toolUse` 顯示中性藍、`429`／`5xx`／`timeout` 顯示警告黃、成功與失敗維持綠／紅，滑過顯示原始值。
+- **i18n 清單腳本**：`npm run i18n:check` 掃描 UI 原始碼中未收錄的中文，CI 會輸出清單（不阻斷）。
 - **文件與截圖更新**：README／官網改用 0.26 新版介面截圖，並把 Harness／diff 文案改成工具／變更預覽。
 - **第三方授權宣告**：新增 `THIRD-PARTY-NOTICES.md`（npm 136、Rust 570 個套件）與自動產生腳本。
 - **簽章流程文件**：新增 `RELEASING.md`，記錄 Windows Authenticode、macOS 公證與 Tauri updater secrets；CI 已支援選用 signing，無需改動捆綁流程。
