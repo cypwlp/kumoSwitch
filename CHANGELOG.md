@@ -1,6 +1,6 @@
 # Changelog
 
-## 未發布
+## 0.27.1 — 2026-11-17
 - **統計範圍下拉**：新增「今天／近 7／30／90／365 天」，今天只取當日 session log。
 - **每日用量三維度**：圖表改為輸入／輸出／快取命中堆疊，並顯示各維度總量。
 - **Codex 模型來源**：從 Codex `session_meta` 讀取實際模型與 provider，不再一律顯示 `codex-session`；本質上仍只能讀 Codex session log，因為其他本機檔沒有穩定 token 欄位。
