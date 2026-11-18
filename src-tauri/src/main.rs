@@ -1710,35 +1710,98 @@ fn proxy_save(mut config: proxy::ProxyConfig) -> Result<proxy::ProxyConfig, Stri
     Ok(config)
 }
 
+fn proxy_provider(tool: &str, config: &proxy::ProxyConfig) -> Provider {
+    let existing = store::list(tool)
+        .into_iter()
+        .find(|provider| provider.config_id == "kumoswitch-proxy");
+    let mut provider = existing.unwrap_or_default();
+    provider.config_id = "kumoswitch-proxy".into();
+    provider.name = "kumoSwitch 代理".into();
+    provider.base_url = format!("http://127.0.0.1:{}/v1", config.port);
+    provider.api_key = "kumoswitch-proxy".into();
+    provider.api_key_enc.clear();
+    provider.model.clear();
+    provider.models.clear();
+    provider.kind.clear();
+    provider.note = "一鍵代理模式；上游切換即時生效".into();
+    provider.profile_id.clear();
+    provider.api_keys.clear();
+    provider.last_used = 0;
+    provider.model_synced_at = 0;
+    provider.previous_model.clear();
+    provider.model_sync_interval_secs = adapters::default_model_sync_interval_secs();
+    provider.model_sync_jitter_secs = adapters::default_model_sync_jitter_secs();
+    provider.model_sync_next_at = 0;
+    provider.model_sync_retry_at = 0;
+    provider.model_sync_failures = 0;
+    provider.model_sync_last_error.clear();
+    provider
+}
+
 /// Point a tool at the local proxy by applying a dedicated provider entry.
 #[tauri::command]
 fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, String> {
     let config = store::load().proxy;
-    let provider = Provider {
-        id: String::new(),
-        config_id: "kumoswitch-proxy".into(),
-        name: "kumoSwitch 代理".into(),
-        base_url: format!("http://127.0.0.1:{}/v1", config.port),
-        api_key: "kumoswitch-proxy".into(),
-        api_key_enc: String::new(),
-        model: String::new(),
-        models: Vec::new(),
-        kind: String::new(),
-        note: "經本地代理＋故障轉移".into(),
-        profile_id: String::new(),
-        api_keys: Vec::new(),
-        last_used: 0,
-            model_synced_at: 0,
-            previous_model: String::new(),
-            model_sync_interval_secs: adapters::default_model_sync_interval_secs(),
-            model_sync_jitter_secs: adapters::default_model_sync_jitter_secs(),
-            model_sync_next_at: 0,
-            model_sync_retry_at: 0,
-            model_sync_failures: 0,
-            model_sync_last_error: String::new(),
-    };
+    let provider = proxy_provider(&tool, &config);
     let saved = store::upsert(&tool, provider)?;
     let result = apply_core(&tool, &saved.id)?;
+    tray::refresh(&app);
+    Ok(result)
+}
+
+/// One-click proxy mode: enable routing, register every provider as a target,
+/// and point the tool at the local proxy. Existing sessions keep working because
+/// the tool config stays pointed at 127.0.0.1; upstream changes need no restart.
+#[tauri::command]
+fn proxy_quick_start(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, String> {
+    let _spec = spec(&tool)?;
+    let mut data = store::load();
+    let providers = data.providers.get(&tool).cloned().unwrap_or_default();
+    let mut targets = Vec::new();
+    for (index, provider) in providers.iter().enumerate() {
+        let reference = format!("{tool}:{}", provider.id);
+        if !targets.contains(&reference) {
+            targets.push(reference.clone());
+        }
+        data.proxy.policies.entry(reference).or_insert_with(|| proxy::ProxyTargetPolicy {
+            weight: 100,
+            priority: 100 - index.min(100) as i32,
+            timeout_secs: 30,
+            failure_cooldown_secs: 60,
+            backoff_429_secs: 30,
+            failure_threshold: 3,
+            max_concurrency: 16,
+            allowed_models: Vec::new(),
+            model_map: std::collections::BTreeMap::new(),
+        });
+    }
+    if targets.is_empty() {
+        return Err("這個工具還沒有供應商，請先新增或匯入".into());
+    }
+    let current = adapters::read_current(&adapters::find(&tool).unwrap());
+    if !current.base_url.is_empty()
+        && !current.base_url.contains("127.0.0.1")
+        && !current.base_url.contains("localhost")
+    {
+        data.proxy.attached.insert(tool.clone(), current.base_url.clone());
+    }
+    data.proxy.stack.retain(|reference| !reference.starts_with(&format!("{tool}:")));
+    for reference in &targets {
+        if !data.proxy.stack.contains(reference) {
+            data.proxy.stack.push(reference.clone());
+        }
+    }
+    data.proxy.enabled = true;
+    store::save(&data)?;
+    proxy::start().map_err(|error| format!("代理啟動失敗：{error}"))?;
+    drop(data);
+
+    let config = store::load().proxy;
+    let provider = proxy_provider(&tool, &config);
+    let saved = store::upsert(&tool, provider)?;
+    let result = apply_core(&tool, &saved.id)?;
+    audit::record("proxy.quick_start", format!("{tool}:targets={}", targets.len()));
+    let _ = app.emit("kumoswitch://changed", ());
     tray::refresh(&app);
     Ok(result)
 }
@@ -2555,6 +2618,7 @@ fn main() {
             proxy_export_diagnostics,
             proxy_save,
             proxy_attach,
+            proxy_quick_start,
             export_providers_encrypted,
             export_diagnostics,
             import_providers_json,

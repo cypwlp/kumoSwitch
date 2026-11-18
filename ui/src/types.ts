@@ -519,6 +519,7 @@ export interface ProxyConfig {
   stack: string[];
   strategy: RoutingStrategy;
   policies: Record<string, ProxyTargetPolicy>;
+  attached?: Record<string, string>;
   alerts: ProxyAlertRules;
 }
 

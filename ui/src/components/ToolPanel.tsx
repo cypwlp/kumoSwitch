@@ -25,6 +25,7 @@ interface PanelProps {
   onRefreshCcSwitch: () => void;
   onImportCcSwitchBatch: (providerIds: string[]) => void;
   onMirrorCcSwitchRoute: () => void;
+  onProxyMode: () => void;
   onApply: (provider: Provider) => void;
   onReorder: (ids: string[]) => void;
   onSwitchModel: (provider: Provider, modelId: string) => void;
@@ -67,6 +68,7 @@ export function ToolPanel({
   onRefreshCcSwitch,
   onImportCcSwitchBatch,
   onMirrorCcSwitchRoute,
+  onProxyMode,
   onApply,
   onReorder,
   onSwitchModel,
@@ -256,6 +258,9 @@ export function ToolPanel({
           </button>
           {moreOpen ? (
             <div className="more-menu" id="harness-more-menu" role="menu" ref={moreMenuRef}>
+              <button type="button" role="menuitem" onClick={menuAction(onProxyMode)}>
+                一鍵代理模式（即時切換）
+              </button>
               <button type="button" role="menuitem" onClick={menuAction(onPalette)}>
                 快速切換 <kbd>Ctrl</kbd><kbd>K</kbd>
               </button>

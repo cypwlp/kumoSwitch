@@ -25,6 +25,7 @@ const EMPTY_CONFIG: ProxyConfig = {
   stack: [],
   strategy: "ordered",
   policies: {},
+  attached: {},
   alerts: { enabled: true, notify: true, min_requests: 5, success_rate_below_pct: 70, slow_ttfb_ms: 8000, cooldown_secs: 300 },
 };
 
@@ -146,12 +147,21 @@ export function ProxyView({ onError, onToast }: Props) {
     }
   };
 
-  const attach = async () => {
+  const attach = async (oneClick = false) => {
     if (!attachTool) return;
     setBusy(true);
     try {
-      const result = await api.proxyAttach(attachTool);
-      onToastRef.current(result.message, "ok");
+      const result = oneClick
+        ? await api.proxyQuickStart(attachTool)
+        : await api.proxyAttach(attachTool);
+      onToastRef.current(oneClick ? "一鍵代理已啟用；上游切換即時生效" : result.message, "ok");
+      setConfig(await api.proxyStatus());
+      const [nextTools, nextProviders] = await Promise.all([
+        api.toolList(),
+        Promise.all(attachTool ? [api.providerList(attachTool)] : []),
+      ]);
+      setTools(nextTools);
+      setProviders(attachTool && nextProviders[0] ? { [attachTool]: nextProviders[0] } : {});
     } catch (err) {
       onError(errorText(err));
     } finally {
@@ -237,6 +247,7 @@ export function ProxyView({ onError, onToast }: Props) {
                 <input type="checkbox" checked={index >= 0} onChange={() => toggle(row.ref)} />
                 {index >= 0 ? <span className="badge ok">#{index + 1}</span> : <span className="badge subtle">未加入</span>}
                 <span className="onboard-name">{row.label}</span>
+                {config.attached?.[row.ref.split(":")[0]] ? <span className="badge ok">代理中</span> : null}
                 {metric ? <span className="proxy-inline-metrics">{percent(metric.success_rate)} · {metric.avg_ttfb_ms}ms{metric.circuit_open_until > Date.now() ? <span className="badge warn">冷卻中</span> : null}</span> : null}
               </label>
               {index >= 0 ? (
@@ -280,14 +291,19 @@ export function ProxyView({ onError, onToast }: Props) {
         })}
       </div>
 
-      <h3 className="stats-sub">把工具掛載到代理</h3>
+      <h3 className="stats-sub">一鍵代理模式</h3>
       <div className="proxy-row">
-        <select className="mini-select" value={attachTool} onChange={(event) => setAttachTool(event.target.value)}>
+        <select className="mini-select" value={attachTool} onChange={(event) => setAttachTool(event.target.value)} aria-label="選擇代理工具">
           <option value="">選擇工具…</option>
           {tools.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
         </select>
-        <button className="ghost" onClick={() => void attach()} disabled={busy || !attachTool}>寫入代理設定</button>
-        <span className="muted small">會把該工具的 base URL 指向 127.0.0.1:{config.port}/v1</span>
+        <button className="primary" onClick={() => void attach(true)} disabled={busy || !attachTool}>一鍵啟用</button>
+        <button className="ghost" onClick={() => void attach(false)} disabled={busy || !attachTool}>只寫入代理設定</button>
+        {attachTool && config.attached?.[attachTool] ? (
+          <span className="muted small">原網址 {config.attached[attachTool]}</span>
+        ) : (
+          <span className="muted small">啟用後全部切換即時生效，工具仍指向 127.0.0.1:{config.port}/v1</span>
+        )}
       </div>
 
       <div className="proxy-observability">

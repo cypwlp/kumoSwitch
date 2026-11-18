@@ -1082,6 +1082,21 @@ export default function App() {
     }
   };
 
+  const startProxyMode = async () => {
+    if (!selectedId) return;
+    setBusy(true);
+    try {
+      const result = await api.proxyQuickStart(selectedId);
+      await reload(selectedId);
+      push("一鍵代理已啟用；上游切換即時生效", "ok");
+      if (!result.changed) push("工具已指向本機代理", "ok");
+    } catch (error) {
+      push(errorText(error), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const toggleCcSwitchBridge = async (enabled: boolean) => {
     try {
       const saved = await api.setCcSwitchBridge(enabled);
@@ -1263,6 +1278,7 @@ export default function App() {
               onRefreshCcSwitch={() => void refreshCcSwitch()}
               onImportCcSwitchBatch={(ids) => void importCcSwitchBatch(ids)}
               onMirrorCcSwitchRoute={() => void mirrorCcSwitchRoute()}
+          onProxyMode={() => void startProxyMode()}
               sort={sort}
               onSort={setSort}
               simple={preferences.uiMode !== "advanced"}

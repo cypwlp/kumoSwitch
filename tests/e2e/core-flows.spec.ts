@@ -636,6 +636,13 @@ test("usage dashboard shows per-request history", async ({ page }) => {
   await expect(rows).toHaveCount(2);
 });
 
+test("one-click proxy mode is available from tool menu", async ({ page }) => {
+  await page.getByRole("button", { name: "更多" }).first().click();
+  await expect(page.getByRole("menuitem", { name: "一鍵代理模式（即時切換）" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "一鍵代理模式（即時切換）" }).click();
+  await expect(page.getByText("一鍵代理已啟用；上游切換即時生效")).toBeVisible();
+});
+
 test("proxy route strategy and observability are usable", async ({ page }) => {
   await openWorkspace(page, "代理與路由");
   await expect(page.getByRole("heading", { name: "代理／故障轉移" })).toBeVisible();

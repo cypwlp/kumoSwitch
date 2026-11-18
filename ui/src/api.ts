@@ -119,6 +119,7 @@ export const api = {
   proxyExportDiagnostics: (destination?: string) => call<ExportResult>("proxy_export_diagnostics", { destination }),
   proxySave: (config: ProxyConfig) => call<ProxyConfig>("proxy_save", { config }),
   proxyAttach: (tool: string) => call<ApplyResult>("proxy_attach", { tool }),
+  proxyQuickStart: (tool: string) => call<ApplyResult>("proxy_quick_start", { tool }),
   exportProvidersEncrypted: (password: string, destination?: string) => call<ExportResult>("export_providers_encrypted", { password, destination }),
   exportDiagnostics: (destination?: string) => call<ExportResult>("export_diagnostics", { destination }),
   importProvidersJson: (text: string) => call<JsonImportResult>("import_providers_json", { text }),

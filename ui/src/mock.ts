@@ -1313,6 +1313,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         rules: { enabled: true, notify: true, min_requests: 5, success_rate_below_pct: 70, slow_ttfb_ms: 8000, cooldown_secs: 300 },
       } satisfies ProxyMetrics;
     case "proxy_attach":
+    case "proxy_quick_start":
       return { changed: true, backup_id: "mock", written: ["config"], message: "已掛載代理" };
 
     case "import_scan":

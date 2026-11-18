@@ -171,6 +171,9 @@ pub struct ProxyConfig {
     /// Per-target routing and resiliency policy, keyed by "tool:provider_id".
     #[serde(default)]
     pub policies: BTreeMap<String, ProxyTargetPolicy>,
+    /// Tool id -> original base URL before proxy attachment.
+    #[serde(default)]
+    pub attached: BTreeMap<String, String>,
     #[serde(default)]
     pub alerts: ProxyAlertRules,
 }
@@ -187,6 +190,7 @@ impl Default for ProxyConfig {
             stack: Vec::new(),
             strategy: RoutingStrategy::Ordered,
             policies: BTreeMap::new(),
+            attached: BTreeMap::new(),
             alerts: ProxyAlertRules::default(),
         }
     }
