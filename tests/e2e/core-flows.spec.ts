@@ -590,6 +590,13 @@ test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
   await expect(page.locator(".scan-root").getByText("Claude Code")).toBeVisible();
   await expect(page.locator(".scan-root").getByText("Codex", { exact: true })).toBeVisible();
   await expect(page.locator(".scan-root").getByText("DSH", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("統計範圍")).toBeVisible();
+  await expect(page.getByLabel("統計範圍")).toContainText("今天");
+  await expect(page.locator(".day-chart-legend")).toContainText("快取");
+  await expect(page.locator(".source-overheads")).toContainText("固定開銷");
+  await page.getByLabel("統計範圍").selectOption("0");
+  await expect(page.getByRole("heading", { name: "每日用量（今天）" })).toBeVisible();
+  await page.getByLabel("統計範圍").selectOption("30");
   await page.getByLabel("來源篩選").selectOption("pi");
   await expect(page.locator(".stats .grid:not(.request-grid) tbody tr")).toHaveCount(1);
   await expect(page.locator(".stats .grid:not(.request-grid) tbody")).toContainText("deepseek-v4.1-flash");

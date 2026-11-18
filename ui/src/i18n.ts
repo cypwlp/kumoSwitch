@@ -767,6 +767,15 @@ const DICT: Record<string, string> = {
   "讓目前正在使用的工具不必重開也能換上游；第一次啟用需重開一次對話。": "Switch upstream without restarting the tool. Restart the current chat once when enabling for the first time.",
   "管理即時切換": "Manage instant switch",
   "目前對話需重開一次；之後切換即時生效": "Restart the current chat once; later switches apply immediately",
+  "今天": "Today",
+  "近 7 天": "Last 7 days",
+  "近 30 天": "Last 30 days",
+  "近 90 天": "Last 90 days",
+  "近 365 天": "Last 365 days",
+  "固定開銷": "Fixed overhead",
+  "每日用量（今天）": "Daily usage (today)",
+  "各工具固定開銷": "Fixed overhead by tool",
+  "每日 token 用量：輸入、輸出與快取": "Daily token usage: input, output and cache",
 };
 
 interface Rule {

@@ -214,12 +214,13 @@ export function StatsView({ onError, active = true }: Props) {
   }, [filteredRows]);
 
   const chartDays = useMemo(() => {
-    const map = new Map<string, { input: number; output: number; total: number }>();
+    const map = new Map<string, { input: number; output: number; cache: number; total: number }>();
     for (const day of report?.days ?? []) {
       if (sourceFilter !== "all" && day.source !== sourceFilter) continue;
-      const entry = map.get(day.day) ?? { input: 0, output: 0, total: 0 };
+      const entry = map.get(day.day) ?? { input: 0, output: 0, cache: 0, total: 0 };
       entry.input += day.input;
       entry.output += day.output;
+      entry.cache += day.cache;
       entry.total += day.total;
       map.set(day.day, entry);
     }
@@ -227,6 +228,20 @@ export function StatsView({ onError, active = true }: Props) {
       .map(([day, value]) => ({ day, ...value }))
       .sort((a, b) => a.day.localeCompare(b.day));
   }, [report, sourceFilter]);
+
+  const sourceOverheads = useMemo(() => {
+    const groups = new Map<string, { total: number; weight: number }>();
+    for (const row of filteredRows) {
+      if (row.fixed_overhead_ms == null || !row.timed_records) continue;
+      const entry = groups.get(row.source) ?? { total: 0, weight: 0 };
+      entry.total += row.fixed_overhead_ms * row.timed_records;
+      entry.weight += row.timed_records;
+      groups.set(row.source, entry);
+    }
+    return [...groups.entries()]
+      .map(([source, value]) => ({ source, ms: Math.round(value.total / value.weight) }))
+      .sort((a, b) => a.source.localeCompare(b.source));
+  }, [filteredRows]);
 
   const maxDay = useMemo(() => Math.max(...chartDays.map((day) => day.total), 1), [chartDays]);
   const hasUsage = Boolean(report && report.records > 0);
@@ -238,13 +253,13 @@ export function StatsView({ onError, active = true }: Props) {
         <h2>統計儀表板</h2>
         <span className="muted small">只讀本機 session log，統計 Claude Code、Codex、Pi、Oh My Pi、DSH</span>
         <div className="spacer" />
-        <div className="segmented compact" role="group" aria-label="統計範圍">
-          {[7, 30, 90].map((value) => (
-            <button key={value} className={days === value ? "on" : ""} onClick={() => setDays(value)} disabled={loading}>
-              {value} 天
-            </button>
-          ))}
-        </div>
+        <select className="mini-select" aria-label="統計範圍" value={days} onChange={(event) => setDays(Number(event.target.value))} disabled={loading}>
+          <option value={0}>今天</option>
+          <option value={7}>近 7 天</option>
+          <option value={30}>近 30 天</option>
+          <option value={90}>近 90 天</option>
+          <option value={365}>近 365 天</option>
+        </select>
         <select
           className="mini-select"
           aria-label="自動重新整理"
@@ -376,19 +391,39 @@ export function StatsView({ onError, active = true }: Props) {
 
           {hasUsage ? (
             <>
-              <h3 className="stats-sub">每日用量（近 {report.days_scanned} 天）</h3>
+              <h3 className="stats-sub">每日用量（{report.days_scanned === 0 ? "今天" : `近 ${report.days_scanned} 天`}）</h3>
               {chartDays.length === 0 ? (
                 <div className="empty small">這個範圍內沒有用量記錄</div>
               ) : (
-                <div className="day-chart" role="img" aria-label="每日 token 用量">
+                <>
+                <div className="day-chart-legend">
+                  <span><i className="seg input" />輸入 {fmt(chartDays.reduce((sum, day) => sum + day.input, 0))}</span>
+                  <span><i className="seg output" />輸出 {fmt(chartDays.reduce((sum, day) => sum + day.output, 0))}</span>
+                  <span><i className="seg cache" />快取 {fmt(chartDays.reduce((sum, day) => sum + day.cache, 0))}</span>
+                </div>
+                <div className="day-chart stacked" role="img" aria-label="每日 token 用量：輸入、輸出與快取">
                   {chartDays.map((day) => (
-                    <div key={day.day} className="day-col" title={`${day.day} · ${fmt(day.total)} tokens`}>
-                      <i style={{ height: `${Math.max(4, Math.round((day.total / maxDay) * 100))}%` }} />
+                    <div key={day.day} className="day-col" title={`${day.day} · 輸入 ${fmt(day.input)} · 輸出 ${fmt(day.output)} · 快取 ${fmt(day.cache)} tokens`}>
+                      <div className="stack-bars" style={{ height: `${Math.max(4, Math.round((day.total / maxDay) * 100))}%` }}>
+                        <i className="seg input" style={{ flex: day.input }} />
+                        <i className="seg output" style={{ flex: day.output }} />
+                        <i className="seg cache" style={{ flex: day.cache }} />
+                      </div>
                       <span>{day.day.slice(5)}</span>
                     </div>
                   ))}
                 </div>
+                </>
               )}
+
+              {sourceOverheads.length ? (
+                <div className="source-overheads">
+                  <span className="muted small">各工具固定開銷</span>
+                  {sourceOverheads.map((item) => (
+                    <span className="badge subtle" key={item.source}>{sourceLabel(item.source)} · {durationText(item.ms)}</span>
+                  ))}
+                </div>
+              ) : null}
 
               <h3 className="stats-sub">依模型</h3>
               {filteredRows.length === 0 ? (
@@ -406,6 +441,7 @@ export function StatsView({ onError, active = true }: Props) {
                         <th className="col-records">筆數</th>
                         <th className="col-avg" title="有計時資料的請求平均花費時間">平均</th>
                         <th title="duration 對輸出 tokens 迴歸估算的解碼速度；已扣掉固定等待，滑過儲存格可看 P50">解碼速度</th>
+                        <th title="每個請求估算的固定等待：首字、排隊、重試與網路">固定開銷</th>
                         <th className="col-ttft" title="首字延遲估算（目前只有 Claude Code 時間戳可推算）">首字</th>
                         <th>估算成本</th>
                       </tr>
@@ -426,6 +462,7 @@ export function StatsView({ onError, active = true }: Props) {
                           <td className="mono" title={`P50 有效吞吐 ${speedText(row.median_output_per_sec)}；總量 ${speedText(row.output_per_sec)}；慢請求 ${row.slow_records} 筆`}>
                             {speedText(row.decode_output_per_sec)}
                           </td>
+                          <td className="mono">{durationText(row.fixed_overhead_ms)}</td>
                           <td className="mono col-ttft">{row.ttft_ms == null ? "—" : `${fmt(row.ttft_ms)}ms`}</td>
                           <td className="mono">{money(row.cost)}</td>
                         </tr>

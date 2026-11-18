@@ -1443,14 +1443,18 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       ];
       const dayRows = [];
       const now = Date.now();
-      for (let i = Math.min(days, 14) - 1; i >= 0; i -= 1) {
+      for (let i = Math.min(days || 1, 14) - 1; i >= 0; i -= 1) {
         const d = new Date(now - i * 86400_000).toISOString().slice(0, 10);
         const input = 120_000 + ((i * 37) % 90) * 1000;
         const output = 9000 + ((i * 13) % 40) * 100;
-        dayRows.push({ day: d, source: "claude", input, output, total: input + output });
-        dayRows.push({ day: d, source: "codex", input: Math.round(input * 0.4), output: Math.round(output * 0.3), total: Math.round(input * 0.4) + Math.round(output * 0.3) });
-        dayRows.push({ day: d, source: "pi", input: Math.round(input * 0.15), output: Math.round(output * 0.12), total: Math.round(input * 0.15) + Math.round(output * 0.12) });
-        dayRows.push({ day: d, source: "dsh", input: Math.round(input * 0.22), output: Math.round(output * 0.18), total: Math.round(input * 0.22) + Math.round(output * 0.18) });
+        const cache = Math.round(input * 0.8);
+        dayRows.push({ day: d, source: "claude", input, output, cache, total: input + output + cache });
+        const inCodex = Math.round(input * 0.4), outCodex = Math.round(output * 0.3), cacheCodex = Math.round(inCodex * 0.7);
+        dayRows.push({ day: d, source: "codex", input: inCodex, output: outCodex, cache: cacheCodex, total: inCodex + outCodex + cacheCodex });
+        const inPi = Math.round(input * 0.15), outPi = Math.round(output * 0.12), cachePi = Math.round(inPi * 0.6);
+        dayRows.push({ day: d, source: "pi", input: inPi, output: outPi, cache: cachePi, total: inPi + outPi + cachePi });
+        const inDsh = Math.round(input * 0.22), outDsh = Math.round(output * 0.18), cacheDsh = Math.round(inDsh * 0.5);
+        dayRows.push({ day: d, source: "dsh", input: inDsh, output: outDsh, cache: cacheDsh, total: inDsh + outDsh + cacheDsh });
       }
       const requests = [
         { ts: Date.now() - 12 * 60_000, source: "pi", provider: "commandcode", model: "deepseek/deepseek-v4.1-flash", status: "toolUse", input: 603_544, output: 276, cache: 0, reasoning: 0, duration_ms: 6594, cost: 0.00419, id: "7f3c5fc0" },

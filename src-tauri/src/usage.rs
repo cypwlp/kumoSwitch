@@ -72,6 +72,7 @@ pub struct DayRow {
     pub source: String,
     pub input: u64,
     pub output: u64,
+    pub cache: u64,
     pub total: u64,
 }
 
@@ -283,7 +284,7 @@ enum Kind {
 #[derive(Clone, Default)]
 struct Contribution {
     models: BTreeMap<(String, String), Acc>,
-    days: BTreeMap<(String, String), (u64, u64)>,
+    days: BTreeMap<(String, String), (u64, u64, u64)>,
     records: usize,
     samples: Vec<UsageSample>,
 }
@@ -292,17 +293,18 @@ impl Contribution {
     fn merge_into(
         &self,
         models: &mut BTreeMap<(String, String), Acc>,
-        days: &mut BTreeMap<(String, String), (u64, u64)>,
+        days: &mut BTreeMap<(String, String), (u64, u64, u64)>,
         records: &mut usize,
         samples: &mut Vec<UsageSample>,
     ) {
         for ((source, model), acc) in &self.models {
             models.entry((source.clone(), model.clone())).or_default().merge(acc);
         }
-        for (key, (input, output)) in &self.days {
-            let entry = days.entry(key.clone()).or_insert((0, 0));
+        for (key, (input, output, cache)) in &self.days {
+            let entry = days.entry(key.clone()).or_insert((0, 0, 0));
             entry.0 += input;
             entry.1 += output;
+            entry.2 += cache;
         }
         *records += self.records;
         samples.extend(self.samples.iter().cloned());
@@ -327,7 +329,7 @@ struct Scanner<'a> {
     cutoff: &'a str,
     offset: u64,
     models: &'a mut BTreeMap<(String, String), Acc>,
-    days: &'a mut BTreeMap<(String, String), (u64, u64)>,
+    days: &'a mut BTreeMap<(String, String), (u64, u64, u64)>,
     records: &'a mut usize,
     samples: &'a mut Vec<UsageSample>,
 }
@@ -369,16 +371,17 @@ impl Scanner<'_> {
         });
     }
 
-    fn bump_day(&mut self, day: &str, source: &str, input: u64, output: u64) {
+    fn bump_day(&mut self, day: &str, source: &str, input: u64, output: u64, cache: u64) {
         if day.is_empty() {
             return;
         }
         let entry = self
             .days
             .entry((day.to_string(), source.to_string()))
-            .or_insert((0, 0));
+            .or_insert((0, 0, 0));
         entry.0 += input;
         entry.1 += output;
+        entry.2 += cache;
     }
 }
 
@@ -464,7 +467,7 @@ fn scan_claude(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         );
         let has_delta = delta.0 + delta.1 + delta.2 + delta.3 > 0;
         if has_delta {
-            scanner.bump_day(&day, scanner.source, delta.0, delta.1);
+            scanner.bump_day(&day, scanner.source, delta.0, delta.1, delta.2 + delta.3);
             *entry = (
                 entry.0.max(i),
                 entry.1.max(o),
@@ -541,7 +544,37 @@ fn scan_claude(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
     Ok(())
 }
 
+fn codex_session_meta(path: &Path) -> (String, String) {
+    let Ok(file) = File::open(path) else {
+        return (String::new(), String::new());
+    };
+    for line in BufReader::new(file).lines().flatten().take(40) {
+        if !line.contains("session_meta") {
+            continue;
+        }
+        let Ok(d) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let payload = d.get("payload").cloned().unwrap_or_default();
+        let provider = payload
+            .get("model_provider")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let model = payload
+            .get("base_instructions")
+            .and_then(|v| v.get("provenance"))
+            .and_then(|v| v.get("model"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        return (provider, model);
+    }
+    (String::new(), String::new())
+}
+
 fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
+    let (session_provider, session_model) = codex_session_meta(path);
     let file = File::open(path).map_err(|error| format!("{}：{error}", path.display()))?;
     let mut reader = BufReader::new(file);
     if scanner.offset > 0 {
@@ -572,6 +605,7 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         let model = payload
             .get("model")
             .and_then(|m| m.as_str())
+            .or_else(|| (!session_model.is_empty()).then_some(session_model.as_str()))
             .unwrap_or("codex-session")
             .to_string();
         let ts = d.get("timestamp").and_then(|t| t.as_str()).unwrap_or("").to_string();
@@ -591,11 +625,17 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
             .entry((scanner.source.to_string(), model.clone()))
             .or_default()
             .add_usage(i, o, cr, cw, true);
-        scanner.bump_day(&day, scanner.source, i, o);
+        scanner.bump_day(&day, scanner.source, i, o, cr + cw);
         *scanner.records += 1;
         if let Some(ts) = parse_iso_ms(&ts) {
             let id = payload.get("response_id").and_then(|v| v.as_str()).unwrap_or("");
-            scanner.push_sample(ts as u64, payload.get("model_provider_id").and_then(|v| v.as_str()).unwrap_or(""), &model, "completed", i, o, cr + cw, num(&usage, "reasoning_output_tokens"), 0, id);
+            let sample_provider = payload
+                .get("model_provider_id")
+                .and_then(|v| v.as_str())
+                .filter(|value| !value.is_empty())
+                .or_else(|| (!session_provider.is_empty()).then_some(session_provider.as_str()))
+                .unwrap_or("");
+            scanner.push_sample(ts as u64, sample_provider, &model, "completed", i, o, cr + cw, num(&usage, "reasoning_output_tokens"), 0, id);
         }
     }
     Ok(())
@@ -670,7 +710,7 @@ fn scan_agent_session(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), Stri
         if let Some(duration) = message.get("durationMs").and_then(|v| v.as_u64()) {
             acc.add_timing(duration, o, None);
         }
-        scanner.bump_day(&day, scanner.source, i, o);
+        scanner.bump_day(&day, scanner.source, i, o, cr + cw);
         *scanner.records += 1;
         if let Some(ts) = parse_iso_ms(ts) {
             let status = message.get("stopReason").and_then(|v| v.as_str()).unwrap_or("completed");
@@ -730,7 +770,7 @@ fn scan_dsh(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         if let Some(duration) = d.get("dur").and_then(|v| v.as_u64()) {
             acc.add_timing(duration, o, None);
         }
-        scanner.bump_day(&day, scanner.source, i, o);
+        scanner.bump_day(&day, scanner.source, i, o, cr + cw);
         *scanner.records += 1;
         let status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
         let id = d.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -896,7 +936,11 @@ pub fn report(days_back: u32) -> UsageReport {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let cutoff = epoch_day(now.saturating_sub(days_back as u64 * 86_400));
+    let cutoff = if days_back == 0 {
+        epoch_day(now)
+    } else {
+        epoch_day(now.saturating_sub(days_back as u64 * 86_400))
+    };
 
     let mut models = BTreeMap::new();
     let mut days = BTreeMap::new();
@@ -1067,7 +1111,14 @@ pub fn report(days_back: u32) -> UsageReport {
 
     let day_rows: Vec<DayRow> = days
         .into_iter()
-        .map(|((day, source), (i, o))| DayRow { day, source, input: i, output: o, total: i + o })
+        .map(|((day, source), (i, o, c))| DayRow {
+            day,
+            source,
+            input: i,
+            output: o,
+            cache: c,
+            total: i + o + c,
+        })
         .collect();
 
     let total_input: u64 = rows.iter().map(|r| r.input).sum();

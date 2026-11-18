@@ -451,7 +451,7 @@ export interface UsageSample {
   id: string;
 }
 
-export interface DayRow { day: string; source: string; input: number; output: number; total: number; }
+export interface DayRow { day: string; source: string; input: number; output: number; cache: number; total: number; }
 
 export interface UsageRoot {
   source: string;
