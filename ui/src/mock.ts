@@ -825,6 +825,7 @@ function buildPreview(tool: string, providerId: string): Preview {
 
 let counter = 100;
 let CC_BRIDGE_ENABLED = false;
+let PROXY_QUICK_ENABLED = false;
 let liveTestDailyLimit = 20;
 let liveTestMaxOutputTokens = 8;
 let liveTestUsed24h = 3;
@@ -1254,14 +1255,16 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
 
     case "proxy_status":
       return {
-        enabled: false,
+        enabled: PROXY_QUICK_ENABLED,
         port: 17890,
-        stack: [],
+        stack: PROXY_QUICK_ENABLED ? ["codex:cx-1", "codex:cx-2"] : [],
         strategy: "ordered",
         policies: {},
+        attached: PROXY_QUICK_ENABLED ? { codex: "https://opencode.ai/zen/go/v1" } : {},
         alerts: { enabled: true, notify: true, min_requests: 5, success_rate_below_pct: 70, slow_ttfb_ms: 8000, cooldown_secs: 300 },
       } satisfies ProxyConfig;
     case "proxy_save":
+      PROXY_QUICK_ENABLED = Boolean((args.config as ProxyConfig).enabled);
       return args.config;
     case "proxy_reset_metrics":
       return undefined;
@@ -1313,8 +1316,10 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         rules: { enabled: true, notify: true, min_requests: 5, success_rate_below_pct: 70, slow_ttfb_ms: 8000, cooldown_secs: 300 },
       } satisfies ProxyMetrics;
     case "proxy_attach":
-    case "proxy_quick_start":
       return { changed: true, backup_id: "mock", written: ["config"], message: "已掛載代理" };
+    case "proxy_quick_start":
+      PROXY_QUICK_ENABLED = true;
+      return { changed: true, backup_id: "mock", written: ["config"], message: "已啟用即時切換" };
 
     case "import_scan":
       return Object.entries(PROVIDERS).flatMap(([tool, list]) =>

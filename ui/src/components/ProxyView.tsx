@@ -154,7 +154,7 @@ export function ProxyView({ onError, onToast }: Props) {
       const result = oneClick
         ? await api.proxyQuickStart(attachTool)
         : await api.proxyAttach(attachTool);
-      onToastRef.current(oneClick ? "一鍵代理已啟用；上游切換即時生效" : result.message, "ok");
+      onToastRef.current(oneClick ? "已啟用即時切換。目前對話需重開一次；之後切換即時生效" : result.message, "ok");
       setConfig(await api.proxyStatus());
       const [nextTools, nextProviders] = await Promise.all([
         api.toolList(),
@@ -205,7 +205,7 @@ export function ProxyView({ onError, onToast }: Props) {
   return (
     <section className="stats proxy-view">
       <header className="stats-head">
-        <h2>代理／故障轉移</h2>
+        <h2>即時切換與故障轉移</h2>
         <span className="muted small">連線池、智慧路由、冷卻與即時觀測</span>
       </header>
 
@@ -291,13 +291,13 @@ export function ProxyView({ onError, onToast }: Props) {
         })}
       </div>
 
-      <h3 className="stats-sub">一鍵代理模式</h3>
+      <h3 className="stats-sub">一鍵即時切換</h3>
       <div className="proxy-row">
         <select className="mini-select" value={attachTool} onChange={(event) => setAttachTool(event.target.value)} aria-label="選擇代理工具">
           <option value="">選擇工具…</option>
           {tools.map((tool) => <option key={tool.id} value={tool.id}>{tool.name}</option>)}
         </select>
-        <button className="primary" onClick={() => void attach(true)} disabled={busy || !attachTool}>一鍵啟用</button>
+        <button className="primary" onClick={() => void attach(true)} disabled={busy || !attachTool}>一鍵啟用即時切換</button>
         <button className="ghost" onClick={() => void attach(false)} disabled={busy || !attachTool}>只寫入代理設定</button>
         {attachTool && config.attached?.[attachTool] ? (
           <span className="muted small">原網址 {config.attached[attachTool]}</span>

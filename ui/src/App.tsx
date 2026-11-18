@@ -15,6 +15,7 @@ import type {
   ImportDecision,
   EncryptedBackupInfo,
   ModelProfile,
+  ProxyConfig,
 } from "./types";
 import { Rail } from "./components/Rail";
 import { ToolPanel } from "./components/ToolPanel";
@@ -120,6 +121,14 @@ export default function App() {
   useEffect(() => {
     applyLang(readLang());
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void api.proxyStatus()
+      .then((config) => { if (alive) setProxyConfig(config); })
+      .catch(() => { /* proxy status is optional */ });
+    return () => { alive = false; };
+  }, []);
   const [recent, setRecent] = useState<RecentSwitch[]>(readRecent);
   const [pins, setPins] = useState<PinMap>(readPins);
 
@@ -143,6 +152,7 @@ export default function App() {
   const [updateChannel, setUpdateChannel] = useState("stable");
   const [preUpdateBackup, setPreUpdateBackup] = useState(true);
   const [ccSwitchBridge, setCcSwitchBridge] = useState(false);
+  const [proxyConfig, setProxyConfig] = useState<ProxyConfig | null>(null);
   const [feedbackReport, setFeedbackReport] = useState<import("./types").UsageReport | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
   const [pendingImport, setPendingImport] = useState<{ text: string; name: string; info?: EncryptedBackupInfo } | null>(null);
@@ -1082,14 +1092,55 @@ export default function App() {
     }
   };
 
+  const refreshProxyConfig = useCallback(async () => {
+    try {
+      setProxyConfig(await api.proxyStatus());
+    } catch {
+      /* keep the previous status */
+    }
+  }, []);
+
+  const selectInstantUpstream = async (providerId: string) => {
+    if (!selectedId) return;
+    setBusy(true);
+    try {
+      const config = await api.proxyStatus();
+      const prefix = `${selectedId}:`;
+      const reference = `${prefix}${providerId}`;
+      config.stack = [reference, ...config.stack.filter((item) => !item.startsWith(prefix))];
+      if (!config.policies[reference]) {
+        config.policies[reference] = {
+          weight: 100,
+          priority: 100,
+          timeout_secs: 30,
+          failure_cooldown_secs: 60,
+          backoff_429_secs: 30,
+          failure_threshold: 3,
+          max_concurrency: 16,
+          allowed_models: [],
+          model_map: {},
+        };
+      }
+      config.enabled = true;
+      await api.proxySave(config);
+      await refreshProxyConfig();
+      const provider = providers.find((item) => item.id === providerId);
+      push(`即時切換上游已改為「${provider?.name ?? providerId}」`, "ok");
+    } catch (error) {
+      push(errorText(error), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const startProxyMode = async () => {
     if (!selectedId) return;
     setBusy(true);
     try {
-      const result = await api.proxyQuickStart(selectedId);
+      await api.proxyQuickStart(selectedId);
       await reload(selectedId);
-      push("一鍵代理已啟用；上游切換即時生效", "ok");
-      if (!result.changed) push("工具已指向本機代理", "ok");
+      await refreshProxyConfig();
+      push("已啟用即時切換。目前對話需重開一次；之後切換即時生效", "ok");
     } catch (error) {
       push(errorText(error), "err");
     } finally {
@@ -1137,6 +1188,16 @@ export default function App() {
   };
 
   /* ------------------------------------------------------------- render */
+
+  const activeProviderForPanel = selected
+    ? providers.find((provider) => provider.id === selected.active_id) ?? null
+    : null;
+  const upstreamRef = selected
+    ? proxyConfig?.stack.find((item) => item.startsWith(`${selected.id}:`))
+    : undefined;
+  const upstreamId = upstreamRef?.split(":")[1] ?? "";
+  const upstreamProvider = providers.find((provider) => provider.id === upstreamId) ?? null;
+  const upstreamOptions = providers.filter((provider) => provider.config_id !== "kumoswitch-proxy");
 
   const showOnboarding =
     !onboarded && tools.length > 0 && tools.every((t) => t.provider_count === 0);
@@ -1260,7 +1321,7 @@ export default function App() {
             <ToolPanel
               key={selected.id}
               tool={selected}
-              activeProvider={providers.find((provider) => provider.id === selected.active_id) ?? null}
+              activeProvider={activeProviderForPanel}
               previousProvider={providers.find((provider) => provider.id === selected.previous_id) ?? null}
               rows={rows}
               total={providers.length}
@@ -1279,6 +1340,14 @@ export default function App() {
               onImportCcSwitchBatch={(ids) => void importCcSwitchBatch(ids)}
               onMirrorCcSwitchRoute={() => void mirrorCcSwitchRoute()}
           onProxyMode={() => void startProxyMode()}
+              proxyAttached={Boolean(
+                proxyConfig?.attached?.[selected.id] ||
+                activeProviderForPanel?.config_id === "kumoswitch-proxy" ||
+                /127\.0\.0\.1|localhost/.test(selected.current.base_url),
+              )}
+              upstreamProvider={upstreamProvider}
+              upstreamOptions={upstreamOptions}
+              onUpstream={(providerId) => void selectInstantUpstream(providerId)}
               sort={sort}
               onSort={setSort}
               simple={preferences.uiMode !== "advanced"}

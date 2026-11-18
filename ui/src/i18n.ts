@@ -753,6 +753,20 @@ const DICT: Record<string, string> = {
   "每 30 秒": "Every 30s",
   "每 60 秒": "Every 60s",
   "本機定時重新掃描；不上传任何資料": "Periodic local rescan; nothing is uploaded",
+  "即時切換": "Instant switch",
+  "連線方式：即時": "Connection: instant",
+  "改成即時切換": "Use instant switch",
+  "代理設定": "Proxy settings",
+  "即時切換設定": "Instant switch settings",
+  "即時切換中": "Instant switching",
+  "即時切換上游": "Upstream for instant switch",
+  "一鍵即時切換": "One-click instant switch",
+  "一鍵啟用即時切換": "Enable instant switch",
+  "即時切換與故障轉移": "Instant switch & failover",
+  "已啟用即時切換。目前對話需重開一次；之後切換即時生效": "Instant switch enabled. Restart the current chat once; later upstream switches apply immediately.",
+  "讓目前正在使用的工具不必重開也能換上游；第一次啟用需重開一次對話。": "Switch upstream without restarting the tool. Restart the current chat once when enabling for the first time.",
+  "管理即時切換": "Manage instant switch",
+  "目前對話需重開一次；之後切換即時生效": "Restart the current chat once; later switches apply immediately",
 };
 
 interface Rule {

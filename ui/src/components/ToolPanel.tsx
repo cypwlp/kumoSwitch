@@ -26,6 +26,10 @@ interface PanelProps {
   onImportCcSwitchBatch: (providerIds: string[]) => void;
   onMirrorCcSwitchRoute: () => void;
   onProxyMode: () => void;
+  proxyAttached: boolean;
+  upstreamProvider: Provider | null;
+  upstreamOptions: Provider[];
+  onUpstream: (providerId: string) => void;
   onApply: (provider: Provider) => void;
   onReorder: (ids: string[]) => void;
   onSwitchModel: (provider: Provider, modelId: string) => void;
@@ -69,6 +73,10 @@ export function ToolPanel({
   onImportCcSwitchBatch,
   onMirrorCcSwitchRoute,
   onProxyMode,
+  proxyAttached,
+  upstreamProvider,
+  upstreamOptions,
+  onUpstream,
   onApply,
   onReorder,
   onSwitchModel,
@@ -158,15 +166,43 @@ export function ToolPanel({
 
       <div className="current-strip">
         <div className="current-provider">
-          <span className="eyebrow">目前套用</span>
-          <strong>{activeProvider?.name || tool.current.model || "尚未選擇供應商"}</strong>
+          <span className="eyebrow">{proxyAttached ? "即時切換中" : "目前套用"}</span>
+          <strong>
+            {proxyAttached
+              ? upstreamProvider?.name || "本機代理"
+              : activeProvider?.name || tool.current.model || "尚未選擇供應商"}
+          </strong>
           {tool.current.model ? <span className="current-model"><span>模型</span><code>{tool.current.model}</code></span> : null}
+          {proxyAttached ? (
+            <div className="instant-controls">
+              <span className="badge ok">連線方式：即時</span>
+              <select
+                className="mini-select"
+                aria-label="即時切換上游"
+                value={upstreamProvider?.id ?? ""}
+                onChange={(event) => onUpstream(event.target.value)}
+                disabled={busy || upstreamOptions.length === 0}
+              >
+                {upstreamOptions.map((provider) => (
+                  <option key={provider.id} value={provider.id}>{provider.name}</option>
+                ))}
+              </select>
+              <button type="button" className="ghost small" onClick={onProxyMode} disabled={busy}>
+                代理設定
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="current-meta">
           <span className="current-url mono" title={tool.current.base_url || "尚未設定 Base URL"}>
             {tool.current.base_url || "尚未設定 Base URL"}
           </span>
           <span>金鑰 {tool.current.api_key_tail || "—"}</span>
+          {proxyAttached ? null : (
+            <button className="small ghost" type="button" onClick={onProxyMode} disabled={busy} title="目前對話需重開一次；之後切換即時生效">
+              改成即時切換
+            </button>
+          )}
           {previousProvider ? (
             <button className="ghost small" type="button" onClick={() => onApply(previousProvider)}>
               切回上一個供應商
@@ -259,7 +295,7 @@ export function ToolPanel({
           {moreOpen ? (
             <div className="more-menu" id="harness-more-menu" role="menu" ref={moreMenuRef}>
               <button type="button" role="menuitem" onClick={menuAction(onProxyMode)}>
-                一鍵代理模式（即時切換）
+                即時切換設定
               </button>
               <button type="button" role="menuitem" onClick={menuAction(onPalette)}>
                 快速切換 <kbd>Ctrl</kbd><kbd>K</kbd>

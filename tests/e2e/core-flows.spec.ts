@@ -459,7 +459,7 @@ test("narrow window keeps the Harness usable without horizontal overflow", async
 
 test("proxy decision trace explains skipped and selected providers", async ({ page }) => {
   await openWorkspace(page, "代理與路由");
-  await expect(page.getByRole("heading", { name: "代理／故障轉移" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "即時切換與故障轉移" })).toBeVisible();
   await expect(page.getByText("最近請求決策")).toBeVisible();
   const trace = page.locator(".proxy-trace").first();
   await trace.locator("summary").click();
@@ -604,6 +604,7 @@ test("stats dashboard shows usage and scan diagnostics", async ({ page }) => {
 test("recent request status uses readable tones", async ({ page }) => {
   await openWorkspace(page, "用量統計");
   const rows = page.locator(".request-grid tbody tr");
+  await expect(rows.first()).toBeVisible();
   const tones = await rows.evaluateAll((items) =>
     items.map((row) => {
       const badge = row.querySelector("td:nth-child(5) .badge");
@@ -636,16 +637,19 @@ test("usage dashboard shows per-request history", async ({ page }) => {
   await expect(rows).toHaveCount(2);
 });
 
-test("one-click proxy mode is available from tool menu", async ({ page }) => {
+test("instant switch is a first-class action on the tool page", async ({ page }) => {
+  await expect(page.getByRole("button", { name: "改成即時切換" })).toBeVisible();
+  await page.getByRole("button", { name: "改成即時切換" }).click();
+  await expect(page.getByText("已啟用即時切換。目前對話需重開一次；之後切換即時生效")).toBeVisible();
+  await expect(page.getByText("即時切換中", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("即時切換上游")).toBeVisible();
   await page.getByRole("button", { name: "更多" }).first().click();
-  await expect(page.getByRole("menuitem", { name: "一鍵代理模式（即時切換）" })).toBeVisible();
-  await page.getByRole("menuitem", { name: "一鍵代理模式（即時切換）" }).click();
-  await expect(page.getByText("一鍵代理已啟用；上游切換即時生效")).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "即時切換設定" })).toBeVisible();
 });
 
 test("proxy route strategy and observability are usable", async ({ page }) => {
   await openWorkspace(page, "代理與路由");
-  await expect(page.getByRole("heading", { name: "代理／故障轉移" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "即時切換與故障轉移" })).toBeVisible();
   const health = page.getByRole("radio", { name: /健康優先/ });
   await health.click();
   await expect(health).toHaveAttribute("aria-checked", "true");

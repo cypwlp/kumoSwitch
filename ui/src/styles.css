@@ -1420,6 +1420,14 @@ kbd {
 .ccswitch-provider > code { color: var(--code-fg); font-size: 9.5px; overflow-wrap: anywhere; white-space: normal; }
 .ccswitch-provider-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 7px; border-top: 1px solid var(--line); }
 .ccswitch-provider-foot > span { color: var(--muted); font-size: 9.5px; }
+.instant-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+}
+.instant-controls .mini-select { min-width: 160px; }
 .provider-list-head {
   display: flex;
   align-items: flex-end;

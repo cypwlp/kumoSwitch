@@ -240,6 +240,19 @@ export function SettingsModal({
             <i aria-hidden="true" />
           </button>
         </section>
+
+        <section className="settings-card">
+          <div className="settings-card-title">
+            <span className="kicker">Connection</span>
+            <h4>{t("即時切換")}</h4>
+          </div>
+          <p className="settings-help">
+            {t("讓目前正在使用的工具不必重開也能換上游；第一次啟用需重開一次對話。")}
+          </p>
+          <div className="settings-actions">
+            <button className="ghost" onClick={onOpenProxy}>{t("管理即時切換")}</button>
+          </div>
+        </section>
         </>
       ) : (
         <>
