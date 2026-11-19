@@ -1883,18 +1883,19 @@ fn reset_codex_aggregate_routes(config: &mut proxy::ProxyConfig) {
     config.stack.retain(|reference| !reference.starts_with("codex:"));
 }
 
-/// Add supported providers from the other Harnesses to Codex's native picker.
-/// Their wire API is translated at the local gateway when Codex needs it.
+/// Add the Codex app's providers to Codex's native model picker.
+/// Keeping this scoped to Codex makes quick-start deterministic: other harnesses
+/// keep their own pickers and cannot overwrite curated Codex model routes.
 fn configure_codex_aggregate(data: &mut store::Store) -> usize {
     reset_codex_aggregate_routes(&mut data.proxy);
     let mut count = 0;
-    for (tool, providers) in &data.providers {
+    let tool = "codex";
+    if let Some(providers) = data.providers.get(tool) {
         for provider in providers.iter().filter(|provider| {
             !is_proxy_provider(provider)
                 && !provider.base_url.trim().is_empty()
                 && !provider.api_key.trim().is_empty()
-                && (matches!(provider.kind.trim().to_ascii_lowercase().as_str(), "responses" | "openai-responses" | "openai" | "openai-completions" | "openai-chat-completions" | "chat-completions" | "anthropic" | "anthropic-messages" | "claude")
-                    || (provider.kind.trim().is_empty() && tool == "commandcode"))
+                && matches!(provider.kind.trim().to_ascii_lowercase().as_str(), "responses" | "openai-responses" | "openai" | "openai-completions" | "openai-chat-completions" | "chat-completions" | "anthropic" | "anthropic-messages" | "claude")
         }) {
             let reference = format!("{tool}:{}", provider.id);
             let policy = data.proxy.policies.entry(reference.clone()).or_default();

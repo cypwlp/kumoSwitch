@@ -234,7 +234,7 @@ export function ToolPanel({
               <span className="setup-step-number">{proxyAttached ? "✓" : "2"}</span>
               <div className="setup-step-copy">
                 <strong>連接 Codex 模型選單</strong>
-                <p>{proxyAttached ? "已連接；模型會從 Codex 的模型選單切換。" : "啟用後，Codex 會列出 GPT Plus 和 KumoSwitch 已加入的模型。"}</p>
+                <p>{proxyAttached ? "已連接；模型會從 Codex 的模型選單切換。" : "啟用後，Codex 會列出 GPT Plus 和已加入的 Codex 供應商模型。"}</p>
               </div>
               {proxyAttached ? <span className="badge ok">已完成</span> : (
                 <button className="primary small" type="button" onClick={onProxyMode} disabled={busy}>

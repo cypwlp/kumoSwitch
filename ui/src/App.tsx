@@ -1147,7 +1147,7 @@ export default function App() {
       await reload(selectedId);
       await refreshProxyConfig();
       push(selectedId === "codex"
-        ? "Codex 合併模型目錄已啟用；請重開 Codex 並在模型選單切換。ChatGPT Plus 使用 Codex 登入；其他 Harness 的 Responses、OpenAI Chat Completions 與 Anthropic Messages 模型會合併列出。"
+        ? "Codex 模型目錄已啟用；請重開 Codex 並在模型選單切換。ChatGPT Plus 使用 Codex 登入；CommandCode、OpenCode Go 等 Codex 供應商的模型會一併列出。"
         : "已啟用即時切換，保留目前供應商與模型作為初始路由。目前對話需重開一次；之後可隨時切換模型", "ok");
     } catch (error) {
       push(errorText(error), "err");
