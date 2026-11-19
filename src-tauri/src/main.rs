@@ -4,6 +4,7 @@ mod adapters;
 mod audit;
 mod backup;
 mod ccswitch;
+mod codex_auth;
 mod codex_bridge;
 mod compat;
 mod crypto;
@@ -1969,7 +1970,7 @@ fn proxy_quick_start(tool: String, app: tauri::AppHandle) -> Result<ApplyResult,
         let mut provider = proxy_provider(&tool, &config, None);
         provider.codex_gateway = true;
         provider.kind = "responses".into();
-        provider.api_key.clear();
+        provider.api_key = "kumoswitch-proxy".into();
         provider.api_key_enc.clear();
         provider.codex_catalog_url = format!("http://127.0.0.1:{}/codex/models", config.port);
         let saved = store::upsert_with_key_action(&tool, provider, true)?;

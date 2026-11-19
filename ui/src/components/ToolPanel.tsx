@@ -172,7 +172,7 @@ export function ToolPanel({
           <HarnessIcon id={tool.id} name={tool.name} size={34} />
           <h2>{tool.name}</h2>
           {simpleFlow ? (
-            <span className="badge subtle">{codexFlow ? "GPT Plus 模型" : "簡易設定"}</span>
+            <span className="badge subtle">{codexFlow ? "GPT Plus 與其他模型" : "簡易設定"}</span>
           ) : (
             <>
               <span className="badge subtle">工具</span>
@@ -212,7 +212,7 @@ export function ToolPanel({
           <div className="setup-flow-heading">
             <div>
               <span className="eyebrow">快速設定 · 3 步</span>
-              <h3 id="codex-setup-title">讓 Codex 顯示 GPT Plus 模型</h3>
+              <h3 id="codex-setup-title">讓 Codex 顯示 GPT Plus 和其他模型</h3>
               <p>照著流程做一次，之後直接在 Codex 的模型選單切換。</p>
             </div>
             <span className={`badge ${proxyAttached ? "ok" : "subtle"}`}>
@@ -223,8 +223,8 @@ export function ToolPanel({
             <li className={`setup-flow-step ${total > 0 ? "complete" : ""}`}>
               <span className="setup-step-number">{total > 0 ? "✓" : "1"}</span>
               <div className="setup-step-copy">
-                <strong>第三方供應商（選用）</strong>
-                <p>{total > 0 ? `KumoSwitch 已管理 ${total} 個供應商。` : "CommandCode、OpenCode 等模型要在切換供應商時使用；GPT Plus 不用填 API Key。"}</p>
+                <strong>加入其他模型（可略過）</strong>
+                <p>{total > 0 ? `KumoSwitch 已管理 ${total} 個供應商。` : "OpenCode 或 Command Code 模型要先加入；GPT Plus 不用填 API Key。"}</p>
               </div>
               <button className="ghost small" type="button" onClick={total > 0 ? openProviderManager : onAdd}>
                 {total > 0 ? "管理供應商" : "＋新增供應商"}
@@ -234,7 +234,7 @@ export function ToolPanel({
               <span className="setup-step-number">{proxyAttached ? "✓" : "2"}</span>
               <div className="setup-step-copy">
                 <strong>連接 Codex 模型選單</strong>
-                <p>{proxyAttached ? "已連接；模型會從 Codex 的模型選單切換。" : "啟用後，Codex 會列出 GPT Plus 模型；第三方模型請切換到直接供應商。"}</p>
+                <p>{proxyAttached ? "已連接；模型會從 Codex 的模型選單切換。" : "啟用後，Codex 會列出 GPT Plus 和已加入的 Codex 供應商模型。"}</p>
               </div>
               {proxyAttached ? <span className="badge ok">已完成</span> : (
                 <button className="primary small" type="button" onClick={onProxyMode} disabled={busy}>

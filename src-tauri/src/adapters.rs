@@ -1241,12 +1241,6 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
             files[idx].after.clone()
         };
         let segs = path_segments(step.path, provider, index);
-        if spec.id == "codex"
-            && provider.codex_gateway
-            && step.path.last() == Some(&"experimental_bearer_token")
-        {
-            continue;
-        }
         let refresh_managed_pi_proxy_models = spec.id == "pi"
             && provider.config_id == "kumoswitch-proxy"
             && !provider.model.trim().is_empty()
@@ -1260,14 +1254,7 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
         {
             continue;
         }
-        let step_val = if spec.id == "codex"
-            && provider.codex_gateway
-            && step.path.last() == Some(&"requires_openai_auth")
-        {
-            Val::Bool(true)
-        } else {
-            step.val
-        };
+        let step_val = step.val;
         let updated = match step.fmt {
             Fmt::Toml => set_toml(&current, &segs, step_val, provider, index)?,
             Fmt::Json => set_json(&current, &segs, step.val, provider, index)?,
@@ -1301,9 +1288,6 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
         let provider_path = p(&["model_providers", &provider.config_id]);
         if provider.codex_gateway {
             text = remove_toml_key(&text, &p(&["model_catalog_json"]));
-            text = remove_toml_key(&text, &[
-                "model_providers".into(), provider.config_id.clone(), "experimental_bearer_token".into(),
-            ]);
             text = remove_toml_key(&text, &[
                 "model_providers".into(), provider.config_id.clone(), "env_key".into(),
             ]);

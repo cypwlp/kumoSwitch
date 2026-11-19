@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.28.0 — 2026-11-19
+- **Codex 同一模型選單支援 GPT Plus 與第三方模型**：Codex 改用 API-Key gateway 模式，kumoSwitch 從 Codex auth.json 本機注入並自動刷新 ChatGPT 憑證，GPT Plus 與 CommandCode、OpenCode Go 模型可同時顯示與使用。
+- OpenCode Go 自動補 x-opencode-session；自訂模型的 reasoning off/none/ultra 會正規化為上游支援值。
+- 代理 HTTP client 改用 rustls 並帶上 Codex 的 User-Agent/originator。
+
 ## 0.27.14 — 2026-11-19
 - **Codex 目錄只保留 GPT Plus**：Codex 在 ChatGPT 帳號模式下會拒絕自訂模型 slug（model_not_found），因此代理目錄不再混入第三方模型；第三方模型請切換直接供應商。
 

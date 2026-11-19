@@ -180,7 +180,7 @@ export function ProviderTable({
                   <span className="model-count">由 kumoSwitch 動態提供</span>
                 </div>
                 <div className="provider-model-list">
-                  <span className="provider-model-empty">Codex 選單只列出 GPT Plus；第三方模型請切換到直接供應商。</span>
+                  <span className="provider-model-empty">Codex 選單會讀取此代理的目錄；這裡列出的模型不會限制 Codex 選單。</span>
                 </div>
               </div>
               ) : (

@@ -1,6 +1,6 @@
 [package]
 name = "kumoswitch"
-version = "0.27.14"
+version = "0.28.0"
 description = "Manage AI harness providers and desktop apps without rewriting your config"
 edition = "2021"
 rust-version = "1.89"
@@ -19,12 +19,13 @@ serde_json = { version = "1", features = ["preserve_order"] }
 toml_edit = "0.22"
 similar = "2"
 tiny_http = "0.12"
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "native-tls", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "blocking"] }
 aes-gcm = { version = "0.10", features = ["zeroize"] }
 argon2 = "0.5"
 bytes = "1"
 zeroize = "1"
 sha2 = "0.10"
+base64 = "0.22"
 rusqlite = { version = "0.42", features = ["bundled"], default-features = false }
 
 [target.'cfg(windows)'.dependencies]

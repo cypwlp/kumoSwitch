@@ -19,6 +19,18 @@ fn shared_client() -> Result<&'static reqwest::blocking::Client, String> {
     HTTP_CLIENT
         .get_or_init(|| {
             reqwest::blocking::Client::builder()
+                .default_headers({
+                    let mut headers = reqwest::header::HeaderMap::new();
+                    headers.insert(
+                        reqwest::header::USER_AGENT,
+                        reqwest::header::HeaderValue::from_static("codex_cli_rs/0.169.0-alpha.11.1"),
+                    );
+                    headers.insert(
+                        reqwest::header::HeaderName::from_static("originator"),
+                        reqwest::header::HeaderValue::from_static("codex_cli_rs"),
+                    );
+                    headers
+                })
                 .connect_timeout(Duration::from_secs(15))
                 .pool_idle_timeout(Duration::from_secs(90))
                 .pool_max_idle_per_host(32)
@@ -348,6 +360,75 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+fn opencode_session() -> &'static str {
+    static SESSION: OnceLock<String> = OnceLock::new();
+    SESSION.get_or_init(|| format!("kumoswitch-{}-{}", std::process::id(), now_ms()))
+}
+
+fn normalize_chatgpt_reasoning_effort(body: Vec<u8>) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return body;
+    };
+    let mut changed = false;
+    if let Some(effort) = value
+        .get_mut("reasoning")
+        .and_then(|reasoning| reasoning.get_mut("effort"))
+    {
+        if effort.as_str() == Some("off") {
+            *effort = serde_json::Value::String("low".into());
+            changed = true;
+        }
+    }
+    if let Some(effort) = value.get_mut("reasoning_effort") {
+        if effort.as_str() == Some("off") {
+            *effort = serde_json::Value::String("low".into());
+            changed = true;
+        }
+    }
+    if changed {
+        serde_json::to_vec(&value).unwrap_or(body)
+    } else {
+        body
+    }
+}
+
+fn normalize_reasoning_effort(body: Vec<u8>) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return body;
+    };
+    let mut changed = false;
+    if let Some(effort) = value
+        .get_mut("reasoning")
+        .and_then(|reasoning| reasoning.get_mut("effort"))
+    {
+        let mapped = match effort.as_str() {
+            Some("off") | Some("none") => Some("minimal"),
+            Some("ultra") => Some("max"),
+            _ => None,
+        };
+        if let Some(value) = mapped {
+            *effort = serde_json::Value::String(value.into());
+            changed = true;
+        }
+    }
+    if let Some(effort) = value.get_mut("reasoning_effort") {
+        let mapped = match effort.as_str() {
+            Some("off") | Some("none") => Some("minimal"),
+            Some("ultra") => Some("max"),
+            _ => None,
+        };
+        if let Some(value) = mapped {
+            *effort = serde_json::Value::String(value.into());
+            changed = true;
+        }
+    }
+    if changed {
+        serde_json::to_vec(&value).unwrap_or(body)
+    } else {
+        body
+    }
 }
 
 fn target_states() -> MutexGuard<'static, BTreeMap<String, TargetState>> {
@@ -850,30 +931,61 @@ fn request_headers(headers: &[tiny_http::Header]) -> Vec<(String, String)> {
         .collect()
 }
 
-fn chatgpt_request_headers(headers: &[tiny_http::Header]) -> Vec<(String, String)> {
-    headers
-        .iter()
-        .filter_map(|header| {
-            let name = header.field.as_str().as_str().to_ascii_lowercase();
-            matches!(name.as_str(), "authorization" | "chatgpt-account-id")
-                .then(|| (name, header.value.as_str().to_string()))
-        })
-        .collect()
+fn chatgpt_request_headers() -> Vec<(String, String)> {
+    crate::codex_auth::headers().unwrap_or_default()
+}
+
+fn catalog_model_info(alias: &str, provider_name: &str, model: &crate::adapters::ModelProfile) -> serde_json::Value {
+    let display = if model.name.trim().is_empty() { &model.id } else { &model.name };
+    let supported_reasoning_levels = model.reasoning_levels.iter()
+        .filter(|level| matches!(level.as_str(), "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"))
+        .map(|level| serde_json::json!({ "effort": level, "description": format!("{level} reasoning") }))
+        .collect::<Vec<_>>();
+    let mut info = serde_json::json!({
+        "slug": alias,
+        "display_name": format!("{provider_name} · {display}"),
+        "description": format!("由 kumoSwitch 路由至 {provider_name}。"),
+        "base_instructions": "Help the user with their coding tasks.",
+        "supported_reasoning_levels": supported_reasoning_levels,
+        "shell_type": "shell_command",
+        "visibility": "list",
+        "supported_in_api": true,
+        "priority": 0,
+        "support_verbosity": false,
+        "truncation_policy": { "mode": "tokens", "limit": 10000 },
+        "experimental_supported_tools": [],
+        "supports_reasoning_summary_parameter": false,
+        "default_reasoning_level": if model.reasoning_level.trim().is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::String(model.reasoning_level.clone())
+        },
+        "context_window": model.context_window,
+        "max_context_window": model.context_window,
+        "input_modalities": if model.vision == Some(true) { vec!["text", "image"] } else { vec!["text"] },
+    });
+    if model.reasoning == Some(true) && !model.reasoning_levels.is_empty() {
+        info["description"] = serde_json::Value::String(format!(
+            "由 kumoSwitch 路由至 {provider_name}。支援推理層級：{}。",
+            model.reasoning_levels.join("、")
+        ));
+    }
+    info
 }
 
 fn codex_catalog_response(
     config: &ProxyConfig,
     client: &reqwest::blocking::Client,
     query: &str,
-    auth_headers: &[(String, String)],
 ) -> Result<serde_json::Value, (u16, String)> {
     let plan_reference = "codex:__chatgpt_plus__";
     let has_plan = config.stack.iter().any(|reference| reference == plan_reference);
     if !has_plan {
         return Err((503, "ChatGPT Plus 路由尚未啟用".into()));
     }
+    let auth_headers = crate::codex_auth::headers().map_err(|error| (401, error))?;
     if !auth_headers.iter().any(|(name, value)| name == "authorization" && !value.trim().is_empty()) {
-        return Err((401, "Codex 沒有提供 ChatGPT 登入憑證；請先在 Codex 登入 ChatGPT".into()));
+        return Err((401, "Codex 沒有可用的 ChatGPT 登入憑證；請先在 Codex 登入 ChatGPT".into()));
     }
     let upstream = format!("https://chatgpt.com/backend-api/codex/models{query}");
     let mut request = client.get(upstream).timeout(Duration::from_secs(30));
@@ -890,15 +1002,34 @@ fn codex_catalog_response(
         .map_err(|error| (502, format!("ChatGPT 模型目錄格式無效：{error}")))?;
     let models = catalogue.get_mut("models").and_then(serde_json::Value::as_array_mut)
         .ok_or((502, "ChatGPT 模型目錄缺少 models 清單".into()))?;
+    let mut slugs = std::collections::BTreeSet::new();
     models.retain_mut(|model| {
         let Some(slug) = model.get("slug").and_then(serde_json::Value::as_str).map(str::to_string) else { return false };
         let Some(object) = model.as_object_mut() else { return false };
         let display = object.get("display_name").and_then(serde_json::Value::as_str).unwrap_or(&slug).to_string();
         object.insert("display_name".into(), serde_json::Value::String(format!("GPT Plus · {display}")));
+        slugs.insert(slug);
         true
     });
-    // Codex rejects non-OpenAI slugs while authenticated with a ChatGPT account,
-    // so the gateway catalogue intentionally exposes only ChatGPT Plus models.
+
+    let store = crate::store::load();
+    let mut merged = std::mem::take(models);
+    let mut added = std::collections::BTreeSet::new();
+    for reference in &config.stack {
+        let Some(policy) = config.policies.get(reference) else { continue };
+        if !policy.route_tools.iter().any(|tool| tool == "codex") { continue; }
+        let Some((tool, provider_id)) = reference.split_once(':') else { continue };
+        let Some(provider) = store.providers.get(tool).and_then(|items| items.iter().find(|item| item.id == provider_id)) else { continue };
+        for model in provider.models.iter().filter(|model| !model.archived && !model.id.trim().is_empty()) {
+            let alias = codex_model_alias(tool, provider_id, &model.id);
+            if slugs.contains(&alias)
+                || !policy.allowed_models.iter().any(|item| item == &alias)
+                || !added.insert(alias.clone())
+            { continue; }
+            merged.push(catalog_model_info(&alias, &provider.name, model));
+        }
+    }
+    catalogue["models"] = serde_json::Value::Array(merged);
     Ok(catalogue)
 }
 
@@ -906,14 +1037,13 @@ fn serve_codex_catalog(
     request: tiny_http::Request,
     enabled: bool,
     config: &ProxyConfig,
-    auth_headers: &[(String, String)],
     query: &str,
 ) {
     let response = if !enabled {
         Err((503, "kumoSwitch 代理尚未啟用".into()))
     } else {
         shared_client().map_err(|error| (500, error.to_string()))
-            .and_then(|client| codex_catalog_response(config, client, query, auth_headers))
+            .and_then(|client| codex_catalog_response(config, client, query))
     };
     let (status, body) = match response {
         Ok(value) => (200, serde_json::to_string(&value).unwrap_or_else(|_| "{\"models\":[]}".into())),
@@ -1025,7 +1155,7 @@ fn handle_with_routing_limit(
 ) {
     let method = request.method().as_str().to_string();
     let forwarded_headers = request_headers(request.headers());
-    let chatgpt_headers = chatgpt_request_headers(request.headers());
+    let chatgpt_headers = chatgpt_request_headers();
     let url = request.url().to_string();
     let incoming_path = url.split('?').next().unwrap_or("/");
     let (route_tool, path) = scoped_proxy_path(incoming_path);
@@ -1044,7 +1174,7 @@ fn handle_with_routing_limit(
     let query = url.split_once('?').map(|(_, q)| format!("?{q}")).unwrap_or_default();
 
     if method == "GET" && route_tool.as_deref() == Some("codex") && path == "/models" {
-        serve_codex_catalog(request, enabled, &crate::store::load().proxy, &chatgpt_headers, &query);
+        serve_codex_catalog(request, enabled, &crate::store::load().proxy, &query);
         return;
     }
 
@@ -1191,6 +1321,11 @@ fn handle_with_routing_limit(
         } else {
             target_body
         };
+        let target_body = if target.chatgpt_plan {
+            normalize_chatgpt_reasoning_effort(target_body)
+        } else {
+            normalize_reasoning_effort(target_body)
+        };
         let upstream_path = if target.chatgpt_plan && path.starts_with("/v1/") {
             &path[3..]
         } else if codex_chat_route {
@@ -1206,6 +1341,11 @@ fn handle_with_routing_limit(
             .timeout(Duration::from_secs(target.policy.timeout_secs.max(1)));
         for (name, value) in &forwarded_headers {
             req = req.header(name, value);
+        }
+        if target.base_url.contains("opencode.ai")
+            && !forwarded_headers.iter().any(|(name, _)| name == "x-opencode-session")
+        {
+            req = req.header("x-opencode-session", opencode_session());
         }
         if target.chatgpt_plan {
             for (name, value) in &chatgpt_headers {
