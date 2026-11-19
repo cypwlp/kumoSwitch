@@ -464,6 +464,8 @@ impl Snapshot {
             model: raw.model.clone(),
             models: raw.models.clone(),
             kind: raw.kind.clone(),
+            codex_gateway: false,
+            codex_catalog_url: String::new(),
             note: "從 CC Switch 匯入".into(),
             profile_id: String::new(),
             api_keys: Vec::new(),

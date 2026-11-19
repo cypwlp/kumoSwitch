@@ -9,6 +9,7 @@ use std::io::{self, Read};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use sha2::{Digest, Sha256};
 
 const MAX_REQUEST_BODY_BYTES: usize = 32 * 1024 * 1024;
 
@@ -100,6 +101,9 @@ pub struct ProxyTargetPolicy {
     /// to this provider's model before the request is forwarded.
     #[serde(default)]
     pub route_model: String,
+    /// Additional Harness scopes allowed to use this provider as an upstream.
+    #[serde(default)]
+    pub route_tools: Vec<String>,
 }
 
 fn default_weight() -> u32 { 100 }
@@ -122,6 +126,7 @@ impl Default for ProxyTargetPolicy {
             allowed_models: Vec::new(),
             model_map: BTreeMap::new(),
             route_model: String::new(),
+            route_tools: Vec::new(),
         }
     }
 }
@@ -220,6 +225,8 @@ struct Target {
     base_url: String,
     api_key: String,
     anthropic: bool,
+    chatgpt_plan: bool,
+    chat_completions: bool,
     policy: ProxyTargetPolicy,
 }
 
@@ -352,18 +359,47 @@ fn resolve_stack(config: &ProxyConfig) -> Vec<Target> {
     let mut out = Vec::new();
     for reference in &config.stack {
         let Some((tool, id)) = reference.split_once(':') else { continue };
+        let policy = config.policies.get(reference).cloned().unwrap_or_default();
+        if tool == "codex" && id == "__chatgpt_plus__" {
+            out.push(Target {
+                reference: reference.clone(),
+                base_url: "https://chatgpt.com/backend-api/codex".into(),
+                api_key: String::new(),
+                anthropic: false,
+                chatgpt_plan: true,
+                chat_completions: false,
+                policy,
+            });
+            continue;
+        }
         let Some(list) = store.providers.get(tool) else { continue };
         let Some(p) = list.iter().find(|p| p.id == id) else { continue };
         let api_kind = p.kind.to_ascii_lowercase();
+        let chat_completions = matches!(api_kind.as_str(), "openai" | "openai-completions" | "openai-chat-completions" | "chat-completions")
+            || (tool == "commandcode" && api_kind.trim().is_empty());
         out.push(Target {
             reference: reference.clone(),
             base_url: p.base_url.clone(),
             api_key: p.api_key.clone(),
             anthropic: tool == "claude" || api_kind.contains("anthropic"),
-            policy: config.policies.get(reference).cloned().unwrap_or_default(),
+            chatgpt_plan: false,
+            chat_completions,
+            policy,
         });
     }
     out
+}
+
+/// Stable Codex-facing alias for a model registered under another Harness.
+pub fn codex_model_alias(tool: &str, provider_id: &str, model_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(tool.as_bytes());
+    hasher.update([0]);
+    hasher.update(provider_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(model_id.as_bytes());
+    let digest = hasher.finalize();
+    format!("kumoswitch_{}", digest[..10].iter().map(|byte| format!("{byte:02x}")).collect::<String>())
 }
 
 fn strategy_label(strategy: &RoutingStrategy) -> &'static str {
@@ -413,6 +449,13 @@ fn request_model(body: &[u8]) -> Option<String> {
     serde_json::from_slice::<serde_json::Value>(body)
         .ok()
         .and_then(|value| value.get("model").and_then(|model| model.as_str()).map(str::to_string))
+}
+
+fn request_streaming(body: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| value.get("stream").and_then(serde_json::Value::as_bool))
+        .unwrap_or(true)
 }
 
 fn model_body_for_target(
@@ -798,13 +841,142 @@ fn request_headers(headers: &[tiny_http::Header]) -> Vec<(String, String)> {
         .filter_map(|header| {
             let name = header.field.as_str().as_str().to_ascii_lowercase();
             if is_hop_by_hop(&name)
-                || matches!(name.as_str(), "host" | "content-length" | "authorization" | "x-api-key")
+                || matches!(name.as_str(), "host" | "content-length" | "authorization" | "x-api-key" | "cookie" | "chatgpt-account-id")
             {
                 return None;
             }
             Some((name, header.value.as_str().to_string()))
         })
         .collect()
+}
+
+fn chatgpt_request_headers(headers: &[tiny_http::Header]) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .filter_map(|header| {
+            let name = header.field.as_str().as_str().to_ascii_lowercase();
+            matches!(name.as_str(), "authorization" | "chatgpt-account-id")
+                .then(|| (name, header.value.as_str().to_string()))
+        })
+        .collect()
+}
+
+fn catalog_model_info(alias: &str, provider_name: &str, model: &crate::adapters::ModelProfile) -> serde_json::Value {
+    let display = if model.name.trim().is_empty() { &model.id } else { &model.name };
+    let supported_reasoning_levels = model.reasoning_levels.iter()
+        .filter(|level| matches!(level.as_str(), "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"))
+        .map(|level| serde_json::json!({ "effort": level, "description": format!("{level} reasoning") }))
+        .collect::<Vec<_>>();
+    let mut info = serde_json::json!({
+        "slug": alias,
+        "display_name": format!("{provider_name} · {display}"),
+        "description": format!("由 kumoSwitch 路由至 {provider_name}。"),
+        "base_instructions": "Help the user with their coding tasks.",
+        "supported_reasoning_levels": supported_reasoning_levels,
+        "shell_type": "shell_command",
+        "visibility": "list",
+        "supported_in_api": true,
+        "priority": 0,
+        "support_verbosity": false,
+        "truncation_policy": { "mode": "tokens", "limit": 10000 },
+        "experimental_supported_tools": [],
+        "supports_reasoning_summary_parameter": false,
+        "default_reasoning_level": model.reasoning_level.trim().is_empty().then_some(serde_json::Value::Null)
+            .unwrap_or_else(|| serde_json::Value::String(model.reasoning_level.clone())),
+        "context_window": model.context_window,
+        "max_context_window": model.context_window,
+        "input_modalities": if model.vision == Some(true) { vec!["text", "image"] } else { vec!["text"] },
+    });
+    if model.reasoning == Some(true) && !model.reasoning_levels.is_empty() {
+        info["description"] = serde_json::Value::String(format!(
+            "由 kumoSwitch 路由至 {provider_name}。支援推理層級：{}。",
+            model.reasoning_levels.join("、")
+        ));
+    }
+    info
+}
+
+fn codex_catalog_response(
+    config: &ProxyConfig,
+    client: &reqwest::blocking::Client,
+    query: &str,
+    auth_headers: &[(String, String)],
+) -> Result<serde_json::Value, (u16, String)> {
+    let plan_reference = "codex:__chatgpt_plus__";
+    let has_plan = config.stack.iter().any(|reference| reference == plan_reference);
+    if !has_plan {
+        return Err((503, "ChatGPT Plus 路由尚未啟用".into()));
+    }
+    if !auth_headers.iter().any(|(name, value)| name == "authorization" && !value.trim().is_empty()) {
+        return Err((401, "Codex 沒有提供 ChatGPT 登入憑證；請先在 Codex 登入 ChatGPT".into()));
+    }
+    let upstream = format!("https://chatgpt.com/backend-api/codex/models{query}");
+    let mut request = client.get(upstream).timeout(Duration::from_secs(30));
+    for (name, value) in auth_headers {
+        request = request.header(name, value);
+    }
+    let response = request.send().map_err(|error| (502, format!("ChatGPT 模型目錄連線失敗：{error}")))?;
+    let status = response.status().as_u16();
+    let body = response.bytes().map_err(|error| (502, format!("讀取 ChatGPT 模型目錄失敗：{error}")))?;
+    if !(200..300).contains(&status) {
+        return Err((status, String::from_utf8_lossy(&body).into_owned()));
+    }
+    let mut catalogue: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|error| (502, format!("ChatGPT 模型目錄格式無效：{error}")))?;
+    let models = catalogue.get_mut("models").and_then(serde_json::Value::as_array_mut)
+        .ok_or((502, "ChatGPT 模型目錄缺少 models 清單".into()))?;
+    let mut slugs = std::collections::BTreeSet::new();
+    models.retain_mut(|model| {
+        let Some(slug) = model.get("slug").and_then(serde_json::Value::as_str).map(str::to_string) else { return false };
+        let Some(object) = model.as_object_mut() else { return false };
+        let display = object.get("display_name").and_then(serde_json::Value::as_str).unwrap_or(&slug).to_string();
+        object.insert("display_name".into(), serde_json::Value::String(format!("GPT Plus · {display}")));
+        slugs.insert(slug)
+    });
+
+    let store = crate::store::load();
+    let mut merged = std::mem::take(models);
+    let mut added = std::collections::BTreeSet::new();
+    for reference in &config.stack {
+        let Some(policy) = config.policies.get(reference) else { continue };
+        if !policy.route_tools.iter().any(|tool| tool == "codex") { continue; }
+        let Some((tool, provider_id)) = reference.split_once(':') else { continue };
+        let Some(provider) = store.providers.get(tool).and_then(|items| items.iter().find(|item| item.id == provider_id)) else { continue };
+        for model in provider.models.iter().filter(|model| !model.archived && !model.id.trim().is_empty()) {
+            let alias = codex_model_alias(tool, provider_id, &model.id);
+            if slugs.contains(&alias)
+                || !policy.allowed_models.iter().any(|item| item == &alias)
+                || !added.insert(alias.clone())
+            { continue; }
+            merged.push(catalog_model_info(&alias, &provider.name, model));
+        }
+    }
+    catalogue["models"] = serde_json::Value::Array(merged);
+    Ok(catalogue)
+}
+
+fn serve_codex_catalog(
+    request: tiny_http::Request,
+    enabled: bool,
+    config: &ProxyConfig,
+    auth_headers: &[(String, String)],
+    query: &str,
+) {
+    let response = if !enabled {
+        Err((503, "kumoSwitch 代理尚未啟用".into()))
+    } else {
+        shared_client().map_err(|error| (500, error.to_string()))
+            .and_then(|client| codex_catalog_response(config, client, query, auth_headers))
+    };
+    let (status, body) = match response {
+        Ok(value) => (200, serde_json::to_string(&value).unwrap_or_else(|_| "{\"models\":[]}".into())),
+        Err((status, message)) => (status, serde_json::json!({"error": message}).to_string()),
+    };
+    let response = tiny_http::Response::from_string(body)
+        .with_status_code(status)
+        .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap())
+        .with_header("Cache-Control: private, no-store".parse::<tiny_http::Header>().unwrap());
+    let _ = request.respond(response);
 }
 
 fn response_headers(response: &reqwest::blocking::Response) -> Vec<(String, String)> {
@@ -906,19 +1078,28 @@ fn handle_with_routing_limit(
 ) {
     let method = request.method().as_str().to_string();
     let forwarded_headers = request_headers(request.headers());
+    let chatgpt_headers = chatgpt_request_headers(request.headers());
     let url = request.url().to_string();
     let incoming_path = url.split('?').next().unwrap_or("/");
     let (route_tool, path) = scoped_proxy_path(incoming_path);
-    let targets: Vec<_> = if let Some(tool) = route_tool {
+    let targets: Vec<_> = if let Some(tool) = route_tool.as_deref() {
         let prefix = format!("{tool}:");
         targets
             .into_iter()
-            .filter(|target| target.reference.starts_with(&prefix))
+            .filter(|target| {
+                target.reference.starts_with(&prefix)
+                    || target.policy.route_tools.iter().any(|allowed| allowed == tool)
+            })
             .collect()
     } else {
         targets
     };
     let query = url.split_once('?').map(|(_, q)| format!("?{q}")).unwrap_or_default();
+
+    if method == "GET" && route_tool.as_deref() == Some("codex") && path == "/models" {
+        serve_codex_catalog(request, enabled, &crate::store::load().proxy, &chatgpt_headers, &query);
+        return;
+    }
 
     let reader = request.as_reader();
     let body = match read_body_limited(reader, max_body_bytes) {
@@ -1010,7 +1191,13 @@ fn handle_with_routing_limit(
             continue;
         };
 
-        let target_body = match model_body_for_target(&body, requested_model.as_deref(), &target.policy) {
+        let target_body = match if target.chatgpt_plan
+            && requested_model.as_deref().is_some_and(|model| model.starts_with("kumoswitch_"))
+        {
+            Err("model belongs to a routed third-party provider".into())
+        } else {
+            model_body_for_target(&body, requested_model.as_deref(), &target.policy)
+        } {
             Ok(target_body) => target_body,
             Err(reason) => {
                 record_failover(&target.reference, &reason);
@@ -1028,14 +1215,56 @@ fn handle_with_routing_limit(
             }
         };
         let mapped_model = request_model(&target_body);
-        let upstream = format!("{}{}", upstream_url(&target.base_url, &path), query);
+        let codex_chat_route = route_tool.as_deref() == Some("codex") && target.chat_completions;
+        let codex_anthropic_route = route_tool.as_deref() == Some("codex") && target.anthropic;
+        let codex_translated_route = codex_chat_route || codex_anthropic_route;
+        let target_body = if codex_translated_route {
+            let converted = if codex_anthropic_route {
+                crate::codex_bridge::responses_request_to_anthropic(&target_body)
+            } else {
+                crate::codex_bridge::responses_request_to_chat(&target_body)
+            };
+            match converted {
+                Ok(body) => body,
+                Err(reason) => {
+                    record_failover(&target.reference, &reason);
+                    attempts.push(ProxyAttempt {
+                        target: target.reference.clone(),
+                        order,
+                        outcome: "skipped".into(),
+                        reason,
+                        status: None,
+                        ttfb_ms: None,
+                        circuit_open_until: circuit_open_until(&target.reference),
+                        model: mapped_model.clone(),
+                    });
+                    continue;
+                }
+            }
+        } else {
+            target_body
+        };
+        let upstream_path = if target.chatgpt_plan && path.starts_with("/v1/") {
+            &path[3..]
+        } else if codex_chat_route {
+            "/v1/chat/completions"
+        } else if codex_anthropic_route {
+            "/v1/messages"
+        } else {
+            &path
+        };
+        let upstream = format!("{}{}", upstream_url(&target.base_url, upstream_path), query);
         let mut req = client
             .request(reqwest_method.clone(), &upstream)
             .timeout(Duration::from_secs(target.policy.timeout_secs.max(1)));
         for (name, value) in &forwarded_headers {
             req = req.header(name, value);
         }
-        if target.anthropic {
+        if target.chatgpt_plan {
+            for (name, value) in &chatgpt_headers {
+                req = req.header(name, value);
+            }
+        } else if target.anthropic {
             req = req.header("x-api-key", &target.api_key);
             if !has_anthropic_version {
                 req = req.header("anthropic-version", "2023-06-01");
@@ -1101,6 +1330,92 @@ fn handle_with_routing_limit(
             last_status = status;
             continue;
         }
+        if codex_translated_route && (200..300).contains(&status) {
+            let raw = match resp.bytes() {
+                Ok(raw) => raw,
+                Err(error) => {
+                    record_result(&target.reference, status, ttfb, false, &target.policy, Some("failed to read Chat Completions response"));
+                    record_failover(&target.reference, "failed to read Chat Completions response");
+                    attempts.push(ProxyAttempt {
+                        target: target.reference.clone(),
+                        order,
+                        outcome: "failed".into(),
+                        reason: format!("讀取 OpenAI 相容回應失敗：{error}"),
+                        status: Some(status),
+                        ttfb_ms: Some(ttfb),
+                        circuit_open_until: circuit_open_until(&target.reference),
+                        model: mapped_model.clone(),
+                    });
+                    last_status = 502;
+                    continue;
+                }
+            };
+            let completed_result = if codex_anthropic_route {
+                crate::codex_bridge::anthropic_response_to_responses(&raw)
+            } else {
+                crate::codex_bridge::chat_response_to_responses(&raw)
+            };
+            let completed = match completed_result {
+                Ok(response) => response,
+                Err(reason) => {
+                    record_result(&target.reference, status, ttfb, false, &target.policy, Some("invalid Chat Completions response"));
+                    record_failover(&target.reference, &reason);
+                    attempts.push(ProxyAttempt {
+                        target: target.reference.clone(),
+                        order,
+                        outcome: "failed".into(),
+                        reason,
+                        status: Some(status),
+                        ttfb_ms: Some(ttfb),
+                        circuit_open_until: circuit_open_until(&target.reference),
+                        model: mapped_model.clone(),
+                    });
+                    last_status = 502;
+                    continue;
+                }
+            };
+            let stream_requested = request_streaming(&body);
+            let body = if stream_requested {
+                crate::codex_bridge::responses_sse(&completed)
+            } else {
+                serde_json::to_string(&completed).unwrap_or_else(|_| "{}".into())
+            };
+            record_result(&target.reference, status, ttfb, true, &target.policy, None);
+            attempts.push(ProxyAttempt {
+                target: target.reference.clone(),
+                order,
+                outcome: "success".into(),
+                reason: if codex_anthropic_route {
+                    "Responses 請求已轉換並由 Anthropic Messages 回應".into()
+                } else {
+                    "Responses 請求已轉換並由 OpenAI Chat Completions 回應".into()
+                },
+                status: Some(status),
+                ttfb_ms: Some(ttfb),
+                circuit_open_until: 0,
+                model: mapped_model,
+            });
+            push_proxy_trace(ProxyTrace {
+                id: 0,
+                ts: 0,
+                method: method.clone(),
+                path: path.clone(),
+                requested_model: requested_model.clone(),
+                strategy: trace_strategy.clone(),
+                candidate_order: candidate_order.clone(),
+                attempts,
+                selected: Some(target.reference.clone()),
+                final_status: status,
+                total_ms: trace_started.elapsed().as_millis() as u64,
+                outcome: "success".into(),
+            });
+            let content_type = if stream_requested { "text/event-stream" } else { "application/json" };
+            let response = tiny_http::Response::from_string(body)
+                .with_status_code(status)
+                .with_header(format!("Content-Type: {content_type}").parse::<tiny_http::Header>().unwrap());
+            let _ = request.respond(response);
+            return;
+        }
         record_result(&target.reference, status, ttfb, true, &target.policy, None);
         attempts.push(ProxyAttempt {
             target: target.reference.clone(),
@@ -1160,8 +1475,15 @@ fn scoped_proxy_path(path: &str) -> (Option<String>, String) {
     let Some((tool, api_path)) = path.split_once('/') else {
         return (None, format!("/{path}"));
     };
-    if crate::adapters::find(tool).is_some() && (api_path == "v1" || api_path.starts_with("v1/")) {
-        (Some(tool.to_string()), format!("/{api_path}"))
+    if crate::adapters::find(tool).is_some()
+        && (api_path == "v1" || api_path.starts_with("v1/") || (tool == "codex" && api_path == "models"))
+    {
+        let path = if tool == "codex" && api_path == "models" { "/models" } else { "/" };
+        if path == "/models" {
+            (Some(tool.to_string()), path.into())
+        } else {
+            (Some(tool.to_string()), format!("/{api_path}"))
+        }
     } else {
         (None, format!("/{path}"))
     }
@@ -1449,6 +1771,8 @@ mod tests {
             base_url,
             api_key: api_key.into(),
             anthropic: false,
+            chatgpt_plan: false,
+            chat_completions: false,
             policy: ProxyTargetPolicy::default(),
         }
     }
@@ -1459,6 +1783,8 @@ mod tests {
             base_url,
             api_key: api_key.into(),
             anthropic: true,
+            chatgpt_plan: false,
+            chat_completions: false,
             policy: ProxyTargetPolicy::default(),
         }
     }

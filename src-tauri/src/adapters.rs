@@ -158,6 +158,12 @@ pub struct Provider {
     /// wire_api / protocol / api flavour, meaning depends on the tool.
     #[serde(default)]
     pub kind: String,
+    /// Codex local gateway mode forwards the signed-in ChatGPT credential and
+    /// serves a merged, provider-scoped model catalogue through the proxy.
+    #[serde(default)]
+    pub codex_gateway: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub codex_catalog_url: String,
     #[serde(default)]
     pub note: String,
     /// Shared cross-Harness profile this provider was synchronised from.
@@ -451,7 +457,7 @@ const fn s(text: &'static str) -> Val {
 }
 
 const QODER_PROTOCOLS: &[&str] = &["openai", "openai-responses"];
-const CODEX_WIRE: &[&str] = &["responses", "chat"];
+const CODEX_WIRE: &[&str] = &["responses"];
 const DSH_API: &[&str] = &["openai-completions", "openai-responses", "anthropic-messages"];
 const OPENCODE_API: &[&str] = &["openai", "anthropic", "responses"];
 const PI_API: &[&str] = &["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
@@ -481,7 +487,7 @@ pub static TOOLS: &[ToolSpec] = &[
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "base_url"], val: s("{{base_url}}"), when: When::Always },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "wire_api"], val: s("{{kind}}"), when: When::Always },
             Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "experimental_bearer_token"], val: s("{{api_key}}"), when: When::Always },
-            Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "requires_openai_auth"], val: Val::Bool(false), when: When::IfMissing },
+            Step { file: "config.toml", fmt: Fmt::Toml, path: &["model_providers", "{{config_id}}", "requires_openai_auth"], val: Val::Bool(false), when: When::Always },
         ],
         kind_choices: CODEX_WIRE,
     },
@@ -904,6 +910,7 @@ fn subst(template: &str, provider: &Provider, index: usize) -> String {
         .replace("{{model}}", &provider.model)
         .replace("{{reasoning_level}}", reasoning_level)
         .replace("{{kind}}", &provider.kind)
+        .replace("{{codex_catalog_url}}", &provider.codex_catalog_url)
 }
 
 fn path_segments(path: &[&'static str], provider: &Provider, index: usize) -> Vec<String> {
@@ -1234,6 +1241,12 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
             files[idx].after.clone()
         };
         let segs = path_segments(step.path, provider, index);
+        if spec.id == "codex"
+            && provider.codex_gateway
+            && step.path.last() == Some(&"experimental_bearer_token")
+        {
+            continue;
+        }
         let refresh_managed_pi_proxy_models = spec.id == "pi"
             && provider.config_id == "kumoswitch-proxy"
             && !provider.model.trim().is_empty()
@@ -1247,8 +1260,16 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
         {
             continue;
         }
+        let step_val = if spec.id == "codex"
+            && provider.codex_gateway
+            && step.path.last() == Some(&"requires_openai_auth")
+        {
+            Val::Bool(true)
+        } else {
+            step.val
+        };
         let updated = match step.fmt {
-            Fmt::Toml => set_toml(&current, &segs, step.val, provider, index)?,
+            Fmt::Toml => set_toml(&current, &segs, step_val, provider, index)?,
             Fmt::Json => set_json(&current, &segs, step.val, provider, index)?,
             Fmt::Yaml => set_yaml(&current, &segs, step.val, provider, index)?,
             Fmt::Env => match step.val {
@@ -1258,7 +1279,70 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
         };
         files[idx].after = updated;
     }
+    if spec.id == "codex" && provider.config_id == "kumoswitch-proxy" {
+        let idx = match files.iter().position(|file| file.file == display_path(&resolve_file_in(spec, "config.toml", dir))) {
+            Some(i) => i,
+            None => {
+                let path = resolve_file_in(spec, "config.toml", dir);
+                let display = display_path(&path);
+                let before = std::fs::read_to_string(&path).unwrap_or_default();
+                files.push(FileChange {
+                    file: display,
+                    fmt: Fmt::Toml.label(),
+                    existed: path.exists(),
+                    before: before.clone(),
+                    after: before,
+                    path,
+                });
+                files.len() - 1
+            }
+        };
+        let mut text = files[idx].after.clone();
+        let provider_path = p(&["model_providers", &provider.config_id]);
+        if provider.codex_gateway {
+            text = remove_toml_key(&text, &p(&["model_catalog_json"]));
+            text = remove_toml_key(&text, &[
+                "model_providers".into(), provider.config_id.clone(), "experimental_bearer_token".into(),
+            ]);
+            text = remove_toml_key(&text, &[
+                "model_providers".into(), provider.config_id.clone(), "env_key".into(),
+            ]);
+            text = remove_toml_key(&text, &[
+                "model_providers".into(), provider.config_id.clone(), "auth".into(),
+            ]);
+            if !provider.codex_catalog_url.trim().is_empty() {
+                let mut catalog_path = provider_path;
+                catalog_path.push("model_catalog_url".into());
+                text = set_toml(&text, &catalog_path, s("{{codex_catalog_url}}"), provider, 0)?;
+            }
+            let mut websocket_path = p(&["model_providers", &provider.config_id]);
+            websocket_path.push("supports_websockets".into());
+            text = set_toml(&text, &websocket_path, Val::Bool(false), provider, 0)?;
+        } else {
+            let mut catalog_path = provider_path;
+            catalog_path.push("model_catalog_url".into());
+            text = remove_toml_key(&text, &catalog_path);
+        }
+        files[idx].after = text;
+    }
     Ok(files)
+}
+
+fn remove_toml_key(text: &str, path: &[String]) -> String {
+    if path.is_empty() {
+        return text.to_string();
+    }
+    let Ok(mut doc) = text.parse::<toml_edit::DocumentMut>() else {
+        return text.to_string();
+    };
+    let mut table = doc.as_table_mut();
+    for segment in &path[..path.len() - 1] {
+        let Some(item) = table.get_mut(segment) else { return text.to_string() };
+        let Some(next) = item.as_table_mut() else { return text.to_string() };
+        table = next;
+    }
+    table.remove(path.last().unwrap());
+    doc.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1425,6 +1509,8 @@ fn imported(config_id: &str, name: String, base_url: String, api_key: String, mo
         model,
         models,
         kind,
+        codex_gateway: false,
+        codex_catalog_url: String::new(),
         note: "從設定檔導入".into(),
         profile_id: String::new(),
         api_keys: Vec::new(),
@@ -1768,6 +1854,8 @@ mod real_config_checks {
             model: "selftest-model".into(),
             models: vec![ModelProfile::new("selftest-model")],
             kind: "responses".into(),
+            codex_gateway: false,
+            codex_catalog_url: String::new(),
             note: String::new(),
             profile_id: String::new(),
             api_keys: Vec::new(),

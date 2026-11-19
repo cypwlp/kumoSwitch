@@ -196,35 +196,41 @@ export function ToolPanel({
           {proxyAttached ? (
             <div className="instant-controls">
               <span className="badge ok">連線方式：即時</span>
-              <select
-                className="mini-select"
-                aria-label="即時切換供應商與模型"
-                title="選擇已加入的供應商模型；只列出與目前 API 類型相容的模型"
-                value={upstreamProvider && upstreamModel ? JSON.stringify([upstreamProvider.id, upstreamModel]) : ""}
-                onChange={(event) => {
-                  try {
-                    const [providerId, modelId] = JSON.parse(event.target.value) as [string, string];
-                    if (providerId && modelId) onUpstream(providerId, modelId);
-                  } catch {
-                    // Ignore malformed option values.
-                  }
-                }}
-                disabled={busy || upstreamModelOptions.length === 0}
-              >
-                {upstreamOptions.map((provider) => {
-                  const models = upstreamModelOptions.filter((option) => option.provider.id === provider.id);
-                  if (models.length === 0) return null;
-                  return (
-                    <optgroup key={provider.id} label={provider.name}>
-                      {models.map(({ model }) => (
-                        <option key={model.id} value={JSON.stringify([provider.id, model.id])}>
-                          {model.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
-              </select>
+              {activeProvider?.codex_gateway ? (
+                <span className="badge subtle" title="模型清單由 Codex 從 kumoSwitch 路由讀取">
+                  在 Codex 模型選單切換
+                </span>
+              ) : (
+                <select
+                  className="mini-select"
+                  aria-label="即時切換供應商與模型"
+                  title="選擇已加入的供應商模型；只列出與目前 API 類型相容的模型"
+                  value={upstreamProvider && upstreamModel ? JSON.stringify([upstreamProvider.id, upstreamModel]) : ""}
+                  onChange={(event) => {
+                    try {
+                      const [providerId, modelId] = JSON.parse(event.target.value) as [string, string];
+                      if (providerId && modelId) onUpstream(providerId, modelId);
+                    } catch {
+                      // Ignore malformed option values.
+                    }
+                  }}
+                  disabled={busy || upstreamModelOptions.length === 0}
+                >
+                  {upstreamOptions.map((provider) => {
+                    const models = upstreamModelOptions.filter((option) => option.provider.id === provider.id);
+                    if (models.length === 0) return null;
+                    return (
+                      <optgroup key={provider.id} label={provider.name}>
+                        {models.map(({ model }) => (
+                          <option key={model.id} value={JSON.stringify([provider.id, model.id])}>
+                            {model.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              )}
               <button type="button" className="ghost small" onClick={onProxyMode} disabled={busy}>
                 代理設定
               </button>

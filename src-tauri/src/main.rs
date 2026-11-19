@@ -4,6 +4,7 @@ mod adapters;
 mod audit;
 mod backup;
 mod ccswitch;
+mod codex_bridge;
 mod compat;
 mod crypto;
 mod export_crypto;
@@ -170,6 +171,8 @@ struct ProviderView {
     model: String,
     models: Vec<ModelProfile>,
     kind: String,
+    codex_gateway: bool,
+    codex_catalog_url: String,
     note: String,
     profile_id: String,
     api_keys: Vec<keys::ApiKeyView>,
@@ -201,6 +204,8 @@ impl From<Provider> for ProviderView {
             model: provider.model,
             models: provider.models,
             kind: provider.kind,
+            codex_gateway: provider.codex_gateway,
+            codex_catalog_url: provider.codex_catalog_url,
             note: provider.note,
             profile_id: provider.profile_id,
             api_keys,
@@ -238,6 +243,10 @@ struct ProviderInput {
     #[serde(default)]
     kind: String,
     #[serde(default)]
+    codex_gateway: bool,
+    #[serde(default)]
+    codex_catalog_url: String,
+    #[serde(default)]
     note: String,
     #[serde(default)]
     profile_id: String,
@@ -273,6 +282,8 @@ impl From<ProviderInput> for Provider {
             model: provider.model,
             models: provider.models,
             kind: provider.kind,
+            codex_gateway: provider.codex_gateway,
+            codex_catalog_url: provider.codex_catalog_url,
             note: provider.note,
             profile_id: provider.profile_id,
             api_keys: Vec::new(),
@@ -1848,6 +1859,8 @@ fn proxy_provider(
         provider.models.clear();
         provider.kind.clear();
     }
+    provider.codex_gateway = false;
+    provider.codex_catalog_url.clear();
     provider.note = "一鍵代理模式；上游切換即時生效".into();
     provider.profile_id.clear();
     provider.api_keys.clear();
@@ -1861,6 +1874,58 @@ fn proxy_provider(
     provider.model_sync_failures = 0;
     provider.model_sync_last_error.clear();
     provider
+}
+
+fn reset_codex_aggregate_routes(config: &mut proxy::ProxyConfig) {
+    for policy in config.policies.values_mut() {
+        policy.route_tools.retain(|tool| tool != "codex");
+    }
+    config.stack.retain(|reference| !reference.starts_with("codex:"));
+}
+
+/// Add supported providers from the other Harnesses to Codex's native picker.
+/// Their wire API is translated at the local gateway when Codex needs it.
+fn configure_codex_aggregate(data: &mut store::Store) -> usize {
+    reset_codex_aggregate_routes(&mut data.proxy);
+    let mut count = 0;
+    for (tool, providers) in &data.providers {
+        for provider in providers.iter().filter(|provider| {
+            !is_proxy_provider(provider)
+                && !provider.base_url.trim().is_empty()
+                && !provider.api_key.trim().is_empty()
+                && (matches!(provider.kind.trim().to_ascii_lowercase().as_str(), "responses" | "openai-responses" | "openai" | "openai-completions" | "openai-chat-completions" | "chat-completions" | "anthropic" | "anthropic-messages" | "claude")
+                    || (provider.kind.trim().is_empty() && tool == "commandcode"))
+        }) {
+            let reference = format!("{tool}:{}", provider.id);
+            let policy = data.proxy.policies.entry(reference.clone()).or_default();
+            policy.route_model.clear();
+            policy.allowed_models.clear();
+            policy.model_map.clear();
+            policy.route_tools.retain(|route| route != "codex");
+            policy.route_tools.push("codex".into());
+            for model in provider.models.iter().filter(|model| {
+                !model.archived && !model.id.trim().is_empty() && model.tools != Some(false)
+            }) {
+                let alias = proxy::codex_model_alias(tool, &provider.id, &model.id);
+                if !policy.allowed_models.iter().any(|existing| existing == &alias) {
+                    policy.allowed_models.push(alias.clone());
+                }
+                policy.model_map.insert(alias, model.id.clone());
+            }
+            if !policy.allowed_models.is_empty() {
+                if !data.proxy.stack.iter().any(|item| item == &reference) {
+                    data.proxy.stack.push(reference);
+                }
+                count += 1;
+            }
+        }
+    }
+    let plus_ref = "codex:__chatgpt_plus__".to_string();
+    data.proxy.policies.entry(plus_ref.clone()).or_default().route_model.clear();
+    if !data.proxy.stack.iter().any(|item| item == &plus_ref) {
+        data.proxy.stack.push(plus_ref);
+    }
+    count
 }
 
 /// Point a tool at the local proxy by applying a dedicated provider entry.
@@ -1887,6 +1952,32 @@ fn proxy_attach(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, Stri
 fn proxy_quick_start(tool: String, app: tauri::AppHandle) -> Result<ApplyResult, String> {
     let _spec = spec(&tool)?;
     let mut data = store::load();
+    if tool == "codex" {
+        let current = adapters::read_current(&adapters::find("codex").unwrap());
+        if !current.base_url.is_empty()
+            && !current.base_url.contains("127.0.0.1")
+            && !current.base_url.contains("localhost")
+        {
+            data.proxy.attached.insert(tool.clone(), current.base_url);
+        }
+        let compatible_targets = configure_codex_aggregate(&mut data);
+        data.proxy.enabled = true;
+        store::save(&data)?;
+        proxy::start().map_err(|error| format!("代理啟動失敗：{error}"))?;
+        let config = store::load().proxy;
+        let mut provider = proxy_provider(&tool, &config, None);
+        provider.codex_gateway = true;
+        provider.kind = "responses".into();
+        provider.api_key.clear();
+        provider.api_key_enc.clear();
+        provider.codex_catalog_url = format!("http://127.0.0.1:{}/codex/models", config.port);
+        let saved = store::upsert_with_key_action(&tool, provider, true)?;
+        let result = apply_core(&tool, &saved.id)?;
+        audit::record("proxy.quick_start", format!("{tool}:targets={compatible_targets}+plus"));
+        let _ = app.emit("kumoswitch://changed", ());
+        tray::refresh(&app);
+        return Ok(result);
+    }
     let providers = data.providers.get(&tool).cloned().unwrap_or_default();
     let model_template = proxy_model_template(
         &tool,

@@ -67,6 +67,8 @@ export interface Provider {
   model: string;
   models?: ModelProfile[];
   kind: string;
+  codex_gateway?: boolean;
+  codex_catalog_url?: string;
   note: string;
   profile_id?: string;
   api_keys?: ApiKeyView[];
@@ -503,6 +505,7 @@ export interface ProxyTargetPolicy {
   allowed_models: string[];
   model_map: Record<string, string>;
   route_model: string;
+  route_tools?: string[];
 }
 
 export interface ProxyAlertRules {

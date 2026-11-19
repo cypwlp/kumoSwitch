@@ -18,6 +18,7 @@ const DEFAULT_POLICY: ProxyTargetPolicy = {
   allowed_models: [],
   model_map: {},
   route_model: "",
+  route_tools: [],
 };
 
 const EMPTY_CONFIG: ProxyConfig = {
