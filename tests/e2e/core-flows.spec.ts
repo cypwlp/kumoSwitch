@@ -663,7 +663,7 @@ test("instant switch is a first-class action on the tool page", async ({ page })
   await expect(page.getByRole("button", { name: "一鍵啟用" })).toBeVisible();
   await page.getByRole("button", { name: "一鍵啟用" }).click();
   const successToast = page.locator(".toast");
-  await expect(successToast).toContainText(/已啟用即時切換|Codex 合併模型目錄已啟用/);
+  await expect(successToast).toContainText(/已啟用即時切換|Codex 模型目錄已啟用/);
   await expect(page.getByText("Codex 已連接", { exact: true })).toBeVisible();
   await expect(page.getByText("已連接；模型會從 Codex 的模型選單切換。", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "更多" }).first().click();
@@ -698,6 +698,7 @@ test("quick switch applies immediately and can be undone", async ({ page }) => {
   await expect(page.locator(".toast-action")).toBeVisible();
   await page.locator(".toast-action").click();
   await expect(page.locator(".toast").filter({ hasText: "已復原切換前的設定" })).toBeVisible();
+  await page.getByRole("button", { name: "進階", exact: true }).click();
   await expect(page.locator(".current-provider")).toContainText("OpenCode Go");
 });
 

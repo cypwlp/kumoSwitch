@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.27.12 — 2026-11-19
+- **修正 v0.27.11 UI E2E**：更新 Codex 模型目錄文案的英文翻譯與 toast 斷言；quick-switch 撤銷改在進階檢視驗證目前供應商。
+
 ## 0.27.11 — 2026-11-19
 - **Codex 模型目錄只聚合 Codex 供應商**：一鍵連接不再把 Pi／Qoder 等 Harness 的供應商混進 Codex 選單，也不會覆蓋已整理的模型路由；OpenCode Go 的 Hy4 等模型會自動列入。
 
