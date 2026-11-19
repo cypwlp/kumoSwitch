@@ -102,26 +102,27 @@ export function ToolPanel({
 }: PanelProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [ccSelected, setCcSelected] = useState<Set<string>>(new Set());
-  const [codexManageOpen, setCodexManageOpen] = useState(false);
+  const [providerManageOpen, setProviderManageOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
-  const codexManageRef = useRef<HTMLDivElement>(null);
-  const codexFlow = tool.id === "codex" && simple;
-  const showProviderManager = !codexFlow || codexManageOpen;
+  const providerManageRef = useRef<HTMLDivElement>(null);
+  const simpleFlow = simple;
+  const codexFlow = tool.id === "codex" && simpleFlow;
+  const showProviderManager = !simpleFlow || providerManageOpen;
 
   useEffect(() => {
-    setCodexManageOpen(false);
+    setProviderManageOpen(false);
   }, [tool.id, simple]);
 
-  const openCodexProviderManager = () => {
-    setCodexManageOpen(true);
-    window.setTimeout(() => codexManageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  const openProviderManager = () => {
+    setProviderManageOpen(true);
+    window.setTimeout(() => providerManageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
-  const closeCodexProviderManager = () => {
-    setCodexManageOpen(false);
-    window.setTimeout(() => document.getElementById("codex-setup-flow")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  const closeProviderManager = () => {
+    setProviderManageOpen(false);
+    window.setTimeout(() => document.getElementById("harness-setup-flow")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
   useEffect(() => {
@@ -170,8 +171,8 @@ export function ToolPanel({
         <div className="title-row">
           <HarnessIcon id={tool.id} name={tool.name} size={34} />
           <h2>{tool.name}</h2>
-          {codexFlow ? (
-            <span className="badge subtle">GPT Plus 與其他模型</span>
+          {simpleFlow ? (
+            <span className="badge subtle">{codexFlow ? "GPT Plus 與其他模型" : "簡易設定"}</span>
           ) : (
             <>
               <span className="badge subtle">工具</span>
@@ -185,7 +186,7 @@ export function ToolPanel({
             </>
           )}
         </div>
-        {codexFlow ? null : (
+        {simpleFlow ? null : (
           <div className="path-row">
             <code title="設定檔路徑">{tool.path}</code>
             <button className="ghost small" onClick={onReveal}>
@@ -205,9 +206,10 @@ export function ToolPanel({
         </div>
       ) : null}
 
-      {codexFlow ? (
-        <section className="codex-setup-flow" id="codex-setup-flow" aria-labelledby="codex-setup-title">
-          <div className="codex-setup-heading">
+      {simpleFlow ? (
+        codexFlow ? (
+        <section className="harness-setup-flow" id="harness-setup-flow" aria-labelledby="codex-setup-title">
+          <div className="setup-flow-heading">
             <div>
               <span className="eyebrow">快速設定 · 3 步</span>
               <h3 id="codex-setup-title">讓 Codex 顯示 GPT Plus 和其他模型</h3>
@@ -217,20 +219,20 @@ export function ToolPanel({
               {proxyAttached ? "Codex 已連接" : "尚未連接"}
             </span>
           </div>
-          <ol className="codex-setup-steps">
-            <li className={`codex-setup-step ${total > 0 ? "complete" : ""}`}>
-              <span className="codex-step-number">{total > 0 ? "✓" : "1"}</span>
-              <div className="codex-step-copy">
+          <ol className="setup-flow-steps">
+            <li className={`setup-flow-step ${total > 0 ? "complete" : ""}`}>
+              <span className="setup-step-number">{total > 0 ? "✓" : "1"}</span>
+              <div className="setup-step-copy">
                 <strong>加入其他模型（可略過）</strong>
                 <p>{total > 0 ? `KumoSwitch 已管理 ${total} 個供應商。` : "OpenCode 或 Command Code 模型要先加入；GPT Plus 不用填 API Key。"}</p>
               </div>
-              <button className="ghost small" type="button" onClick={total > 0 ? openCodexProviderManager : onAdd}>
+              <button className="ghost small" type="button" onClick={total > 0 ? openProviderManager : onAdd}>
                 {total > 0 ? "管理供應商" : "＋新增供應商"}
               </button>
             </li>
-            <li className={`codex-setup-step ${proxyAttached ? "complete" : "active"}`}>
-              <span className="codex-step-number">{proxyAttached ? "✓" : "2"}</span>
-              <div className="codex-step-copy">
+            <li className={`setup-flow-step ${proxyAttached ? "complete" : "active"}`}>
+              <span className="setup-step-number">{proxyAttached ? "✓" : "2"}</span>
+              <div className="setup-step-copy">
                 <strong>連接 Codex 模型選單</strong>
                 <p>{proxyAttached ? "已連接；模型會從 Codex 的模型選單切換。" : "啟用後，Codex 會列出 GPT Plus 和 KumoSwitch 已加入的模型。"}</p>
               </div>
@@ -240,20 +242,99 @@ export function ToolPanel({
                 </button>
               )}
             </li>
-            <li className={`codex-setup-step ${proxyAttached ? "active" : ""}`}>
-              <span className="codex-step-number">3</span>
-              <div className="codex-step-copy">
+            <li className={`setup-flow-step ${proxyAttached ? "active" : ""}`}>
+              <span className="setup-step-number">3</span>
+              <div className="setup-step-copy">
                 <strong>登入並重新開啟 Codex</strong>
                 <p>GPT Plus 使用 ChatGPT 帳號登入；CLI 版可輸入 <code>/login</code>。啟用後重開 Codex 一次。</p>
               </div>
               <span className="badge subtle">最後一步</span>
             </li>
           </ol>
-          <div className="codex-setup-footnote">
+          <div className="setup-flow-footnote">
             <p>Plus 登入由 Codex 處理；供應商 API Key 留在 KumoSwitch。</p>
             <button className="linklike" type="button" onClick={() => onSimple(false)}>進階設定</button>
           </div>
         </section>
+        ) : (
+          <section className="harness-setup-flow" id="harness-setup-flow" aria-labelledby="harness-setup-title">
+            <div className="setup-flow-heading">
+              <div>
+                <span className="eyebrow">快速設定 · 3 步</span>
+                <h3 id="harness-setup-title">完成供應商設定</h3>
+                <p>加入供應商、套用模型，再依提示重新載入工具。</p>
+              </div>
+              <span className={`badge ${proxyAttached || activeProvider ? "ok" : "subtle"}`}>
+                {proxyAttached ? "即時切換已啟用" : activeProvider ? "供應商已套用" : "尚未設定"}
+              </span>
+            </div>
+            <ol className="setup-flow-steps">
+              <li className={`setup-flow-step ${total > 0 ? "complete" : "active"}`}>
+                <span className="setup-step-number">{total > 0 ? "✓" : "1"}</span>
+                <div className="setup-step-copy">
+                  <strong>準備供應商</strong>
+                  <p>{total > 0 ? `已加入 ${total} 個供應商；下一步可直接選擇。` : "先新增或匯入一個供應商；模型可在供應商底下管理。"}</p>
+                </div>
+                {total === 0 ? <button className="ghost small" type="button" onClick={onAdd}>＋新增供應商</button> : null}
+              </li>
+              <li className={`setup-flow-step ${proxyAttached || activeProvider ? "complete" : "active"}`}>
+                <span className="setup-step-number">{proxyAttached || activeProvider ? "✓" : "2"}</span>
+                <div className="setup-step-copy">
+                  <strong>套用供應商與模型</strong>
+                  {proxyAttached ? <p>選擇下拉清單中的供應商與模型，切換即時生效。</p> : activeProvider ? (
+                    <p>目前已套用：<strong>{activeProvider.name}</strong>{tool.current.model ? <> · <code>{tool.current.model}</code></> : null}</p>
+                  ) : <p>在清單選擇供應商，再按「套用」。</p>}
+                </div>
+                {proxyAttached ? (
+                  <select
+                    className="mini-select"
+                    aria-label="即時切換供應商與模型"
+                    title="選擇已加入的供應商模型；切換後立即生效"
+                    value={upstreamProvider && upstreamModel ? JSON.stringify([upstreamProvider.id, upstreamModel]) : ""}
+                    onChange={(event) => {
+                      try {
+                        const [providerId, modelId] = JSON.parse(event.target.value) as [string, string];
+                        if (providerId && modelId) onUpstream(providerId, modelId);
+                      } catch {
+                        // Ignore malformed option values.
+                      }
+                    }}
+                    disabled={busy || upstreamModelOptions.length === 0}
+                  >
+                    <option value="">選擇供應商與模型</option>
+                    {upstreamOptions.map((provider) => {
+                      const models = upstreamModelOptions.filter((option) => option.provider.id === provider.id);
+                      if (models.length === 0) return null;
+                      return (
+                        <optgroup key={provider.id} label={provider.name}>
+                          {models.map(({ model }) => (
+                            <option key={model.id} value={JSON.stringify([provider.id, model.id])}>{model.name}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                ) : activeProvider ? (
+                  <button className="ghost small" type="button" onClick={openProviderManager}>切換供應商</button>
+                ) : (
+                  <button className="primary small" type="button" onClick={openProviderManager}>選擇供應商</button>
+                )}
+              </li>
+              <li className={`setup-flow-step ${proxyAttached || activeProvider ? "active" : ""}`}>
+                <span className="setup-step-number">3</span>
+                <div className="setup-step-copy">
+                  <strong>讓變更生效</strong>
+                  <p>{proxyAttached ? "首次啟用請依工具提示重新開啟或重新載入；之後切換即時生效。" : tool.restart || "請依工具提示重新開啟或重新載入。"}</p>
+                </div>
+                <span className="badge subtle">最後一步</span>
+              </li>
+            </ol>
+            <div className="setup-flow-footnote">
+              <p>供應商設定保存在 KumoSwitch；已加入的模型可在此管理。</p>
+              <button className="linklike" type="button" onClick={() => onSimple(false)}>進階設定</button>
+            </div>
+          </section>
+        )
       ) : (
       <div className="current-strip">
         <div className="current-provider">
@@ -335,13 +416,13 @@ export function ToolPanel({
 
       {showProviderManager ? (
         <>
-      {codexFlow ? (
-        <div className="codex-manage-head" ref={codexManageRef}>
+      {simpleFlow ? (
+        <div className="setup-manage-head" ref={providerManageRef}>
           <div>
             <h3>供應商與模型</h3>
-            <p>管理 OpenCode、Command Code 和其他已加入的模型來源。</p>
+            <p>{codexFlow ? "管理 OpenCode、Command Code 和其他已加入的模型來源。" : "新增、編輯或套用供應商。"}</p>
           </div>
-          <button className="ghost small" type="button" onClick={closeCodexProviderManager}>收起管理</button>
+          <button className="ghost small" type="button" onClick={closeProviderManager}>收起管理</button>
         </div>
       ) : null}
       {tool.cc_switch?.available && tool.cc_switch.providers.length ? (

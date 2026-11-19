@@ -109,9 +109,10 @@ test("compatibility batch import and route-stack mirroring are available", async
 test("Pi and Oh My Pi are available as first-class Harnesses", async ({ page }) => {
   await page.getByRole("button", { name: /Pi coding agent/ }).click();
   await expect(page.getByRole("heading", { name: "Pi", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "完成供應商設定" })).toBeVisible();
   await page.getByRole("button", { name: /Oh My Pi \(omp\) coding agent/ }).click();
   await expect(page.getByRole("heading", { name: "Oh My Pi", exact: true })).toBeVisible();
-  await expect(page.getByText("~/.omp/agent/models.yml")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "完成供應商設定" })).toBeVisible();
 });
 
 test("Harness rail shows distinct icons and desktop configuration scope", async ({ page }) => {
@@ -124,7 +125,10 @@ test("Harness rail shows distinct icons and desktop configuration scope", async 
 
   await page.getByRole("button", { name: /Pi coding agent/ }).click();
   await expect(page.getByRole("heading", { name: "Pi", exact: true })).toBeVisible();
+  await expect(page.locator(".harness-setup-flow")).toBeVisible();
+  await page.getByRole("button", { name: "進階設定" }).click();
   await expect(page.locator(".panel-head .surface-badge")).toHaveText("CLI");
+  await expect(page.getByText("~/.pi/agent/models.json")).toBeVisible();
 
   await page.getByRole("button", { name: /OpenAI Codex CLI/ }).click();
   await expect(page.getByRole("heading", { name: "Codex", exact: true })).toBeVisible();
