@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.28.2 — 2026-11-19
+- **修復多模態模型圖片輸入**：catalog 會從供應商 metadata 的 modalities／input_modalities 判斷 vision，不再只看 vision 欄位；Hy4 flash Free 等模型恢復圖片上傳。
+
 ## 0.28.1 — 2026-11-19
 - **用量統計顯示上游模型**：Codex gateway 的 kumoswitch_* alias 會對映回 CommandCode／OpenCode Go 的實際供應商與模型名稱；CommandCode／ChatGPT Plus 標示「訂閱」，免費模型顯示 /usr/bin/bash.00。
 

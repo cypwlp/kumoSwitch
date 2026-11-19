@@ -941,6 +941,7 @@ fn catalog_model_info(alias: &str, provider_name: &str, model: &crate::adapters:
         .filter(|level| matches!(level.as_str(), "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"))
         .map(|level| serde_json::json!({ "effort": level, "description": format!("{level} reasoning") }))
         .collect::<Vec<_>>();
+    let vision = crate::adapters::model_supports_vision(model);
     let mut info = serde_json::json!({
         "slug": alias,
         "display_name": format!("{provider_name} · {display}"),
@@ -955,6 +956,7 @@ fn catalog_model_info(alias: &str, provider_name: &str, model: &crate::adapters:
         "truncation_policy": { "mode": "tokens", "limit": 10000 },
         "experimental_supported_tools": [],
         "supports_reasoning_summary_parameter": false,
+        "supports_image_detail_original": vision,
         "default_reasoning_level": if model.reasoning_level.trim().is_empty() {
             serde_json::Value::Null
         } else {
@@ -962,7 +964,7 @@ fn catalog_model_info(alias: &str, provider_name: &str, model: &crate::adapters:
         },
         "context_window": model.context_window,
         "max_context_window": model.context_window,
-        "input_modalities": if model.vision == Some(true) { vec!["text", "image"] } else { vec!["text"] },
+        "input_modalities": if vision { vec!["text", "image"] } else { vec!["text"] },
     });
     if model.reasoning == Some(true) && !model.reasoning_levels.is_empty() {
         info["description"] = serde_json::Value::String(format!(

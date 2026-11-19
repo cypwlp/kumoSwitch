@@ -97,6 +97,28 @@ pub struct ModelProfile {
     pub archived: bool,
 }
 
+fn has_image_modality(value: &Value) -> bool {
+    ["/input", "/modalities/input", "/inputModalities", "/input_modalities", "/architecture/input_modalities"]
+        .iter()
+        .any(|path| {
+            value
+                .pointer(path)
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items.iter().any(|item| {
+                        item.as_str()
+                            .map(|value| value.to_ascii_lowercase().starts_with("image"))
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false)
+        })
+}
+
+pub fn model_supports_vision(model: &ModelProfile) -> bool {
+    model.vision == Some(true) || has_image_modality(&model.metadata)
+}
+
 impl ModelProfile {
     pub fn new(id: impl Into<String>) -> Self {
         let id = id.into();
@@ -1419,11 +1441,8 @@ pub(crate) fn model_profile_from_value(id: String, value: &Value) -> ModelProfil
         reasoning: boolean(&["/reasoning", "/capabilities/reasoning", "/supports_reasoning"]),
         reasoning_levels: reasoning_levels_from_metadata(value),
         reasoning_level: default_reasoning_level_from_metadata(value).unwrap_or_default(),
-        vision: boolean(&["/vision", "/capabilities/vision", "/attachment"]).or_else(|| {
-            value.get("input").and_then(Value::as_array).map(|inputs| {
-                inputs.iter().any(|input| input.as_str() == Some("image"))
-            })
-        }),
+        vision: boolean(&["/vision", "/capabilities/vision", "/attachment"])
+            .or_else(|| has_image_modality(value).then_some(true)),
         tools: boolean(&["/tools", "/tool_call", "/capabilities/tools"]),
         metadata: value.clone(),
         checks: Vec::new(),
@@ -1947,6 +1966,14 @@ mod real_config_checks {
             assert!(after.contains(block), "DSH 計畫把 `{block}` 吃掉了");
         }
         assert!(after.contains("kumoswitch-selftest:"));
+    }
+
+    #[test]
+    fn image_modalities_enable_vision() {
+        let value = serde_json::json!({"modalities": {"input": ["text", "image/png"]}});
+        assert!(has_image_modality(&value));
+        let text_only = serde_json::json!({"input_modalities": ["text"]});
+        assert!(!has_image_modality(&text_only));
     }
 
     #[test]
