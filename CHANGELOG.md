@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.27.7 — 2026-11-19
+- 修正 Rust 測試中的 `Provider` 初始化，補上 Codex gateway 欄位；`cargo test` 現在可在 Windows、macOS、Linux runner 編譯。
+
 ## 0.27.6 — 2026-11-19
 - 修正「改成即時切換」E2E 檢查：依一般 Harness 與 Codex 合併模型目錄驗證各自的成功提示及切換控制項，不再因文案或 Codex 專用選單而誤報失敗。
 

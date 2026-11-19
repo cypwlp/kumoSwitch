@@ -29,6 +29,8 @@ fn provider(config_id: &str) -> Provider {
         model: "e2e-model".into(),
         models: vec![adapters::ModelProfile::new("e2e-model")],
         kind: String::new(),
+        codex_gateway: false,
+        codex_catalog_url: String::new(),
         note: String::new(),
         profile_id: String::new(),
         api_keys: Vec::new(),

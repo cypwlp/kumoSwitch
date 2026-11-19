@@ -2992,6 +2992,8 @@ mod redaction_tests {
             model: "demo".into(),
             models: vec![ModelProfile::new("demo")],
             kind: "openai".into(),
+            codex_gateway: false,
+            codex_catalog_url: String::new(),
             note: String::new(),
             profile_id: String::new(),
             api_keys: vec![adapters::ApiKeyVersion {
