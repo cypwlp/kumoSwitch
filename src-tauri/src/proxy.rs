@@ -861,41 +861,6 @@ fn chatgpt_request_headers(headers: &[tiny_http::Header]) -> Vec<(String, String
         .collect()
 }
 
-fn catalog_model_info(alias: &str, provider_name: &str, model: &crate::adapters::ModelProfile) -> serde_json::Value {
-    let display = if model.name.trim().is_empty() { &model.id } else { &model.name };
-    let supported_reasoning_levels = model.reasoning_levels.iter()
-        .filter(|level| matches!(level.as_str(), "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"))
-        .map(|level| serde_json::json!({ "effort": level, "description": format!("{level} reasoning") }))
-        .collect::<Vec<_>>();
-    let mut info = serde_json::json!({
-        "slug": alias,
-        "display_name": format!("{provider_name} · {display}"),
-        "description": format!("由 kumoSwitch 路由至 {provider_name}。"),
-        "base_instructions": "Help the user with their coding tasks.",
-        "supported_reasoning_levels": supported_reasoning_levels,
-        "shell_type": "shell_command",
-        "visibility": "list",
-        "supported_in_api": true,
-        "priority": 0,
-        "support_verbosity": false,
-        "truncation_policy": { "mode": "tokens", "limit": 10000 },
-        "experimental_supported_tools": [],
-        "supports_reasoning_summary_parameter": false,
-        "default_reasoning_level": model.reasoning_level.trim().is_empty().then_some(serde_json::Value::Null)
-            .unwrap_or_else(|| serde_json::Value::String(model.reasoning_level.clone())),
-        "context_window": model.context_window,
-        "max_context_window": model.context_window,
-        "input_modalities": if model.vision == Some(true) { vec!["text", "image"] } else { vec!["text"] },
-    });
-    if model.reasoning == Some(true) && !model.reasoning_levels.is_empty() {
-        info["description"] = serde_json::Value::String(format!(
-            "由 kumoSwitch 路由至 {provider_name}。支援推理層級：{}。",
-            model.reasoning_levels.join("、")
-        ));
-    }
-    info
-}
-
 fn codex_catalog_response(
     config: &ProxyConfig,
     client: &reqwest::blocking::Client,
@@ -925,33 +890,15 @@ fn codex_catalog_response(
         .map_err(|error| (502, format!("ChatGPT 模型目錄格式無效：{error}")))?;
     let models = catalogue.get_mut("models").and_then(serde_json::Value::as_array_mut)
         .ok_or((502, "ChatGPT 模型目錄缺少 models 清單".into()))?;
-    let mut slugs = std::collections::BTreeSet::new();
     models.retain_mut(|model| {
         let Some(slug) = model.get("slug").and_then(serde_json::Value::as_str).map(str::to_string) else { return false };
         let Some(object) = model.as_object_mut() else { return false };
         let display = object.get("display_name").and_then(serde_json::Value::as_str).unwrap_or(&slug).to_string();
         object.insert("display_name".into(), serde_json::Value::String(format!("GPT Plus · {display}")));
-        slugs.insert(slug)
+        true
     });
-
-    let store = crate::store::load();
-    let mut merged = std::mem::take(models);
-    let mut added = std::collections::BTreeSet::new();
-    for reference in &config.stack {
-        let Some(policy) = config.policies.get(reference) else { continue };
-        if !policy.route_tools.iter().any(|tool| tool == "codex") { continue; }
-        let Some((tool, provider_id)) = reference.split_once(':') else { continue };
-        let Some(provider) = store.providers.get(tool).and_then(|items| items.iter().find(|item| item.id == provider_id)) else { continue };
-        for model in provider.models.iter().filter(|model| !model.archived && !model.id.trim().is_empty()) {
-            let alias = codex_model_alias(tool, provider_id, &model.id);
-            if slugs.contains(&alias)
-                || !policy.allowed_models.iter().any(|item| item == &alias)
-                || !added.insert(alias.clone())
-            { continue; }
-            merged.push(catalog_model_info(&alias, &provider.name, model));
-        }
-    }
-    catalogue["models"] = serde_json::Value::Array(merged);
+    // Codex rejects non-OpenAI slugs while authenticated with a ChatGPT account,
+    // so the gateway catalogue intentionally exposes only ChatGPT Plus models.
     Ok(catalogue)
 }
 

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.27.14 — 2026-11-19
+- **Codex 目錄只保留 GPT Plus**：Codex 在 ChatGPT 帳號模式下會拒絕自訂模型 slug（model_not_found），因此代理目錄不再混入第三方模型；第三方模型請切換直接供應商。
+
 ## 0.27.13 — 2026-11-19
 - **代理供應商卡片不再誤導**：kumoSwitch 代理改為顯示 Codex 模型目錄由 kumoSwitch 動態提供，並隱藏不代表 Codex 目錄的預設模型下拉。
 

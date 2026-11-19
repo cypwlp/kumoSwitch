@@ -455,7 +455,7 @@ test("narrow window keeps the Harness usable without horizontal overflow", async
   await page.setViewportSize({ width: 720, height: 700 });
   await page.goto(APP);
   await expect(page.getByRole("heading", { name: "Codex", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 和其他模型" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 模型" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   expect(overflow).toBe(true);
   const layout = await page.locator(".app").evaluate((element) => getComputedStyle(element).flexDirection);
@@ -521,7 +521,7 @@ test("Harness provider overview matches the visual baseline", async ({ page }) =
   await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "light"));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 和其他模型" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 模型" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page).toHaveScreenshot("harness-overview.png", {
     animations: "disabled",
@@ -534,7 +534,7 @@ test("dark visual system matches the v0.14 baseline", async ({ page }) => {
   await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "dark"));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
-  await page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 和其他模型" }).waitFor();
+  await page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 模型" }).waitFor();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page).toHaveScreenshot("harness-overview-dark.png", {
     animations: "disabled",
@@ -559,7 +559,7 @@ test("mobile rail keeps one consolidated settings entry", async ({ page }) => {
   await page.setViewportSize({ width: 480, height: 860 });
   await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "light"));
   await page.reload();
-  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 和其他模型" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 模型" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^設定/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /更多操作/ })).toHaveCount(0);
   await expect(page.locator(".rail-actions")).toHaveCount(0);
