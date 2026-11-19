@@ -576,7 +576,7 @@ test("Harness more menu closes on outside click and Escape", async ({ page }) =>
   const menu = page.getByRole("menu");
   await expect(menu).toBeVisible();
 
-  await page.getByRole("heading", { name: "供應商" }).click();
+  await page.locator(".provider-list-head h3").click();
   await expect(menu).toBeHidden();
 
   await trigger.click();
@@ -695,7 +695,7 @@ test("quick switch applies immediately and can be undone", async ({ page }) => {
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".toast").filter({ hasText: "已切換到「Command Code」" })).toBeVisible();
   await expect(page.locator(".recent-chip").filter({ hasText: "Command Code" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "切回上一個供應商" })).toBeVisible();
+  await expect(page.locator(".toast-action")).toBeVisible();
   await page.locator(".toast-action").click();
   await expect(page.locator(".toast").filter({ hasText: "已復原切換前的設定" })).toBeVisible();
   await expect(page.locator(".current-provider")).toContainText("OpenCode Go");

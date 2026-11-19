@@ -279,7 +279,7 @@ const DICT: Record<string, string> = {
   "已完成": "Done",
   "一鍵啟用": "Enable in one click",
   "登入並重新開啟 Codex": "Sign in and restart Codex",
-  "GPT Plus 使用 ChatGPT 帳號登入；CLI 版可輸入 ": "For GPT Plus, sign in to ChatGPT; in the CLI, enter ",
+  "GPT Plus 使用 ChatGPT 帳號登入；CLI 版可輸入": "For GPT Plus, sign in to ChatGPT; in the CLI, enter",
   "。啟用後重開 Codex 一次。": ". Restart Codex once after enabling.",
   "最後一步": "Last step",
   "Plus 登入由 Codex 處理；供應商 API Key 留在 KumoSwitch。": "Codex handles Plus sign-in; provider API keys stay in KumoSwitch.",
