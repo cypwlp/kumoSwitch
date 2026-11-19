@@ -142,7 +142,7 @@ export function ProviderTable({
                   <span className="provider-alias">{provider.note || provider.config_id}</span>
                   {simple ? (
                     <span className="provider-current-model">
-                      目前模型 <code>{provider.model || "未設定"}</code>
+                      {provider.codex_gateway ? "模型由 Codex 選單讀取" : <>目前模型 <code>{provider.model || "未設定"}</code></>}
                     </span>
                   ) : null}
                 </div>
@@ -173,7 +173,17 @@ export function ProviderTable({
               </dl>
               )}
 
-              {simple ? null : (
+              {simple ? null : provider.codex_gateway ? (
+              <div className="provider-models">
+                <div className="provider-models-head">
+                  <span className="eyebrow">Codex 模型目錄</span>
+                  <span className="model-count">由 kumoSwitch 動態提供</span>
+                </div>
+                <div className="provider-model-list">
+                  <span className="provider-model-empty">Codex 選單會讀取此代理的目錄；這裡列出的模型不會限制 Codex 選單。</span>
+                </div>
+              </div>
+              ) : (
               <div className="provider-models">
                 <div className="provider-models-head">
                   <span className="eyebrow">此供應商的模型</span>
@@ -207,7 +217,7 @@ export function ProviderTable({
               >
                 {active ? "重新套用" : "套用"}
               </button>
-              {(provider.models?.filter((model) => !model.archived).length ?? 0) > 1 ? (
+              {!provider.codex_gateway && (provider.models?.filter((model) => !model.archived).length ?? 0) > 1 ? (
                 <select
                   className="provider-model-quick"
                   aria-label={`${provider.name} 快速切換模型`}
