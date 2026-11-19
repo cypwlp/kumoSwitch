@@ -102,9 +102,27 @@ export function ToolPanel({
 }: PanelProps) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [ccSelected, setCcSelected] = useState<Set<string>>(new Set());
+  const [codexManageOpen, setCodexManageOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const codexManageRef = useRef<HTMLDivElement>(null);
+  const codexFlow = tool.id === "codex" && simple;
+  const showProviderManager = !codexFlow || codexManageOpen;
+
+  useEffect(() => {
+    setCodexManageOpen(false);
+  }, [tool.id, simple]);
+
+  const openCodexProviderManager = () => {
+    setCodexManageOpen(true);
+    window.setTimeout(() => codexManageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
+  const closeCodexProviderManager = () => {
+    setCodexManageOpen(false);
+    window.setTimeout(() => document.getElementById("codex-setup-flow")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -152,22 +170,30 @@ export function ToolPanel({
         <div className="title-row">
           <HarnessIcon id={tool.id} name={tool.name} size={34} />
           <h2>{tool.name}</h2>
-          <span className="badge subtle">工具</span>
-          <span className={`badge surface-badge ${tool.surface}`}>{tool.surface === "both" ? "CLI + 桌面版" : tool.surface === "desktop" ? "桌面版" : "CLI"}</span>
-          <span className="muted">{tool.blurb}</span>
-          {tool.verified ? (
-            <span className="badge ok">格式已驗證</span>
+          {codexFlow ? (
+            <span className="badge subtle">GPT Plus 與其他模型</span>
           ) : (
-            <span className="badge warn">格式未實測，請先看變更預覽</span>
+            <>
+              <span className="badge subtle">工具</span>
+              <span className={`badge surface-badge ${tool.surface}`}>{tool.surface === "both" ? "CLI + 桌面版" : tool.surface === "desktop" ? "桌面版" : "CLI"}</span>
+              <span className="muted">{tool.blurb}</span>
+              {tool.verified ? (
+                <span className="badge ok">格式已驗證</span>
+              ) : (
+                <span className="badge warn">格式未實測，請先看變更預覽</span>
+              )}
+            </>
           )}
         </div>
-        <div className="path-row">
-          <code title="設定檔路徑">{tool.path}</code>
-          <button className="ghost small" onClick={onReveal}>
-            開啟資料夾
-          </button>
-          <span className="badge subtle">{tool.format}</span>
-        </div>
+        {codexFlow ? null : (
+          <div className="path-row">
+            <code title="設定檔路徑">{tool.path}</code>
+            <button className="ghost small" onClick={onReveal}>
+              開啟資料夾
+            </button>
+            <span className="badge subtle">{tool.format}</span>
+          </div>
+        )}
       </header>
 
       {tool.takeover ? (
@@ -179,6 +205,56 @@ export function ToolPanel({
         </div>
       ) : null}
 
+      {codexFlow ? (
+        <section className="codex-setup-flow" id="codex-setup-flow" aria-labelledby="codex-setup-title">
+          <div className="codex-setup-heading">
+            <div>
+              <span className="eyebrow">快速設定 · 3 步</span>
+              <h3 id="codex-setup-title">讓 Codex 顯示 GPT Plus 和其他模型</h3>
+              <p>照著流程做一次，之後直接在 Codex 的模型選單切換。</p>
+            </div>
+            <span className={`badge ${proxyAttached ? "ok" : "subtle"}`}>
+              {proxyAttached ? "Codex 已連接" : "尚未連接"}
+            </span>
+          </div>
+          <ol className="codex-setup-steps">
+            <li className={`codex-setup-step ${total > 0 ? "complete" : ""}`}>
+              <span className="codex-step-number">{total > 0 ? "✓" : "1"}</span>
+              <div className="codex-step-copy">
+                <strong>加入其他模型（可略過）</strong>
+                <p>{total > 0 ? `KumoSwitch 已管理 ${total} 個供應商。` : "OpenCode 或 Command Code 模型要先加入；GPT Plus 不用填 API Key。"}</p>
+              </div>
+              <button className="ghost small" type="button" onClick={total > 0 ? openCodexProviderManager : onAdd}>
+                {total > 0 ? "管理供應商" : "＋新增供應商"}
+              </button>
+            </li>
+            <li className={`codex-setup-step ${proxyAttached ? "complete" : "active"}`}>
+              <span className="codex-step-number">{proxyAttached ? "✓" : "2"}</span>
+              <div className="codex-step-copy">
+                <strong>連接 Codex 模型選單</strong>
+                <p>{proxyAttached ? "已連接；模型會從 Codex 的模型選單切換。" : "啟用後，Codex 會列出 GPT Plus 和 KumoSwitch 已加入的模型。"}</p>
+              </div>
+              {proxyAttached ? <span className="badge ok">已完成</span> : (
+                <button className="primary small" type="button" onClick={onProxyMode} disabled={busy}>
+                  一鍵啟用
+                </button>
+              )}
+            </li>
+            <li className={`codex-setup-step ${proxyAttached ? "active" : ""}`}>
+              <span className="codex-step-number">3</span>
+              <div className="codex-step-copy">
+                <strong>登入並重新開啟 Codex</strong>
+                <p>GPT Plus 使用 ChatGPT 帳號登入；CLI 版可輸入 <code>/login</code>。啟用後重開 Codex 一次。</p>
+              </div>
+              <span className="badge subtle">最後一步</span>
+            </li>
+          </ol>
+          <div className="codex-setup-footnote">
+            <p>Plus 登入由 Codex 處理；供應商 API Key 留在 KumoSwitch。</p>
+            <button className="linklike" type="button" onClick={() => onSimple(false)}>進階設定</button>
+          </div>
+        </section>
+      ) : (
       <div className="current-strip">
         <div className="current-provider">
           <span className="eyebrow">{proxyAttached ? "即時切換中" : "目前套用"}</span>
@@ -255,7 +331,19 @@ export function ToolPanel({
         </div>
         <span className="current-restart">{tool.restart}</span>
       </div>
+      )}
 
+      {showProviderManager ? (
+        <>
+      {codexFlow ? (
+        <div className="codex-manage-head" ref={codexManageRef}>
+          <div>
+            <h3>供應商與模型</h3>
+            <p>管理 OpenCode、Command Code 和其他已加入的模型來源。</p>
+          </div>
+          <button className="ghost small" type="button" onClick={closeCodexProviderManager}>收起管理</button>
+        </div>
+      ) : null}
       {tool.cc_switch?.available && tool.cc_switch.providers.length ? (
         <p className="ccswitch-inline">
           <span className="ccswitch-mark">⇄</span>
@@ -458,6 +546,9 @@ export function ToolPanel({
             ))}
           </div>
         </details>
+      ) : null}
+
+        </>
       ) : null}
 
     </section>

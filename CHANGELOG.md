@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.27.8 — 2026-11-19
+- **Codex 三步設定流程**：把 GPT Plus 登入、其他供應商模型與一鍵啟用整理成明確流程；供應商清單與技術設定預設收起，仍可展開管理或進入進階設定。
+
 ## 0.27.7 — 2026-11-19
 - 修正 Rust 測試中的 `Provider` 初始化，補上 Codex gateway 欄位；`cargo test` 現在可在 Windows、macOS、Linux runner 編譯。
 

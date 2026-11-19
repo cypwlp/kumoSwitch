@@ -28,6 +28,7 @@ async function enableCompatibilityBridge(page: import("@playwright/test").Page) 
 test.beforeEach(async ({ page }) => {
   await page.goto(APP);
   await expect(page.getByRole("heading", { name: "Codex", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "管理供應商" }).click();
   await expect(page.getByRole("button", { name: "查看供應商 OpenCode Go 的模型與設定" })).toBeVisible();
 });
 
@@ -209,7 +210,7 @@ test("Harness manager installs a fixed package and explains desktop support", as
 test("narrow provider chooser and Harness manager remain contained", async ({ page }) => {
   await page.setViewportSize({ width: 480, height: 820 });
   await page.reload();
-  await page.getByRole("button", { name: "進階", exact: true }).click();
+  await page.getByRole("button", { name: "進階設定" }).click();
   await page.getByRole("button", { name: /新增供應商/ }).click();
   await page.getByRole("button", { name: /瀏覽供應商目錄/ }).click();
   await expect(page.locator(".provider-chooser")).toBeVisible();
@@ -450,7 +451,7 @@ test("narrow window keeps the Harness usable without horizontal overflow", async
   await page.setViewportSize({ width: 720, height: 700 });
   await page.goto(APP);
   await expect(page.getByRole("heading", { name: "Codex", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "供應商" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 和其他模型" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   expect(overflow).toBe(true);
   const layout = await page.locator(".app").evaluate((element) => getComputedStyle(element).flexDirection);
@@ -516,7 +517,7 @@ test("Harness provider overview matches the visual baseline", async ({ page }) =
   await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "light"));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
-  await expect(page.getByRole("heading", { name: "供應商" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 和其他模型" })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(page).toHaveScreenshot("harness-overview.png", {
     animations: "disabled",
@@ -529,7 +530,7 @@ test("dark visual system matches the v0.14 baseline", async ({ page }) => {
   await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "dark"));
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.reload();
-  await page.getByRole("heading", { name: "供應商" }).waitFor();
+  await page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 和其他模型" }).waitFor();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page).toHaveScreenshot("harness-overview-dark.png", {
     animations: "disabled",
@@ -554,7 +555,7 @@ test("mobile rail keeps one consolidated settings entry", async ({ page }) => {
   await page.setViewportSize({ width: 480, height: 860 });
   await page.evaluate(() => localStorage.setItem("kumoswitch.theme", "light"));
   await page.reload();
-  await expect(page.getByRole("heading", { name: "供應商" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "讓 Codex 顯示 GPT Plus 和其他模型" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^設定/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /更多操作/ })).toHaveCount(0);
   await expect(page.locator(".rail-actions")).toHaveCount(0);
@@ -655,17 +656,12 @@ test("usage dashboard shows per-request history", async ({ page }) => {
 });
 
 test("instant switch is a first-class action on the tool page", async ({ page }) => {
-  await expect(page.getByRole("button", { name: "改成即時切換" })).toBeVisible();
-  await page.getByRole("button", { name: "改成即時切換" }).click();
+  await expect(page.getByRole("button", { name: "一鍵啟用" })).toBeVisible();
+  await page.getByRole("button", { name: "一鍵啟用" }).click();
   const successToast = page.locator(".toast");
   await expect(successToast).toContainText(/已啟用即時切換|Codex 合併模型目錄已啟用/);
-  await expect(page.getByText("即時切換中", { exact: true })).toBeVisible();
-  const codexModelPickerHint = page.getByText("在 Codex 模型選單切換", { exact: true });
-  if (await codexModelPickerHint.count()) {
-    await expect(codexModelPickerHint).toBeVisible();
-  } else {
-    await expect(page.getByLabel("即時切換供應商與模型")).toBeVisible();
-  }
+  await expect(page.getByText("Codex 已連接", { exact: true })).toBeVisible();
+  await expect(page.getByText("已連接；模型會從 Codex 的模型選單切換。", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "更多" }).first().click();
   await expect(page.getByRole("menuitem", { name: "即時切換設定" })).toBeVisible();
 });
