@@ -1,10 +1,13 @@
 # Changelog
 
+## 0.28.3 — 2026-11-19
+- **Codex 跨上游切模型不再 404**：代理會記錄每個 reasoning item 來自哪個上游；同一上游完整保留，跨上游自動移除不可轉移的 reasoning item，對話正文、工具結果與圖片不受影響。
+
 ## 0.28.2 — 2026-11-19
 - **修復多模態模型圖片輸入**：catalog 會從供應商 metadata 的 modalities／input_modalities 判斷 vision，不再只看 vision 欄位；Hy4 flash Free 等模型恢復圖片上傳。
 
 ## 0.28.1 — 2026-11-19
-- **用量統計顯示上游模型**：Codex gateway 的 kumoswitch_* alias 會對映回 CommandCode／OpenCode Go 的實際供應商與模型名稱；CommandCode／ChatGPT Plus 標示「訂閱」，免費模型顯示 /usr/bin/bash.00。
+- **用量統計顯示上游模型**：Codex gateway 的 kumoswitch_* alias 會對映回 CommandCode／OpenCode Go 的實際供應商與模型名稱；CommandCode／ChatGPT Plus 標示「訂閱」，免費模型顯示 $0.00。
 
 ## 0.28.0 — 2026-11-19
 - **Codex 同一模型選單支援 GPT Plus 與第三方模型**：Codex 改用 API-Key gateway 模式，kumoSwitch 從 Codex auth.json 本機注入並自動刷新 ChatGPT 憑證，GPT Plus 與 CommandCode、OpenCode Go 模型可同時顯示與使用。

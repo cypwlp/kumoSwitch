@@ -12,8 +12,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sha2::{Digest, Sha256};
 
 const MAX_REQUEST_BODY_BYTES: usize = 32 * 1024 * 1024;
+const MAX_RECORDED_ITEMS: usize = 50_000;
+const MAX_RECORDED_BODY_BYTES: usize = 8 * 1024 * 1024;
+const MAX_SSE_LINE_BYTES: usize = 1024 * 1024;
 
 static HTTP_CLIENT: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+static ITEM_ORIGINS: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
 
 fn shared_client() -> Result<&'static reqwest::blocking::Client, String> {
     HTTP_CLIENT
@@ -429,6 +433,138 @@ fn normalize_reasoning_effort(body: Vec<u8>) -> Vec<u8> {
     } else {
         body
     }
+}
+
+fn remember_item_origin(id: &str, origin: &str) {
+    if id.trim().is_empty() {
+        return;
+    }
+    let mut origins = ITEM_ORIGINS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(existing) = origins.get_mut(id) {
+        *existing = origin.to_string();
+        return;
+    }
+    if origins.len() >= MAX_RECORDED_ITEMS {
+        let overflow = origins.len() - MAX_RECORDED_ITEMS + 1;
+        let stale = origins.keys().take(overflow).cloned().collect::<Vec<_>>();
+        for key in stale {
+            origins.remove(&key);
+        }
+    }
+    origins.insert(id.to_string(), origin.to_string());
+}
+
+fn item_origin(id: &str) -> Option<String> {
+    ITEM_ORIGINS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(id)
+        .cloned()
+}
+
+fn remember_output_items(value: &serde_json::Value, origin: &str) {
+    let remember = |item: &serde_json::Value| {
+        if let Some(id) = item.get("id").and_then(serde_json::Value::as_str) {
+            remember_item_origin(id, origin);
+        }
+    };
+    if let Some(items) = value.get("output").and_then(serde_json::Value::as_array) {
+        for item in items {
+            remember(item);
+        }
+    }
+    if let Some(item) = value.get("item") {
+        remember(item);
+    }
+    if let Some(items) = value
+        .get("response")
+        .and_then(|response| response.get("output"))
+        .and_then(serde_json::Value::as_array)
+    {
+        for item in items {
+            remember(item);
+        }
+    }
+}
+
+fn trim_ascii(mut value: &[u8]) -> &[u8] {
+    while matches!(value.first(), Some(byte) if byte.is_ascii_whitespace()) {
+        value = &value[1..];
+    }
+    while matches!(value.last(), Some(byte) if byte.is_ascii_whitespace()) {
+        value = &value[..value.len() - 1];
+    }
+    value
+}
+
+fn record_sse_line(line: &[u8], origin: &str) {
+    let line = line.strip_suffix(b"\r").unwrap_or(line);
+    let Some(data) = line.strip_prefix(b"data:") else {
+        return;
+    };
+    let data = trim_ascii(data);
+    if data.is_empty() || data == b"[DONE]" {
+        return;
+    }
+    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(data) {
+        remember_output_items(&value, origin);
+    }
+}
+
+fn record_sse_items(buffer: &mut Vec<u8>, chunk: &[u8], origin: &str) {
+    buffer.extend_from_slice(chunk);
+    let mut consumed = 0;
+    for (index, byte) in buffer.iter().enumerate() {
+        if *byte != b'\n' {
+            continue;
+        }
+        record_sse_line(&buffer[consumed..index], origin);
+        consumed = index + 1;
+    }
+    if consumed > 0 {
+        buffer.drain(..consumed);
+    }
+    if buffer.len() > MAX_SSE_LINE_BYTES {
+        buffer.clear();
+    }
+}
+
+fn record_json_items(body: &[u8], origin: &str) {
+    if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) {
+        remember_output_items(&value, origin);
+    }
+}
+
+/// Reasoning items are opaque to every provider except the one that created
+/// them. Keep them within the same upstream; drop them when the thread is sent
+/// to another upstream, otherwise Codex gets `Item ... not found` errors.
+fn strip_foreign_reasoning(body: Vec<u8>, target_reference: &str) -> Vec<u8> {
+    let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return body;
+    };
+    let Some(input) = value
+        .get_mut("input")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return body;
+    };
+    let before = input.len();
+    input.retain(|item| {
+        if item.get("type").and_then(serde_json::Value::as_str) != Some("reasoning") {
+            return true;
+        }
+        let origin = item
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .and_then(item_origin);
+        origin.as_deref() == Some(target_reference)
+    });
+    if input.len() == before {
+        return body;
+    }
+    serde_json::to_vec(&value).unwrap_or(body)
 }
 
 fn target_states() -> MutexGuard<'static, BTreeMap<String, TargetState>> {
@@ -1076,10 +1212,15 @@ fn relay_response(
     request: tiny_http::Request,
     mut upstream: reqwest::blocking::Response,
     method: &str,
+    origin: &str,
 ) {
     let status = upstream.status().as_u16();
     let version = request.http_version().clone();
     let headers = response_headers(&upstream);
+    let is_json = headers
+        .iter()
+        .find(|(name, _)| name == "content-type")
+        .is_some_and(|(_, value)| value.to_ascii_lowercase().contains("application/json"));
     let suppress_body = method == "HEAD" || matches!(status, 100..=199 | 204 | 304);
     let chunked = version >= tiny_http::HTTPVersion(1, 1) && !suppress_body;
     let reason = reqwest::StatusCode::from_u16(status)
@@ -1110,6 +1251,8 @@ fn relay_response(
         }
 
         let mut buffer = [0u8; 16 * 1024];
+        let mut sse_buffer = Vec::new();
+        let mut json_body = Vec::new();
         loop {
             let count = match upstream.read(&mut buffer) {
                 Ok(0) => break,
@@ -1124,6 +1267,17 @@ fn relay_response(
                 writer.write_all(&buffer[..count])?;
             }
             writer.flush()?;
+            if is_json {
+                if json_body.len() < MAX_RECORDED_BODY_BYTES {
+                    let room = MAX_RECORDED_BODY_BYTES - json_body.len();
+                    json_body.extend_from_slice(&buffer[..count.min(room)]);
+                }
+            } else {
+                record_sse_items(&mut sse_buffer, &buffer[..count], origin);
+            }
+        }
+        if is_json {
+            record_json_items(&json_body, origin);
         }
         if chunked {
             writer.write_all(b"0\r\n\r\n")?;
@@ -1292,6 +1446,11 @@ fn handle_with_routing_limit(
                 });
                 continue;
             }
+        };
+        let target_body = if route_tool.as_deref() == Some("codex") && path == "/v1/responses" {
+            strip_foreign_reasoning(target_body, &target.reference)
+        } else {
+            target_body
         };
         let mapped_model = request_model(&target_body);
         let codex_chat_route = route_tool.as_deref() == Some("codex") && target.chat_completions;
@@ -1463,6 +1622,7 @@ fn handle_with_routing_limit(
                     continue;
                 }
             };
+            remember_output_items(&completed, &target.reference);
             let stream_requested = request_streaming(&body);
             let body = if stream_requested {
                 crate::codex_bridge::responses_sse(&completed)
@@ -1530,7 +1690,7 @@ fn handle_with_routing_limit(
             total_ms: trace_started.elapsed().as_millis() as u64,
             outcome: "success".into(),
         });
-        relay_response(request, resp, &method);
+        relay_response(request, resp, &method, &target.reference);
         return;
     }
 
@@ -2285,6 +2445,79 @@ mod tests {
         assert_eq!(header(&seen[0], "x-client-trace"), Some("trace-123"));
         assert_eq!(header(&seen[0], "authorization"), None);
         assert_eq!(header(&seen[0], "content-type"), Some("application/json"));
+    }
+
+    #[test]
+    fn reasoning_items_stay_with_their_upstream() {
+        let same = "rs_test_same_upstream";
+        let foreign = "rs_test_foreign_upstream";
+        let unknown = "rs_test_unknown_upstream";
+        remember_item_origin(same, "test:upstream-a");
+        remember_item_origin(foreign, "test:upstream-b");
+        let body = serde_json::json!({
+            "model": "test-model",
+            "input": [
+                {"type": "reasoning", "id": same, "summary": []},
+                {"type": "reasoning", "id": foreign, "summary": []},
+                {"type": "reasoning", "id": unknown, "summary": []},
+                {"type": "message", "role": "user", "content": []}
+            ]
+        });
+        let input_of = |target: &str| {
+            let body = strip_foreign_reasoning(
+                serde_json::to_vec(&body).unwrap(),
+                target,
+            );
+            serde_json::from_slice::<serde_json::Value>(&body)
+                .unwrap()
+                .get("input")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .clone()
+        };
+
+        let same_input = input_of("test:upstream-a");
+        assert_eq!(same_input.len(), 2);
+        assert_eq!(same_input[0]["id"], same);
+        assert_eq!(same_input[1]["type"], "message");
+
+        let foreign_input = input_of("test:upstream-b");
+        assert_eq!(foreign_input.len(), 2);
+        assert_eq!(foreign_input[0]["id"], foreign);
+        assert_eq!(foreign_input[1]["type"], "message");
+
+        let unknown_input = input_of("test:upstream-c");
+        assert_eq!(unknown_input.len(), 1);
+        assert_eq!(unknown_input[0]["type"], "message");
+    }
+
+    #[test]
+    fn response_items_are_attributed_to_the_receiving_upstream() {
+        let mut buffer = Vec::new();
+        record_sse_items(
+            &mut buffer,
+            b"data: {\"type\":\"response.output_item.added\",\"item\":{\"type\":\"reasoning\",",
+            "test:sse-origin",
+        );
+        record_sse_items(
+            &mut buffer,
+            b"\"id\":\"rs_test_sse_origin\"}}\n\n",
+            "test:sse-origin",
+        );
+        assert_eq!(
+            item_origin("rs_test_sse_origin").as_deref(),
+            Some("test:sse-origin")
+        );
+
+        record_json_items(
+            br#"{"output":[{"type":"reasoning","id":"rs_test_json_origin"}]}"#,
+            "test:json-origin",
+        );
+        assert_eq!(
+            item_origin("rs_test_json_origin").as_deref(),
+            Some("test:json-origin")
+        );
     }
 
     #[test]
