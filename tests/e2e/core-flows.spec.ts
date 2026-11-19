@@ -657,9 +657,15 @@ test("usage dashboard shows per-request history", async ({ page }) => {
 test("instant switch is a first-class action on the tool page", async ({ page }) => {
   await expect(page.getByRole("button", { name: "改成即時切換" })).toBeVisible();
   await page.getByRole("button", { name: "改成即時切換" }).click();
-  await expect(page.getByText("已啟用即時切換。目前對話需重開一次；之後切換即時生效")).toBeVisible();
+  const successToast = page.locator(".toast");
+  await expect(successToast).toContainText(/已啟用即時切換|Codex 合併模型目錄已啟用/);
   await expect(page.getByText("即時切換中", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("即時切換上游")).toBeVisible();
+  const codexModelPickerHint = page.getByText("在 Codex 模型選單切換", { exact: true });
+  if (await codexModelPickerHint.count()) {
+    await expect(codexModelPickerHint).toBeVisible();
+  } else {
+    await expect(page.getByLabel("即時切換供應商與模型")).toBeVisible();
+  }
   await page.getByRole("button", { name: "更多" }).first().click();
   await expect(page.getByRole("menuitem", { name: "即時切換設定" })).toBeVisible();
 });

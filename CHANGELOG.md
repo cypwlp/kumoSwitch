@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.27.6 — 2026-11-19
+- 修正「改成即時切換」E2E 檢查：依一般 Harness 與 Codex 合併模型目錄驗證各自的成功提示及切換控制項，不再因文案或 Codex 專用選單而誤報失敗。
+
 ## 0.27.5 — 2026-11-19
 - **Codex ChatGPT Plus 合併目錄**：Codex 登入憑證只轉送至 ChatGPT；kumoSwitch 合併 Plus 動態模型目錄與其他 Harness 已加入的 Responses API 相容模型，並依模型選擇路由至原供應商。
 - Codex 一鍵代理使用 Responses API、停用 WebSocket，並移除代理供應商的 API key 認證設定；OpenAI Chat Completions 與 Anthropic Messages 會轉換後路由至原供應商，再以 Responses 事件回覆。轉換型 API 目前會先緩衝完整上游回應。
