@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.28.1 — 2026-11-19
+- **用量統計顯示上游模型**：Codex gateway 的 kumoswitch_* alias 會對映回 CommandCode／OpenCode Go 的實際供應商與模型名稱；CommandCode／ChatGPT Plus 標示「訂閱」，免費模型顯示 /usr/bin/bash.00。
+
 ## 0.28.0 — 2026-11-19
 - **Codex 同一模型選單支援 GPT Plus 與第三方模型**：Codex 改用 API-Key gateway 模式，kumoSwitch 從 Codex auth.json 本機注入並自動刷新 ChatGPT 憑證，GPT Plus 與 CommandCode、OpenCode Go 模型可同時顯示與使用。
 - OpenCode Go 自動補 x-opencode-session；自訂模型的 reasoning off/none/ultra 會正規化為上游支援值。

@@ -424,6 +424,7 @@ export interface UsageRow {
   cache_write: number;
   records: number;
   cost: number | null;
+  cost_note?: string | null;
   reasoning: number;
   duration_ms: number;
   timed_output: number;
@@ -450,6 +451,7 @@ export interface UsageSample {
   reasoning: number;
   duration_ms: number;
   cost: number | null;
+  cost_note?: string | null;
   id: string;
 }
 

@@ -3,7 +3,8 @@ import { api, errorText } from "../api";
 import type { HealthOverview, UsageReport } from "../types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
-const money = (n: number | null) => (n == null ? "未定價" : `$${n.toFixed(2)}`);
+const money = (n: number | null, note?: string | null) =>
+  n == null ? note || "未定價" : `$${n.toFixed(2)}`;
 
 const SOURCE_LABELS: Record<string, string> = {
   claude: "Claude Code",
@@ -473,7 +474,7 @@ export function StatsView({ onError, active = true }: Props) {
                           </td>
                           <td className="mono">{durationText(row.fixed_overhead_ms)}</td>
                           <td className="mono col-ttft">{row.ttft_ms == null ? "—" : `${fmt(row.ttft_ms)}ms`}</td>
-                          <td className="mono">{money(row.cost)}</td>
+                          <td className="mono">{money(row.cost, row.cost_note)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -524,7 +525,7 @@ export function StatsView({ onError, active = true }: Props) {
                           <td className="mono">{fmt(item.input)}</td>
                           <td className="mono">{fmt(item.output)}{item.reasoning ? <small className="stat-subvalue">+{fmt(item.reasoning)}</small> : null}</td>
                           <td className="mono">{fmt(item.cache)}</td>
-                          <td className="mono">{money(item.cost)}</td>
+                          <td className="mono">{money(item.cost, item.cost_note)}</td>
                           <td className="mono muted" title={item.id}>{item.id ? item.id.slice(0, 8) : "—"}</td>
                         </tr>
                       ))}

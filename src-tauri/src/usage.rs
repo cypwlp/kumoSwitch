@@ -27,6 +27,7 @@ pub struct UsageRow {
     pub cache_write: u64,
     pub records: u64,
     pub cost: Option<f64>,
+    pub cost_note: Option<String>,
     /// Reasoning tokens reported separately by Pi/DSH.
     pub reasoning: u64,
     /// Total request duration for rows that expose timings.
@@ -63,6 +64,7 @@ pub struct UsageSample {
     pub reasoning: u64,
     pub duration_ms: u64,
     pub cost: Option<f64>,
+    pub cost_note: Option<String>,
     pub id: String,
 }
 
@@ -162,6 +164,7 @@ struct Acc {
     request_speeds: Vec<f64>,
     samples: Vec<(u64, u64)>,
     slow_records: u64,
+    cost_note: Option<String>,
 }
 
 impl Acc {
@@ -180,6 +183,12 @@ impl Acc {
         self.request_speeds.extend(other.request_speeds.iter().copied());
         self.samples.extend(other.samples.iter().copied());
         self.slow_records += other.slow_records;
+        self.cost_note = match (&self.cost_note, &other.cost_note) {
+            (Some(left), Some(right)) if left == right => Some(left.clone()),
+            (None, Some(note)) => Some(note.clone()),
+            (Some(note), None) => Some(note.clone()),
+            _ => None,
+        };
     }
 
     fn add_usage(&mut self, i: u64, o: u64, cr: u64, cw: u64, count: bool) {
@@ -271,6 +280,88 @@ fn epoch_day(secs: u64) -> String {
 
 /* ---------------------------------------------------------------- scanning */
 
+#[derive(Clone)]
+struct CodexRoute {
+    provider: String,
+    model: String,
+    note: Option<String>,
+}
+
+fn codex_routes() -> BTreeMap<String, CodexRoute> {
+    let store = crate::store::load();
+    let proxy = store.proxy;
+    let mut out = BTreeMap::new();
+    for reference in &proxy.stack {
+        if !reference.starts_with("codex:") || reference.ends_with("__chatgpt_plus__") {
+            continue;
+        }
+        let Some((_, provider_id)) = reference.split_once(':') else { continue };
+        let Some(policy) = proxy.policies.get(reference) else { continue };
+        let Some(provider) = store
+            .providers
+            .get("codex")
+            .and_then(|providers| providers.iter().find(|provider| provider.id == provider_id))
+        else {
+            continue;
+        };
+        for (alias, model_id) in &policy.model_map {
+            let profile = provider.models.iter().find(|model| &model.id == model_id);
+            let display = profile
+                .map(|model| {
+                    if model.name.trim().is_empty() {
+                        model.id.clone()
+                    } else {
+                        model.name.clone()
+                    }
+                })
+                .unwrap_or_else(|| model_id.clone());
+            let haystack = format!("{model_id} {display}").to_lowercase();
+            let note = if haystack.contains("free") {
+                Some("免費".to_string())
+            } else if provider.name.eq_ignore_ascii_case("CommandCode") {
+                Some("訂閱".to_string())
+            } else if provider.name.to_lowercase().contains("opencode") {
+                Some("OpenCode Go".to_string())
+            } else {
+                None
+            };
+            out.insert(
+                alias.clone(),
+                CodexRoute {
+                    provider: provider.name.clone(),
+                    model: display,
+                    note,
+                },
+            );
+        }
+    }
+    out
+}
+
+fn resolve_codex(
+    routes: &BTreeMap<String, CodexRoute>,
+    provider: &str,
+    model: &str,
+) -> (String, String, String, Option<String>) {
+    if provider != "kumoswitch-proxy" && !model.starts_with("kumoswitch_") {
+        return (provider.to_string(), model.to_string(), model.to_string(), None);
+    }
+    if let Some(route) = routes.get(model) {
+        return (
+            route.provider.clone(),
+            route.model.clone(),
+            format!("{} · {}", route.provider, route.model),
+            route.note.clone(),
+        );
+    }
+    (
+        "ChatGPT Plus".to_string(),
+        model.to_string(),
+        format!("ChatGPT Plus · {model}"),
+        Some("ChatGPT Plus".to_string()),
+    )
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
     Claude,
@@ -332,6 +423,7 @@ struct Scanner<'a> {
     days: &'a mut BTreeMap<(String, String), (u64, u64, u64)>,
     records: &'a mut usize,
     samples: &'a mut Vec<UsageSample>,
+    routes: &'a BTreeMap<String, CodexRoute>,
 }
 
 fn sample_cost(model: &str, input: u64, output: u64, cache: u64, reasoning: u64) -> Option<f64> {
@@ -353,8 +445,13 @@ impl Scanner<'_> {
         reasoning: u64,
         duration_ms: u64,
         id: &str,
+        cost_note: Option<String>,
     ) {
-        let cost = sample_cost(model, input, output, cache, reasoning);
+        let cost = match cost_note.as_deref() {
+            Some("免費") => Some(0.0),
+            Some(_) => None,
+            None => sample_cost(model, input, output, cache, reasoning),
+        };
         self.samples.push(UsageSample {
             ts,
             source: self.source.to_string(),
@@ -367,6 +464,7 @@ impl Scanner<'_> {
             reasoning,
             duration_ms,
             cost,
+            cost_note,
             id: id.to_string(),
         });
     }
@@ -538,7 +636,7 @@ fn scan_claude(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
                 .add_timing(duration, output, ttft);
         }
         if (first as u64) > 0 {
-            scanner.push_sample(first as u64, "", &model, "completed", input, output, cache, reasoning, duration, &id);
+            scanner.push_sample(first as u64, "", &model, "completed", input, output, cache, reasoning, duration, &id, None);
         }
     }
     Ok(())
@@ -608,6 +706,14 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
             .or_else(|| (!session_model.is_empty()).then_some(session_model.as_str()))
             .unwrap_or("codex-session")
             .to_string();
+        let sample_provider = payload
+            .get("model_provider_id")
+            .and_then(|v| v.as_str())
+            .filter(|value| !value.is_empty())
+            .or_else(|| (!session_provider.is_empty()).then_some(session_provider.as_str()))
+            .unwrap_or("");
+        let (display_provider, display_model, row_model, cost_note) =
+            resolve_codex(scanner.routes, sample_provider, &model);
         let ts = d.get("timestamp").and_then(|t| t.as_str()).unwrap_or("").to_string();
         let day = day_of(&ts);
         if !day.is_empty() && day.as_str() < scanner.cutoff {
@@ -620,22 +726,31 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         if i + o + cr + cw == 0 {
             continue;
         }
-        scanner
+        let acc = scanner
             .models
-            .entry((scanner.source.to_string(), model.clone()))
-            .or_default()
-            .add_usage(i, o, cr, cw, true);
+            .entry((scanner.source.to_string(), row_model))
+            .or_default();
+        acc.add_usage(i, o, cr, cw, true);
+        if cost_note.is_some() {
+            acc.cost_note = cost_note.clone();
+        }
         scanner.bump_day(&day, scanner.source, i, o, cr + cw);
         *scanner.records += 1;
         if let Some(ts) = parse_iso_ms(&ts) {
             let id = payload.get("response_id").and_then(|v| v.as_str()).unwrap_or("");
-            let sample_provider = payload
-                .get("model_provider_id")
-                .and_then(|v| v.as_str())
-                .filter(|value| !value.is_empty())
-                .or_else(|| (!session_provider.is_empty()).then_some(session_provider.as_str()))
-                .unwrap_or("");
-            scanner.push_sample(ts as u64, sample_provider, &model, "completed", i, o, cr + cw, num(&usage, "reasoning_output_tokens"), 0, id);
+            scanner.push_sample(
+                ts as u64,
+                &display_provider,
+                &display_model,
+                "completed",
+                i,
+                o,
+                cr + cw,
+                num(&usage, "reasoning_output_tokens"),
+                0,
+                id,
+                cost_note,
+            );
         }
     }
     Ok(())
@@ -714,7 +829,7 @@ fn scan_agent_session(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), Stri
         *scanner.records += 1;
         if let Some(ts) = parse_iso_ms(ts) {
             let status = message.get("stopReason").and_then(|v| v.as_str()).unwrap_or("completed");
-            scanner.push_sample(ts as u64, message.get("provider").and_then(|v| v.as_str()).unwrap_or(""), &model, status, i, o, cr + cw, reasoning, message.get("durationMs").and_then(|v| v.as_u64()).unwrap_or(0), id);
+            scanner.push_sample(ts as u64, message.get("provider").and_then(|v| v.as_str()).unwrap_or(""), &model, status, i, o, cr + cw, reasoning, message.get("durationMs").and_then(|v| v.as_u64()).unwrap_or(0), id, None);
         }
     }
     Ok(())
@@ -774,7 +889,7 @@ fn scan_dsh(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         *scanner.records += 1;
         let status = d.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
         let id = d.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        scanner.push_sample(ts_ms, d.get("provider").and_then(|v| v.as_str()).unwrap_or(""), &model, status, i, o, cr + cw, reasoning, d.get("dur").and_then(|v| v.as_u64()).unwrap_or(0), id);
+        scanner.push_sample(ts_ms, d.get("provider").and_then(|v| v.as_str()).unwrap_or(""), &model, status, i, o, cr + cw, reasoning, d.get("dur").and_then(|v| v.as_u64()).unwrap_or(0), id, None);
     }
     Ok(())
 }
@@ -915,6 +1030,7 @@ fn scan_into(
     cutoff: &str,
     offset: u64,
     contribution: &mut Contribution,
+    routes: &BTreeMap<String, CodexRoute>,
 ) -> Result<(), String> {
     let mut scanner = Scanner {
         source,
@@ -925,6 +1041,7 @@ fn scan_into(
         days: &mut contribution.days,
         records: &mut contribution.records,
         samples: &mut contribution.samples,
+        routes,
     };
     scan_file(path, &mut scanner)
 }
@@ -948,6 +1065,7 @@ pub fn report(days_back: u32, force: bool) -> UsageReport {
         epoch_day(now.saturating_sub(days_back as u64 * 86_400))
     };
 
+    let routes = codex_routes();
     let mut models = BTreeMap::new();
     let mut days = BTreeMap::new();
     let mut records = 0;
@@ -1016,7 +1134,7 @@ pub fn report(days_back: u32, force: bool) -> UsageReport {
                 if cached.cutoff == cutoff && cached.mtime_ms == mtime_ms && len > cached.len =>
             {
                 let mut next = cached.contribution.clone();
-                match scan_into(&path, source, kind, &cutoff, cached.offset, &mut next) {
+                match scan_into(&path, source, kind, &cutoff, cached.offset, &mut next, &routes) {
                     Ok(()) => next,
                     Err(error) => {
                         if errors.len() < 20 {
@@ -1029,7 +1147,7 @@ pub fn report(days_back: u32, force: bool) -> UsageReport {
             }
             _ => {
                 let mut fresh = Contribution::default();
-                match scan_into(&path, source, kind, &cutoff, 0, &mut fresh) {
+                match scan_into(&path, source, kind, &cutoff, 0, &mut fresh, &routes) {
                     Ok(()) => fresh,
                     Err(error) => {
                         if errors.len() < 20 {
@@ -1069,12 +1187,16 @@ pub fn report(days_back: u32, force: bool) -> UsageReport {
     let mut rows: Vec<UsageRow> = models
         .into_iter()
         .map(|((source, model), acc)| {
-            let cost = price_for(&model).map(|(i, o, c)| {
-                (acc.input as f64 * i
-                    + (acc.output + acc.reasoning) as f64 * o
-                    + acc.cache_read as f64 * c)
-                    / 1_000_000.0
-            });
+            let cost = match acc.cost_note.as_deref() {
+                Some("免費") => Some(0.0),
+                Some(_) => None,
+                None => price_for(&model).map(|(i, o, c)| {
+                    (acc.input as f64 * i
+                        + (acc.output + acc.reasoning) as f64 * o
+                        + acc.cache_read as f64 * c)
+                        / 1_000_000.0
+                }),
+            };
             let avg_duration = if acc.timed_records > 0 {
                 Some(acc.duration_ms / acc.timed_records)
             } else {
@@ -1094,6 +1216,7 @@ pub fn report(days_back: u32, force: bool) -> UsageReport {
                 cache_write: acc.cache_write,
                 records: acc.records,
                 cost,
+                cost_note: acc.cost_note.clone(),
                 reasoning: acc.reasoning,
                 duration_ms: acc.duration_ms,
                 timed_output: acc.timed_output,
@@ -1188,6 +1311,30 @@ mod tests {
         assert!(price_for("deepseek-v4.1-flash").is_some());
         assert!(price_for("claude-sonnet-5[1M]").is_some());
         assert!(price_for("totally-unknown-model").is_none());
+    }
+
+    #[test]
+    fn codex_gateway_alias_resolves_to_upstream() {
+        let mut routes = BTreeMap::new();
+        routes.insert(
+            "kumoswitch_alias".to_string(),
+            CodexRoute {
+                provider: "CommandCode".to_string(),
+                model: "deepseek-v4.1-flash".to_string(),
+                note: Some("訂閱".to_string()),
+            },
+        );
+        let (provider, model, row, note) = resolve_codex(&routes, "kumoswitch-proxy", "kumoswitch_alias");
+        assert_eq!(provider, "CommandCode");
+        assert_eq!(model, "deepseek-v4.1-flash");
+        assert_eq!(row, "CommandCode · deepseek-v4.1-flash");
+        assert_eq!(note.as_deref(), Some("訂閱"));
+
+        let (provider, model, row, note) = resolve_codex(&routes, "kumoswitch-proxy", "gpt-6.2-sol");
+        assert_eq!(provider, "ChatGPT Plus");
+        assert_eq!(model, "gpt-6.2-sol");
+        assert_eq!(row, "ChatGPT Plus · gpt-6.2-sol");
+        assert_eq!(note.as_deref(), Some("ChatGPT Plus"));
     }
 
     #[test]
