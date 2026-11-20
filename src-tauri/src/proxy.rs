@@ -1310,6 +1310,10 @@ fn handle_with_routing_limit(
     max_body_bytes: usize,
 ) {
     let method = request.method().as_str().to_string();
+    let websocket_upgrade = request.headers().iter().any(|header| {
+        header.field.as_str().as_str().eq_ignore_ascii_case("upgrade")
+            && header.value.as_str().to_ascii_lowercase().contains("websocket")
+    });
     let forwarded_headers = request_headers(request.headers());
     let chatgpt_headers = chatgpt_request_headers();
     let url = request.url().to_string();
@@ -1328,6 +1332,16 @@ fn handle_with_routing_limit(
         targets
     };
     let query = url.split_once('?').map(|(_, q)| format!("?{q}")).unwrap_or_default();
+    if websocket_upgrade {
+        let response = tiny_http::Response::from_string(
+            "{\"error\":\"websocket transport is not supported; use HTTPS\"}",
+        )
+        .with_status_code(426)
+        .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap())
+        .with_header("Connection: close".parse::<tiny_http::Header>().unwrap());
+        let _ = request.respond(response);
+        return;
+    }
 
     if method == "GET" && route_tool.as_deref() == Some("codex") && path == "/models" {
         serve_codex_catalog(request, enabled, &crate::store::load().proxy, &query);
@@ -1782,7 +1796,7 @@ fn stop_listener() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::net::{SocketAddr, TcpListener, TcpStream};
     use std::sync::{mpsc, Arc, Mutex};
     use std::thread;
@@ -2518,6 +2532,25 @@ mod tests {
             item_origin("rs_test_json_origin").as_deref(),
             Some("test:json-origin")
         );
+    }
+
+    #[test]
+    fn websocket_upgrade_is_rejected_immediately() {
+        let (proxy_url, proxy_join) = spawn_proxy(Vec::new());
+        let addr = proxy_url.trim_start_matches("http://");
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        write!(
+            stream,
+            "GET /codex/v1/responses HTTP/1.1\r\nHost: {addr}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGVzdA==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+        )
+        .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 426"), "response was {response}");
+        proxy_join.join().unwrap();
     }
 
     #[test]

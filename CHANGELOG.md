@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.28.6 — 2026-11-20
+- **Codex WebSocket 快速降級**：代理立即以 426 回應 WebSocket upgrade，讓 Codex 改走 HTTPS，不再重試五次後才送出模型請求。
+
 ## 0.28.5 — 2026-11-20
 - **避免 Codex 工具呼叫後卡 300 秒**：接入 Codex 時自動寫入 `stream_idle_timeout_ms = 600000` 與 `stream_max_retries = 2`，避免 SSE 尚無資料就被 Codex 預設 5 分鐘閒置逾時中斷並重試。
 
