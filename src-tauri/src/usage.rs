@@ -287,6 +287,12 @@ struct CodexRoute {
     note: Option<String>,
 }
 
+#[derive(Clone, Default)]
+struct CodexScanState {
+    provider: String,
+    model: String,
+}
+
 fn codex_routes() -> BTreeMap<String, CodexRoute> {
     let store = crate::store::load();
     let proxy = store.proxy;
@@ -409,6 +415,7 @@ struct FileCache {
     offset: u64,
     cutoff: String,
     contribution: Contribution,
+    codex: CodexScanState,
 }
 
 static USAGE_CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<std::path::PathBuf, FileCache>>> =
@@ -424,6 +431,7 @@ struct Scanner<'a> {
     records: &'a mut usize,
     samples: &'a mut Vec<UsageSample>,
     routes: &'a BTreeMap<String, CodexRoute>,
+    codex: &'a mut CodexScanState,
 }
 
 fn sample_cost(model: &str, input: u64, output: u64, cache: u64, reasoning: u64) -> Option<f64> {
@@ -671,8 +679,48 @@ fn codex_session_meta(path: &Path) -> (String, String) {
     (String::new(), String::new())
 }
 
+fn update_codex_context(line: &str, state: &mut CodexScanState) -> bool {
+    if !line.contains("thread_settings_applied") && !line.contains("\"turn_context\"") {
+        return false;
+    }
+    if let Ok(d) = serde_json::from_str::<serde_json::Value>(line) {
+        if d.get("type").and_then(|t| t.as_str()) == Some("turn_context") {
+            if let Some(model) = d
+                .pointer("/payload/model")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+            {
+                state.model = model.to_string();
+            }
+        } else if let Some(settings) = d
+            .get("payload")
+            .and_then(|payload| payload.get("thread_settings"))
+        {
+            if let Some(model) = settings
+                .get("model")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+            {
+                state.model = model.to_string();
+            }
+            if let Some(provider) = settings
+                .get("model_provider_id")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.is_empty())
+            {
+                state.provider = provider.to_string();
+            }
+        }
+    }
+    true
+}
+
 fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
-    let (session_provider, session_model) = codex_session_meta(path);
+    if scanner.codex.model.is_empty() {
+        let (provider, model) = codex_session_meta(path);
+        scanner.codex.provider = provider;
+        scanner.codex.model = model;
+    }
     let file = File::open(path).map_err(|error| format!("{}：{error}", path.display()))?;
     let mut reader = BufReader::new(file);
     if scanner.offset > 0 {
@@ -689,6 +737,9 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         if read == 0 {
             break;
         }
+        if update_codex_context(&line, scanner.codex) {
+            continue;
+        }
         if !line_has_candidate(scanner.source, &line) {
             continue;
         }
@@ -703,14 +754,14 @@ fn scan_codex(path: &Path, scanner: &mut Scanner<'_>) -> Result<(), String> {
         let model = payload
             .get("model")
             .and_then(|m| m.as_str())
-            .or_else(|| (!session_model.is_empty()).then_some(session_model.as_str()))
+            .or_else(|| (!scanner.codex.model.is_empty()).then_some(scanner.codex.model.as_str()))
             .unwrap_or("codex-session")
             .to_string();
         let sample_provider = payload
             .get("model_provider_id")
             .and_then(|v| v.as_str())
             .filter(|value| !value.is_empty())
-            .or_else(|| (!session_provider.is_empty()).then_some(session_provider.as_str()))
+            .or_else(|| (!scanner.codex.provider.is_empty()).then_some(scanner.codex.provider.as_str()))
             .unwrap_or("");
         let (display_provider, display_model, row_model, cost_note) =
             resolve_codex(scanner.routes, sample_provider, &model);
@@ -1031,6 +1082,7 @@ fn scan_into(
     offset: u64,
     contribution: &mut Contribution,
     routes: &BTreeMap<String, CodexRoute>,
+    codex: &mut CodexScanState,
 ) -> Result<(), String> {
     let mut scanner = Scanner {
         source,
@@ -1042,6 +1094,7 @@ fn scan_into(
         records: &mut contribution.records,
         samples: &mut contribution.samples,
         routes,
+        codex,
     };
     scan_file(path, &mut scanner)
 }
@@ -1124,18 +1177,28 @@ pub fn report(days_back: u32, force: bool) -> UsageReport {
             .unwrap_or(0);
         let len = meta.len();
         let cached = cache.get(&path);
-        let contribution = match cached {
+        let (contribution, codex) = match cached {
             Some(cached)
                 if cached.cutoff == cutoff && cached.mtime_ms == mtime_ms && cached.len == len =>
             {
-                cached.contribution.clone()
+                (cached.contribution.clone(), cached.codex.clone())
             }
             Some(cached)
                 if cached.cutoff == cutoff && cached.mtime_ms == mtime_ms && len > cached.len =>
             {
                 let mut next = cached.contribution.clone();
-                match scan_into(&path, source, kind, &cutoff, cached.offset, &mut next, &routes) {
-                    Ok(()) => next,
+                let mut codex = cached.codex.clone();
+                match scan_into(
+                    &path,
+                    source,
+                    kind,
+                    &cutoff,
+                    cached.offset,
+                    &mut next,
+                    &routes,
+                    &mut codex,
+                ) {
+                    Ok(()) => (next, codex),
                     Err(error) => {
                         if errors.len() < 20 {
                             errors.push(error);
@@ -1147,8 +1210,9 @@ pub fn report(days_back: u32, force: bool) -> UsageReport {
             }
             _ => {
                 let mut fresh = Contribution::default();
-                match scan_into(&path, source, kind, &cutoff, 0, &mut fresh, &routes) {
-                    Ok(()) => fresh,
+                let mut codex = CodexScanState::default();
+                match scan_into(&path, source, kind, &cutoff, 0, &mut fresh, &routes, &mut codex) {
+                    Ok(()) => (fresh, codex),
                     Err(error) => {
                         if errors.len() < 20 {
                             errors.push(error);
@@ -1167,6 +1231,7 @@ pub fn report(days_back: u32, force: bool) -> UsageReport {
                 offset: len,
                 cutoff: cutoff.clone(),
                 contribution: contribution.clone(),
+                codex,
             },
         );
         contribution.merge_into(&mut models, &mut days, &mut records, &mut samples);
@@ -1398,5 +1463,65 @@ mod tests {
         let usage = d["payload"]["usage"].clone();
         assert_eq!(num(&usage, "input_tokens"), 25096);
         assert_eq!(num(&usage, "cached_input_tokens"), 23168);
+    }
+
+    #[test]
+    fn codex_usage_follows_model_switches_inside_a_thread() {
+        let path = std::env::temp_dir().join(format!(
+            "kumoswitch-usage-{}-{}.jsonl",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let lines = [
+            r#"{"type":"session_meta","payload":{"model_provider":"kumoswitch-proxy","base_instructions":{"provenance":{"model":"kumoswitch_4dd22833699b2c79ee05"}}}}"#,
+            r#"{"timestamp":"2026-11-20T01:03:12.000Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-6.2-sol","model_provider_id":"kumoswitch-proxy"}}}"#,
+            r#"{"timestamp":"2026-11-20T01:03:28.000Z","type":"token_usage_record","payload":{"usage":{"input_tokens":100,"output_tokens":10}}}"#,
+            r#"{"timestamp":"2026-11-20T01:04:00.000Z","type":"turn_context","payload":{"model":"kumoswitch_2cd2b79aabe17b358bae"}}"#,
+            r#"{"timestamp":"2026-11-20T01:04:10.000Z","type":"token_usage_record","payload":{"usage":{"input_tokens":200,"output_tokens":20}}}"#,
+        ];
+        std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+
+        let mut routes = BTreeMap::new();
+        routes.insert(
+            "kumoswitch_4dd22833699b2c79ee05".to_string(),
+            CodexRoute {
+                provider: "CommandCode".to_string(),
+                model: "deepseek-v4.1-flash".to_string(),
+                note: Some("訂閱".to_string()),
+            },
+        );
+        routes.insert(
+            "kumoswitch_2cd2b79aabe17b358bae".to_string(),
+            CodexRoute {
+                provider: "OpenCode Go".to_string(),
+                model: "Hy4 flash Free".to_string(),
+                note: Some("免費".to_string()),
+            },
+        );
+        let mut contribution = Contribution::default();
+        let mut codex = CodexScanState::default();
+        scan_into(
+            &path,
+            "codex",
+            Kind::Codex,
+            "0000-00-00",
+            0,
+            &mut contribution,
+            &routes,
+            &mut codex,
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(contribution.samples.len(), 2);
+        assert_eq!(contribution.samples[0].provider, "ChatGPT Plus");
+        assert_eq!(contribution.samples[0].model, "gpt-6.2-sol");
+        assert_eq!(contribution.samples[1].provider, "OpenCode Go");
+        assert_eq!(contribution.samples[1].model, "Hy4 flash Free");
+        assert_eq!(codex.provider, "kumoswitch-proxy");
+        assert_eq!(codex.model, "kumoswitch_2cd2b79aabe17b358bae");
     }
 }

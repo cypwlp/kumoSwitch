@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.28.4 — 2026-11-20
+- **Codex 用量統計跟著對話內模型切換**：token 紀錄本身不帶模型，舊版整份對話都套用開頭模型；現在逐條讀取 `thread_settings_applied`／`turn_context`，GPT Plus 與第三方模型會各自歸屬。
+
 ## 0.28.3 — 2026-11-19
 - **Codex 跨上游切模型不再 404**：代理會記錄每個 reasoning item 來自哪個上游；同一上游完整保留，跨上游自動移除不可轉移的 reasoning item，對話正文、工具結果與圖片不受影響。
 
