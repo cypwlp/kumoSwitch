@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.28.7 — 2026-11-20
+- **修正 Windows CI**：`codex_gateway_sets_stream_idle_timeout` 改用暫存目錄與正確的 `kumoswitch-proxy` config id，不再依賴 runner 上的 `~/.codex`。
+- 包含 `v0.28.6` 的 WebSocket 426 快速降級。
+
 ## 0.28.6 — 2026-11-20
 - **Codex WebSocket 快速降級**：代理立即以 426 回應 WebSocket upgrade，讓 Codex 改走 HTTPS，不再重試五次後才送出模型請求。
 

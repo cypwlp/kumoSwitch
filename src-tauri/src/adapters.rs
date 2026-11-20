@@ -1914,8 +1914,20 @@ mod real_config_checks {
     fn codex_gateway_sets_stream_idle_timeout() {
         let spec = find("codex").unwrap();
         let mut provider = probe_provider();
+        provider.config_id = "kumoswitch-proxy".into();
         provider.codex_gateway = true;
-        let after = plan(spec, &provider).unwrap()[0].after.clone();
+        let dir = std::env::temp_dir().join(format!(
+            "kumoswitch-codex-plan-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), "model_provider = \"custom\"\n").unwrap();
+        let after = plan_in(spec, &provider, &dir).unwrap()[0].after.clone();
+        let _ = std::fs::remove_dir_all(&dir);
         assert!(after.contains("stream_idle_timeout_ms = 600000"), "缺少 10 分鐘 SSE 閒置逾時");
         assert!(after.contains("stream_max_retries = 2"), "缺少串流重試上限");
     }
