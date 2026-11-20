@@ -440,6 +440,7 @@ pub enum Val {
     /// YAML value built from a JSON template. Only used with `When::IfMissing`.
     Yaml(&'static str),
     Bool(bool),
+    Int(i64),
 }
 
 #[derive(Copy, Clone, PartialEq)]
@@ -1026,6 +1027,7 @@ fn set_toml(text: &str, path: &[String], val: Val, provider: &Provider, index: u
     let last = path.last().cloned().unwrap_or_default();
     let new_value: toml_edit::Value = match val {
         Val::Bool(b) => b.into(),
+        Val::Int(i) => i.into(),
         Val::Str(t) => subst(t, provider, index).into(),
         Val::Json(_) | Val::Yaml(_) => return Err("TOML 步驟不支援 JSON/YAML 模板值".into()),
     };
@@ -1045,6 +1047,7 @@ fn set_json(text: &str, path: &[String], val: Val, provider: &Provider, index: u
     let value = match val {
         Val::Str(t) => Value::String(subst(t, provider, index)),
         Val::Bool(b) => Value::Bool(b),
+        Val::Int(i) => Value::Number(i.into()),
         Val::Json(t) => serde_json::from_str(&subst(t, provider, index))
             .map_err(|e| format!("JSON 模板無效：{e}"))?,
         Val::Yaml(_) => return Err("JSON 檔案不支援 YAML 模板值".into()),
@@ -1061,6 +1064,7 @@ fn set_yaml(text: &str, path: &[String], val: Val, provider: &Provider, index: u
             yamlpatch::set_block(text, path, &value)
         }
         Val::Bool(b) => yamlpatch::set_scalar(text, path, &b.to_string()),
+        Val::Int(i) => yamlpatch::set_scalar(text, path, &i.to_string()),
     }
 }
 
@@ -1324,6 +1328,12 @@ pub fn plan_in(spec: &ToolSpec, provider: &Provider, dir: &Path) -> Result<Vec<F
             let mut websocket_path = p(&["model_providers", &provider.config_id]);
             websocket_path.push("supports_websockets".into());
             text = set_toml(&text, &websocket_path, Val::Bool(false), provider, 0)?;
+            let mut idle_path = p(&["model_providers", &provider.config_id]);
+            idle_path.push("stream_idle_timeout_ms".into());
+            text = set_toml(&text, &idle_path, Val::Int(600_000), provider, 0)?;
+            let mut retries_path = p(&["model_providers", &provider.config_id]);
+            retries_path.push("stream_max_retries".into());
+            text = set_toml(&text, &retries_path, Val::Int(2), provider, 0)?;
         } else {
             let mut catalog_path = provider_path;
             catalog_path.push("model_catalog_url".into());
@@ -1898,6 +1908,16 @@ mod real_config_checks {
         let changed = before.lines().filter(|l| !after.lines().any(|a| a == *l)).count();
         assert!(changed <= 12, "非預期的大量改動：{changed} 行");
         assert!(after.parse::<toml_edit::DocumentMut>().is_ok(), "產生的 TOML 無法解析");
+    }
+
+    #[test]
+    fn codex_gateway_sets_stream_idle_timeout() {
+        let spec = find("codex").unwrap();
+        let mut provider = probe_provider();
+        provider.codex_gateway = true;
+        let after = plan(spec, &provider).unwrap()[0].after.clone();
+        assert!(after.contains("stream_idle_timeout_ms = 600000"), "缺少 10 分鐘 SSE 閒置逾時");
+        assert!(after.contains("stream_max_retries = 2"), "缺少串流重試上限");
     }
 
     #[test]

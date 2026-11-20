@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.28.5 — 2026-11-20
+- **避免 Codex 工具呼叫後卡 300 秒**：接入 Codex 時自動寫入 `stream_idle_timeout_ms = 600000` 與 `stream_max_retries = 2`，避免 SSE 尚無資料就被 Codex 預設 5 分鐘閒置逾時中斷並重試。
+
 ## 0.28.4 — 2026-11-20
 - **Codex 用量統計跟著對話內模型切換**：token 紀錄本身不帶模型，舊版整份對話都套用開頭模型；現在逐條讀取 `thread_settings_applied`／`turn_context`，GPT Plus 與第三方模型會各自歸屬。
 
