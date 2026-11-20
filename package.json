@@ -13,7 +13,7 @@
     "e2e:tauri": "playwright test -c playwright.tauri.config.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@tauri-apps/cli": "^2"
   }
 }
